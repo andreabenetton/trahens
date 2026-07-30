@@ -203,7 +203,20 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                     match control.message_type {
                         MessageType::Commit => {
-                            states.apply(route.parent_label, Event::CommitAccepted)?;
+                            // event-lifecycle-profile-e1.md:142 — an exact
+                            // duplicate COMMIT MUST be discarded or processed
+                            // idempotently, never treated as fatal.
+                            if states
+                                .apply(route.parent_label, Event::CommitAccepted)
+                                .is_err()
+                            {
+                                structured_event(
+                                    "relay",
+                                    "invalid_transition_discarded",
+                                    &[("message", "commit".to_owned())],
+                                );
+                                continue;
+                            }
                             downstream.send(forward_control(control, route.child_label))?;
                         }
                         MessageType::RendezvousOpen => {
@@ -274,7 +287,17 @@ fn run() -> Result<(), Box<dyn Error>> {
                         route.child_discovery_nonce,
                         candidate.candidate_blob,
                     )?;
-                    states.apply(parent_label, Event::CandidateAccepted)?;
+                    if states
+                        .apply(parent_label, Event::CandidateAccepted)
+                        .is_err()
+                    {
+                        structured_event(
+                            "relay",
+                            "invalid_transition_discarded",
+                            &[("message", "candidate".to_owned())],
+                        );
+                        continue;
+                    }
                     upstream.send(Envelope {
                         suite_id: SUITE_R1,
                         message: Message::Candidate(Candidate {
@@ -297,11 +320,28 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                     match control.message_type {
                         MessageType::Ready => {
-                            states.apply(parent_label, Event::ReadyAccepted)?;
+                            if states.apply(parent_label, Event::ReadyAccepted).is_err() {
+                                structured_event(
+                                    "relay",
+                                    "invalid_transition_discarded",
+                                    &[("message", "ready".to_owned())],
+                                );
+                                continue;
+                            }
                             upstream.send(forward_control(control, parent_label))?;
                         }
                         MessageType::RendezvousResult => {
-                            states.apply(parent_label, Event::CapabilityAccepted)?;
+                            if states
+                                .apply(parent_label, Event::CapabilityAccepted)
+                                .is_err()
+                            {
+                                structured_event(
+                                    "relay",
+                                    "invalid_transition_discarded",
+                                    &[("message", "rendezvous_result".to_owned())],
+                                );
+                                continue;
+                            }
                             upstream.send(forward_control(control, parent_label))?;
                         }
                         MessageType::Data => {
