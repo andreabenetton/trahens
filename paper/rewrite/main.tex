@@ -50,7 +50,7 @@
   citecolor=accent,
   pdftitle={Trahens: A Privacy-Enabled Route Discovery Protocol},
   pdfauthor={Andrea Benetton},
-  pdfsubject={Current Trahens protocol draft with U1, E1, R1, M2, W2, T1, T2, T3, and T4 profiles}
+  pdfsubject={Trahens Core v1.4.1 protocol draft with U1, E1, R1, M2, W2, T1, T2, T3, T4, and the non-normative D1 directory strawman}
 }
 
 \setstretch{1.045}
@@ -70,7 +70,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small\color{accent}Trah\={e}ns Protocol}
-\fancyhead[R]{\small\color{accenttwo}Protocol draft -- 30 July 2026}
+\fancyhead[R]{\small\color{accenttwo}Core v1.4.1 -- 30 July 2026}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.35pt}
 \renewcommand{\headrule}{\hbox to\headwidth{\color{rulegray}\leaders\hrule height \headrulewidth\hfill}}
@@ -102,6 +102,7 @@
 \newcommand{\Ttwo}{\ensuremath{\mathsf{T2}}}
 \newcommand{\Tthree}{\ensuremath{\mathsf{T3}}}
 \newcommand{\Tfour}{\ensuremath{\mathsf{T4}}}
+\newcommand{\Done}{\ensuremath{\mathsf{D1}}}
 \newcommand{\bytes}[1]{\langle #1\rangle}
 \newcommand{\code}[1]{\texttt{#1}}
 
@@ -128,24 +129,24 @@
 
 \title{\vspace{-1.2em}\ProtoName\\[0.25em]\Large A Privacy-Enabled Route Discovery Protocol}
 \author{Andrea Benetton\\BlueTeam O\"U, Tallinn, Estonia\\\texttt{andrea.benetton@blueteam.ee}}
-\date{Protocol draft -- 30 July 2026}
+\date{Core v1.4.1 protocol draft -- 30 July 2026}
 
 \begin{document}
 \maketitle
 \vspace{-1.0em}
 
 \begin{statusbox}
-\textbf{Document status.} This document specifies one current experimental protocol. Its active profiles are \Uone{} branch-local representation replacement, \Eone{} deterministic route-state lifecycle, \Rone{} rendezvous-capability discovery, \Mtwo{} canonical variable-length logical messages, \Wtwo{} canonical fragmentation over fixed-size encrypted adjacent-link cells, \Tone{} bounded hop-local recovery, and \Ttwo{} fixed or quantized-adaptive adjacent-link scheduling. \Tthree{} binds equal-budget multi-link observation, route classification, correlated cross traffic, boundary analysis, and bounded active-probe experiments to those transport traces. \Tfour{} refines the comparison into timestamped packet events with independent observer clocks, propagation jitter, shared bottlenecks, route churn, partial observation, open-world rejection, and bounded selective delay. Endpoint-specific material is absent from forward discovery. A short-lived, single-use rendezvous capability is presented only after an authenticated route to an acceptable gateway has reached \textsc{Ready}. The adaptive schedule is an efficiency and overload mechanism whose public rate class is explicitly treated as leakage. Universal-rerandomization constructions are retained solely as research controls: one demonstrates a persistent algebraic tag, one is an ideal functionality, and one concrete transcription remains disabled after a reproducible algebraic inconsistency. The protocol is a research specification, not a production anonymity system.
+\textbf{Document status.} This document specifies one current experimental protocol. Its active profiles are \Uone{}, \Eone{}, \Rone{}, \Mtwo{}, \Wtwo{}, \Tone{}, and \Ttwo{}; \Tthree{} and \Tfour{} are analysis profiles. \Done{} is a non-normative private-directory strawman and has no wire identifier. Endpoint-specific material is absent from forward discovery, and a short-lived single-use capability is presented only after an authenticated route to an acceptable gateway has reached \textsc{Ready}. This does \emph{not} constitute a complete endpoint-anonymity system: descriptor publication and retrieval, directory enumeration, and directory--gateway collusion remain unresolved until a private-directory profile is implemented and independently reviewed. The reply public-key chain now uses multiplicative blinding; one honest relay makes the outgoing public key exactly uniform over non-identity group elements, while unlinkability of the complete encrypted reply layer remains conditional on key privacy and composition review. Receiver-anonymous universal-rerandomization constructions are retained only as research controls. The disabled concrete transcription records a project interpretation mismatch, not evidence of a defect in the cited construction. The protocol is a research specification, not a production anonymity system.
 \end{statusbox}
 
 \begin{abstract}
 Route discovery can reveal endpoint relationships, local topology, and stable correlation handles before a protected data path exists. \ProtoName{} is a privacy-enabled control-plane protocol that explores a bounded graph, returns authenticated gateway candidates through nested reverse encryption, and installs hop-local bidirectional forwarding state without transmitting a complete route or a network-wide discovery identifier.
 
-The active design separates endpoint rendezvous from route discovery. A destination creates random, short-lived, single-use capabilities and registers their commitments at selected rendezvous gateways. An initiator privately obtains a descriptor containing the capability and acceptable short-lived gateway pseudonyms. Forward \textsc{Discover} messages contain only a non-semantic service-query nonce. Every honest relay replaces that nonce, the adjacent branch token, the reply public key, the logical-message representation, the link-local transmission identifier, the padding, and the link ciphertext. A gateway returns its pseudonym inside an authenticated end-to-end candidate. The initiator selects a candidate, completes \textsc{Commit} and \textsc{Ready}, and only then sends the rendezvous capability through the active route. Atomic redemption prevents a second successful use.
+The active design separates endpoint rendezvous from route discovery. A destination creates random, short-lived, single-use capabilities and registers their commitments at selected rendezvous gateways. An authorized initiator is assumed to obtain a descriptor containing the capability and acceptable short-lived gateway pseudonyms through a mechanism outside Core. The non-normative \Done{} profile sketches private-information-retrieval and oblivious-relay variants, but no complete directory design is active. Forward \textsc{Discover} messages contain only a non-semantic service-query nonce. Every honest relay replaces that nonce, the adjacent branch token, the reply public key, the logical-message representation, the link-local transmission identifier, the padding, and the link ciphertext. A gateway returns its pseudonym inside an authenticated end-to-end candidate. The initiator selects a candidate, completes \textsc{Commit} and \textsc{Ready}, and only then sends the rendezvous capability through the active route. Atomic redemption prevents a second successful use.
 
-The protocol binds nine profiles. \Uone{} defines per-hop replacement and conditional batch-local unlinkability. \Eone{} defines half-open deadlines, equal-time precedence, candidate windows, delayed responses, cancellation races, tentative state, \textsc{Commit}, \textsc{Ready}, and local expiry. \Rone{} specifies descriptor distribution assumptions, generic gateway discovery, post-activation redemption, and explicit trust boundaries. \Mtwo{} gives each logical control operation one canonical variable-length encoding without semantic padding. \Wtwo{} defines canonical fragmentation into payloads of at most 992 bytes and bounded out-of-order reassembly. \Tone{} places those fragments in fixed 1,052-byte authenticated \textsc{Data}, \textsc{Ack}, or \textsc{Chaff} cells, applies cumulative selective acknowledgements, estimates a bounded hop-local retransmission timer, and retransmits only missing fragments with fresh link ciphertexts. \Ttwo{} defines fixed, quantized-adaptive, and work-conserving release modes, encrypted schedule negotiation, finite rate menus, hysteresis, weighted deficit-round-robin service, and fail-closed overload behavior. \Tthree{} defines an equal-bandwidth traffic-analysis experiment over multiple observable links, including correlated background traffic, observation-window scaling, a transparent route classifier, transition-boundary measurements, and bounded active demand probes. \Tfour{} converts those schedules into per-cell events with finite serializers, jitter, shared bottlenecks, heterogeneous observer clocks, route churn, partial observation, open-world unknown routes, and bounded selective-delay experiments.
+The protocol binds nine active or analysis profiles and records one non-normative directory strawman. \Uone{} defines per-hop replacement and conditional batch-local unlinkability. \Eone{} defines half-open deadlines, equal-time precedence, candidate windows, delayed responses, cancellation races, tentative state, \textsc{Commit}, \textsc{Ready}, and local expiry. \Rone{} specifies generic gateway discovery, post-activation redemption, and explicit trust boundaries. \Done{} makes the missing descriptor-distribution assumptions explicit without claiming a complete solution. \Mtwo{} gives each logical control operation one canonical variable-length encoding without semantic padding. \Wtwo{} defines canonical fragmentation into payloads of at most 992 bytes and bounded out-of-order reassembly. \Tone{} places those fragments in fixed 1,052-byte authenticated \textsc{Data}, \textsc{Ack}, or \textsc{Chaff} cells, applies cumulative selective acknowledgements, estimates a bounded hop-local retransmission timer, and retransmits only missing fragments with fresh link ciphertexts. \Ttwo{} defines fixed, quantized-adaptive, and work-conserving release modes, encrypted schedule negotiation, finite rate menus, hysteresis, weighted deficit-round-robin service, and fail-closed overload behavior. \Tthree{} defines an equal-bandwidth traffic-analysis experiment over multiple observable links, including correlated background traffic, observation-window scaling, a transparent route classifier, transition-boundary measurements, and bounded active demand probes. \Tfour{} converts those schedules into per-cell events with finite serializers, jitter, shared bottlenecks, heterogeneous observer clocks, route churn, partial observation, open-world unknown routes, and bounded selective-delay experiments.
 
-The retained reply path uses independent first-hop reply keys, additive relay tweaks over the Ristretto255 group, nested ChaCha20-Poly1305 encryption, Ed25519 candidate authentication, and domain-separated HKDF-SHA-256. Deterministic experiments show that bounded selective recovery materially improves route activation under independent cell loss. Across 30 runs per configuration, both evaluated \Tone{} modes activated every route up to twelve hops at loss rates of two and five percent; at twelve hops and ten percent loss, selective recovery activated 96.7 percent and fixed scheduling 93.3 percent, while unrecovered delivery activated none.
+The retained reply path uses independent first-hop reply keys and multiplicative Ristretto255 blinding factors. For a fixed non-identity incoming key, one honest uniform non-zero factor makes the outgoing public key exactly uniform. Candidate layers use nested ChaCha20-Poly1305 encryption, Ed25519 authentication, and one RFC~5869-style Extract-then-Expand HKDF-SHA-256 schedule. This public-key result does not prove key privacy or unlinkability of the complete encrypted reply composition. Deterministic experiments show that bounded selective recovery materially improves route activation under independent cell loss. Across 30 runs per configuration, both evaluated \Tone{} modes activated every route up to twelve hops at loss rates of two and five percent; at twelve hops and ten percent loss, selective recovery activated 96.7 percent and fixed scheduling 93.3 percent, while unrecovered delivery activated none.
 
 The \Ttwo{} model makes the scheduling trade-off explicit. Under equal overload, a low fixed class dropped 15 percent of offered work; a high fixed class delivered all work but emitted 1,600 chaff cells; and hysteretic adaptation delivered all work with a peak queue of 98 cells and 370 chaff cells. A simple observer distinguishing traces by public rate class had zero advantage against the evaluated fixed-high active/idle pair and perfect advantage against both evaluated adaptive policies. Fixed scheduling therefore retains only a conditional link-local slot-shape property; adaptive scheduling makes no activity-presence claim.
 
@@ -153,7 +154,7 @@ The \Tthree{} evaluation compares fixed, adaptive, and hybrid schedules under th
 
 The \Tfour{} packet-event model preserves an exact 2,240-cell public budget in every tracked 40-epoch trace while adding finite link service, clock error, jitter, bottlenecks, partial observation, and churn. Its open-world result exposes incompatible error modes: under network noise, fixed scheduling had monitored true-positive rate 0.083 and unknown false-positive rate 0; adaptive scheduling had monitored true-positive rate 0.917 and unknown false-positive rate 0.938. A transparent 60~ms selective-delay detector did not consistently outperform chance. These values are falsification results for one deterministic model, not evidence against stronger attacks.
 
-The paper also audits receiver-anonymous rerandomizable RCCA encryption and an updatable/randomizable public-key encryption proposal, with citations at the points where their results are used. Neither supplies an enabled endpoint-specific discovery primitive. The resulting protocol does not claim private directory lookup, protection from a colluding directory and gateway, global traffic-flow unlinkability, end-to-end congestion control, post-quantum security, or production readiness. Its purpose is to provide a coherent, testable baseline whose security claims, failures, recovery limits, queue behavior, bandwidth costs, and external dependencies are explicit.
+The paper also audits receiver-anonymous rerandomizable RCCA encryption and an updatable/randomizable public-key encryption proposal, with citations at the points where their results are used. Neither supplies an enabled endpoint-specific discovery primitive. The resulting protocol does not claim complete-system endpoint anonymity, private directory lookup, protection from a colluding directory and gateway, global traffic-flow unlinkability, end-to-end congestion control, post-quantum security, or production readiness. Its purpose is to provide a coherent, testable baseline whose security claims, failures, recovery limits, queue behavior, bandwidth costs, and external dependencies are explicit.
 \end{abstract}
 \linenumbers
 \modulolinenumbers[5]
@@ -172,7 +173,7 @@ The design problem is therefore not only to encrypt route discovery, but to mini
   \item Which destination should that gateway contact after a route has been selected and authenticated?
 \end{enumerate}
 
-The first question is answered by bounded graph discovery. The second is answered after route activation by a one-time capability delivered through a separately obtained private descriptor. This arrangement follows the general architectural lesson of rendezvous systems: service identity, introduction, and connection joining need not be represented by the same network-visible object. Tor onion services likewise separate descriptors, introduction points, and rendezvous points~\cite{toroverview,torrendezvous,torintro}. \ProtoName{} does not implement the Tor protocol and does not inherit its anonymity analysis; those specifications are cited as an operational precedent for separating discovery from endpoint rendezvous.
+The first question is answered by bounded graph discovery. The second is answered after route activation by a one-time capability delivered through a separately obtained private descriptor. This separation relocates rather than solves the endpoint-anonymity problem: until descriptor lookup is private and directory--gateway collusion is addressed, the complete system has no meaningful endpoint-anonymity claim. This arrangement follows the general architectural lesson of rendezvous systems: service identity, introduction, and connection joining need not be represented by the same network-visible object. Tor onion services likewise separate descriptors, introduction points, and rendezvous points~\cite{toroverview,torrendezvous,torintro}. \ProtoName{} does not implement the Tor protocol and does not inherit its anonymity analysis; those specifications are cited as an operational precedent for separating discovery from endpoint rendezvous.
 
 The protocol makes the following contributions.
 
@@ -214,7 +215,7 @@ Controlled anonymity-system experimentation also requires explicit modeling assu
 
 Golle, Jakobsson, Juels, and Syverson introduced universal re-encryption so that a mixer could rerandomize a public-key ciphertext without receiving the recipient key~\cite{gjjs}. The construction is attractive for discovery because a stable destination public key need not accompany the ciphertext. Rerandomization alone is not sufficient, however. Banfi, Maurer, and Ritsch show that security definitions for universal re-encryption must capture both anonymity and unlinkability, and they give a composable application-level treatment for mix networks~\cite{ure2023}.
 
-Replayable chosen-ciphertext security permits transformations that preserve the plaintext while protecting against other chosen-ciphertext modifications~\cite{rcca2003}. Receiver anonymity additionally requires that a ciphertext not disclose which admissible public key was used; the closely related key-privacy objective was formalized by Bellare et al.~\cite{keyprivacy2001}. Prabhakaran and Rosulek combined rerandomization with RCCA security but did not realize their stronger receiver-anonymity objective in the concrete scheme~\cite{rcca2007}. Wang et al. present a receiver-anonymous rerandomizable RCCA framework and a concrete construction based on rerandomizable tag smooth-projective hash functions~\cite{anonrcca2021}. The source is important to the security target discussed in \cref{sec:researchcrypto}, but the literal finite-field transcription audited for this project remains disabled.
+Replayable chosen-ciphertext security permits transformations that preserve the plaintext while protecting against other chosen-ciphertext modifications~\cite{rcca2003}. Receiver anonymity additionally requires that a ciphertext not disclose which admissible public key was used; the closely related key-privacy objective was formalized by Bellare et al.~\cite{keyprivacy2001}. Prabhakaran and Rosulek combined rerandomization with RCCA security but did not realize their stronger receiver-anonymity objective in the concrete scheme~\cite{rcca2007}. Wang et al. present a receiver-anonymous rerandomizable RCCA framework and a concrete construction based on rerandomizable tag smooth-projective hash functions~\cite{anonrcca2021}. The source is important to the security target discussed in \cref{sec:researchcrypto}, but the project's literal representative-level transcription remains disabled because its mapping of the abstract operation does not satisfy the required equation. The likely explanation is a transcription or interpretation mismatch; this is not presented as a flaw in the cited construction.
 
 Dowling et al. construct updatable and randomizable public-key encryption as a component of strongly anonymous ratcheted key exchange~\cite{urpke2022}. Their randomization interface updates an encryption key and a ciphertext together. That is useful in its intended ratcheting setting, but it is not the ciphertext-only, same-recipient, public transform needed by the earlier endpoint-specific discovery design. The paper is therefore treated as a related primitive rather than a drop-in replacement.
 
@@ -226,7 +227,7 @@ Tor onion services publish short-lived service descriptors containing introducti
 
 \subsection{Standard cryptographic components}
 
-HPKE defines hybrid public-key encryption from a KEM, KDF, and AEAD with explicit context binding~\cite{hpke}. The retained reply construction follows this discipline but uses an additive \code{ristretto255} public-key tweak not registered by HPKE, and is therefore described as HPKE-inspired rather than RFC~9180 compatible. Group encodings follow RFC~9496~\cite{ristretto}; key derivation uses HKDF-SHA-256~\cite{hkdf}; authenticated encryption uses ChaCha20-Poly1305~\cite{chacha}; and responder authentication uses Ed25519~\cite{eddsa}.
+HPKE defines hybrid public-key encryption from a KEM, KDF, and AEAD with explicit context binding~\cite{hpke}. The retained reply construction follows this discipline but uses multiplicative \code{ristretto255} public-key blinding in a custom KEM not registered by HPKE, and is therefore described as HPKE-inspired rather than RFC~9180 compatible. HPKE supplies no inherited receiver-anonymity theorem for this custom composition. Group encodings follow RFC~9496~\cite{ristretto}; key derivation uses HKDF-SHA-256~\cite{hkdf}; authenticated encryption uses ChaCha20-Poly1305~\cite{chacha}; and responder authentication uses Ed25519~\cite{eddsa}.
 
 \section{System model, roles, and claims}
 \label{sec:model}
@@ -259,7 +260,7 @@ The active rendezvous profile uses five logical roles:
   \item $R$: ordinary route relay.
 \end{itemize}
 
-Roles are logical rather than necessarily distinct machines. The directory distributes a private descriptor to an authorized initiator. The gateway stores capability commitments and, after redemption, receives a local endpoint handle. The core route protocol does not define how the directory hides queries, authenticates recipients, distributes records, or reaches consensus.
+Roles are logical rather than necessarily distinct machines. The directory distributes a private descriptor to an authorized initiator. The gateway stores capability commitments and, after redemption, receives a local endpoint handle. Core does not define how the directory hides queries, authenticates recipients, distributes records, or reaches consensus. \Done{} records a non-normative two-replica PIR and oblivious-relay strawman so this dependency is visible rather than buried.
 
 \subsection{Adversary}
 
@@ -383,7 +384,7 @@ $\nu_i$ & query nonce & Non-semantic 32-byte value on branch hop $i$, replaced a
 $\pi_G$ & gateway pseudonym & Short-lived identifier returned only inside the protected candidate payload. \\
 $\Group,q,B,\Identity$ & reply group & Prime-order \code{ristretto255} group, order, generator, and identity. \\
 $(x_i,X_i=x_iB)$ & reply key & Ephemeral branch reply secret and public key at depth $i$. \\
-$\delta_i$ & reply tweak & Relay scalar such that $X_{i+1}=X_i+\delta_iB$. \\
+$b_i$ & reply blinding factor & Non-zero relay scalar such that $X_{i+1}=b_iX_i$ and $x_{i+1}=b_ix_i\bmod q$. \\
 $\beta_i$ & branch token & Fresh capability meaningful only on one adjacent direction and link epoch. \\
 $\gamma_i$ & candidate token & Fresh reverse capability meaningful only on one adjacent direction. \\
 $\lambda_i^{\rightarrow}$ & route label & Parent-facing forward capability used by \textsc{Commit} and forward data. \\
@@ -634,10 +635,10 @@ For each admitted child, an honest relay creates a representation independent of
 \Require decoded branch $(\beta_i,X_i,\nu_i,d)$ and child peer $c$
 \State enforce branch, peer, node, cell, byte, work, and time limits
 \State $\beta_{i+1}\sample\{0,1\}^{128}\setminus\{0^{128}\}$
-\State $\delta_i\sample\Zq\setminus\{0\}$
-\State $X_{i+1}\gets X_i+\delta_iB$
+\State $b_i\sample\Zq\setminus\{0\}$
+\State $X_{i+1}\gets b_iX_i$
 \State $\nu_{i+1}\sample\{0,1\}^{256}\setminus\{0^{256}\}$
-\State store child mapping $(\beta_i,c,\beta_{i+1},\delta_i,X_i,X_{i+1},t_e)$
+\State store child mapping $(\beta_i,c,\beta_{i+1},b_i,X_i,X_{i+1},t_e)$
 \State $m'\gets\mathsf{Discover}(\beta_{i+1},X_{i+1},\nu_{i+1},d-1,\ldots)$
 \State $M'\gets\Encode_{\Mtwo}(m',\code{0101})$
 \State $\mu'\sample\{0,1\}^{128}\setminus\{0^{128}\}$
@@ -654,7 +655,7 @@ In the active \Rone{} forward transform, the outgoing branch token, service nonc
 \end{proposition}
 
 \begin{proof}
-Tokens, nonces, message identifiers, padding, and link nonces are freshly sampled. The reply key is additively changed by a non-zero random scalar. The logical message is reconstructed and fragmented under a new local identifier. Adjacent-link ciphertext is produced under the outgoing link key. The only intentionally preserved values are bounded semantic controls such as remaining hop limit and profile identifiers.
+Tokens, nonces, message identifiers, padding, and link nonces are freshly sampled. The reply key is multiplied by an independently sampled non-zero scalar. In the prime-order group this makes the outgoing public key uniform over non-identity elements for any fixed non-identity input. The logical message is reconstructed and fragmented under a new local identifier. Adjacent-link ciphertext is produced under the outgoing link key. The only intentionally preserved values are bounded semantic controls such as remaining hop limit and profile identifiers.
 \end{proof}
 
 \section{Candidate return and route activation}
@@ -673,16 +674,16 @@ The gateway pseudonym is protected inside the sealed payload. Relays learn only 
 
 \subsection{Nested reverse layers}
 
-At relay $n_i$, the reverse layer contains the stored tweak, adjacent route labels, child candidate token, expiry, and child capsule:
+At relay $n_i$, the reverse layer contains the stored blinding factor, adjacent route labels, child candidate token, expiry, and child capsule:
 \begin{equation}
-L_i=(\delta_i,\lambda_i^{\rightarrow},\lambda_i^{\leftarrow},
+L_i=(b_i,\lambda_i^{\rightarrow},\lambda_i^{\leftarrow},
 \gamma_i,t_e,C_{i+1}).
 \end{equation}
 The relay seals $L_i$ to $X_i$ and forwards the resulting capsule to its parent under a fresh reverse token.
 
 \subsection{Initiator opening}
 
-Starting with $x_0$, the initiator opens the outer layer, obtains $\delta_0$, derives $x_1=x_0+\delta_0\bmod q$, and repeats until it reaches the gateway payload.
+Starting with $x_0$, the initiator opens the outer layer, obtains $b_0$, derives $x_1=b_0x_0\bmod q$, and repeats until it reaches the gateway payload.
 
 \begin{algorithm}[ht]
 \caption{Initiator validates one nested candidate}
@@ -692,10 +693,10 @@ Starting with $x_0$, the initiator opens the outer layer, obtains $\delta_0$, de
 \State $x\gets x_0$; $C\gets C_0$; $\mathsf{path}\gets[\ ]$
 \Loop
   \State $P\gets\Open_{\mathsf{TRKEM}}(x,C,\mathsf{context})$
-  \If{$P$ is a relay layer $(\delta,\lambda^{\rightarrow},\lambda^{\leftarrow},\gamma,t_e,C')$}
+  \If{$P$ is a relay layer $(b,\lambda^{\rightarrow},\lambda^{\leftarrow},\gamma,t_e,C')$}
     \State reject if expired or non-canonical
     \State append local route material to $\mathsf{path}$
-    \State $x\gets x+\delta\bmod q$; $C\gets C'$
+    \State $x\gets bx\bmod q$; $C\gets C'$
   \ElsIf{$P$ is a signed gateway payload}
     \State verify transcript, descriptor key, offer deadline, and final reply key
     \State reject unless $P.\pi_G\in\mathsf{RDesc}.\mathsf{acceptable\_gateways}$
@@ -1353,33 +1354,45 @@ A conforming \Tfour{} report publishes all clock, jitter, capacity, bottleneck, 
 
 \subsection{Reply-key transformation}
 
-For one branch, the initiator samples $x_0\in\Zq\setminus\{0\}$ and publishes $X_0=x_0B$. Relay $i$ samples $\delta_i\in\Zq\setminus\{0\}$ and computes
+For one branch, the initiator samples $x_0\in\Zq\setminus\{0\}$ and publishes $X_0=x_0B$. Relay $i$ samples $b_i\in\Zq\setminus\{0\}$ and computes
 \begin{equation}
-X_{i+1}=X_i+\delta_iB.
-\label{eq:tweak}
+X_{i+1}=b_iX_i.
+\label{eq:blindpublic}
 \end{equation}
 The initiator later reconstructs
 \begin{equation}
-x_{i+1}=x_i+\delta_i\pmod q.
-\label{eq:tweaksecret}
+x_{i+1}=b_ix_i\pmod q.
+\label{eq:blindsecret}
 \end{equation}
 
-\begin{proposition}[Tweak consistency]
-If $X_i=x_iB$, then the public and secret transformations in \cref{eq:tweak,eq:tweaksecret} satisfy $X_{i+1}=x_{i+1}B$.
+\begin{proposition}[Blinding consistency]
+If $X_i=x_iB$, then the public and secret transformations in \cref{eq:blindpublic,eq:blindsecret} satisfy $X_{i+1}=x_{i+1}B$.
 \end{proposition}
 
 \begin{proof}
-By distributivity in the prime-order group,
-$(x_i+\delta_i)B=x_iB+\delta_iB=X_i+\delta_iB$.
+By compatibility of scalar multiplication,
+$(b_ix_i)B=b_i(x_iB)=b_iX_i$.
 \end{proof}
 
-Each first-hop branch uses an independent root key. Relays reject the identity encoding and non-canonical points according to RFC~9496~\cite{ristretto}.
+\begin{proposition}[Exact public-key distribution]
+For fixed non-identity $X\in\Group$, if $b$ is uniform in $\Zq\setminus\{0\}$, then $bX$ is uniform over $\Group\setminus\{\Identity\}$.
+\end{proposition}
+
+\begin{proof}
+Because $\Group$ has prime order and $X\ne\Identity$, $X$ is a generator. The map $b\mapsto bX$ is a bijection from the non-zero scalars to the non-identity group elements.
+\end{proof}
+
+This mirrors the multiplicative-blinding pattern used by Sphinx~\cite{sphinx}, but the proposition covers only the public-key sequence. It does not transfer the Sphinx proof to the custom reply format and does not establish key privacy of the encapsulation or unlinkability of complete ciphertext layers. Each first-hop branch uses an independent root key. Relays reject zero factors, identity keys, and non-canonical points according to RFC~9496~\cite{ristretto}.
 
 \subsection{Reply KEM and nested encryption}
 
-The reply construction is HPKE-inspired: it combines ephemeral group agreement, domain-separated HKDF-SHA-256, and ChaCha20-Poly1305~\cite{hpke,hkdf,chacha}. It is not RFC~9180 HPKE because the public key is deliberately tweakable and no registered HPKE KEM provides the same interface. Context binds protocol version, message class, suite, direction, route stage, and the exact public keys used.
+For encapsulation $R=eB$ and shared point $Z=eX$, the custom reply seal constructs a domain-separated context and performs one HKDF-Extract followed by one HKDF-Expand of 44 bytes. The output is split into a 32-byte ChaCha20-Poly1305 key and a 12-byte nonce, following the Extract-then-Expand structure of RFC~5869~\cite{hkdf}. No Expand output is reused as a new pseudorandom key.
 
-Fresh encapsulation randomness and AEAD nonce are required for every layer. Decryption, point-validation, transcript, and authentication failures map to one externally visible rejection class.
+The construction is HPKE-inspired because it combines ephemeral group agreement, a labeled KDF, and AEAD context binding~\cite{hpke,chacha}; it is not RFC~9180 HPKE and inherits no HPKE interoperability or receiver-anonymity claim. Context binds protocol version, C1 encoding version, message class, suite, direction, route stage, encapsulated point, recipient public key, and application information.
+
+The production-facing sealing API generates $e$ internally from a cryptographically secure random source and accepts no deterministic-ephemeral parameter. A separately gated, non-exported test-support module supplies deterministic ephemerals solely for vectors and reproducible simulations. Reusing $e$ for the same recipient and context would repeat the encapsulated point, derived key, and nonce and is forbidden.
+
+Fresh encapsulation randomness is required for every layer. Decryption, point-validation, transcript, and authentication failures map to one externally visible rejection class. Full passive reply-layer unlinkability remains conditional on key privacy or recipient anonymity of this custom KEM/PKE in the relevant multi-user chosen-ciphertext setting~\cite{keyprivacy2001}; it is not established by public-key blinding alone.
 
 \subsection{Gateway authentication}
 
@@ -1406,7 +1419,7 @@ The protocol-facing security target was expressed independently as correctness, 
 
 \subsection{Concrete k=2 audit}
 
-A deterministic transcription implements the cited paper's $k=2$ key generation, encryption, decryption, canonical encoding, mutation rejection, and linear strand equations~\cite{anonrcca2021}. The literal finite-field interpretation uses the map
+A deterministic transcription implements the cited paper's $k=2$ key generation, encryption, decryption, canonical encoding, mutation rejection, and linear strand equations~\cite{anonrcca2021}. The project's literal representative-level transcription interpreted the relevant operation using the map
 \begin{equation}
 \mu(u)=u\bmod q
 \end{equation}
@@ -1421,7 +1434,7 @@ For the valid small chain $q=5$, $p=11$, and $r=23$, choose $u=3$ and $v=4$, bot
 $\mu(u)\mu(v)\bmod q=3\cdot4\bmod5=2$.
 \end{proof}
 
-An exhaustive checker repeats this test over every admissible pair in several small Cunningham chains and finds a counterexample in every nontrivial chain examined. This is a narrow audit of the literal implementation path. It does not refute the paper's generic framework, an unrecorded embedding, or an author-confirmed correction. The corresponding suite identifier remains disabled and every network operation fails closed.
+An exhaustive checker repeats this test over every admissible pair in several small Cunningham chains and finds a counterexample in every nontrivial chain examined. This is a narrow audit of the project transcription. The overwhelmingly plausible interpretation is that an abstract representation, embedding, projection, or group action was omitted or misread. The result does not refute the paper's generic framework, a correct concrete interpretation, or an author-confirmed correction. The corresponding suite identifier remains disabled and every network operation fails closed.
 
 \subsection{Updatable and randomizable PKE}
 
@@ -1442,7 +1455,7 @@ This property is stronger than merely encrypting a destination selector against 
 
 \subsection{Per-hop replacement argument}
 
-At an honest relay, all adjacent capabilities and wire representations are replaced. The reply key is algebraically related because the initiator must reconstruct it, but the public point changes by an independently sampled group element. A passive downstream relay lacks the prior point unless it colludes with an upstream relay. The active protocol makes no claim that the custom reply-key relation alone resists every malicious algebraic tag; candidate authentication and failure normalization limit accepted modifications, while the explicit active-tag experiment focuses on the discovery field.
+At an honest relay, all adjacent capabilities and wire representations are replaced. The initiator must reconstruct the reply-key sequence, but one honest multiplicative blinding factor makes the outgoing public point exactly uniform over non-identity elements. This removes the public key itself as an equality handle. It does not prove that the encapsulated point and ciphertext are key-private, nor that the full nested composition resists malicious algebraic tags. Candidate authentication and failure normalization limit accepted modifications, while the explicit active-tag experiment focuses on the discovery field.
 
 \subsection{Capability confidentiality and replay}
 
@@ -1859,7 +1872,11 @@ Tests establish that the raw capability does not occur in encoded \textsc{Discov
 
 \subsection{Private descriptor distribution}
 
-The largest new dependency is $Q$. A complete deployment needs a private lookup and descriptor distribution protocol. Possible mechanisms include replicated encrypted descriptors, authenticated access control, oblivious or private information retrieval, and gateway/operator separation. None is selected here.
+The largest unresolved dependency is $Q$. \Rone{} removes endpoint-specific selectors from forward discovery, but an authorized initiator still needs the current capability, acceptable gateway pseudonyms, and gateway authentication material. Therefore Core alone provides no meaningful complete-system endpoint-anonymity claim.
+
+\Done{} is a non-normative strawman. For each epoch the destination derives an unlinkable lookup handle and descriptor-encryption key from an authorization secret, encrypts a padded short-lived descriptor, and publishes the record to independently operated replicas. The preferred mode uses at least two non-colluding private-information-retrieval replicas, following the architectural precedent that private presence and rendezvous systems such as DP5 make directory trust and leakage assumptions explicit~\cite{dp5}. A weaker deployment mode sends a fixed-size encrypted lookup through an Oblivious HTTP relay; this separates the client's network address from the request content only while relay and gateway do not collude, and it does not hide the queried handle from the gateway~\cite{ohttp}.
+
+Before \Done{} can become active, the protocol must select an exact query construction and specify publication padding, epoch overlap, authorization, revocation, rollback and equivocation handling, replica independence, source-address protection, enumeration resistance, and denial-of-service limits. Directory--gateway correlation, synchronized publication and lookup timing, or colluding replicas can still identify the endpoint. These are load-bearing security assumptions, not optional operational details.
 
 \subsection{Gateway correlation}
 
@@ -1871,7 +1888,7 @@ A gateway can correlate registration time, redemption time, endpoint handle, and
 
 \subsection{Reply-key analysis}
 
-The additive reply-key transform and custom KEM require an independent analysis for related-key behavior, malicious point selection, active tagging, transcript substitution, and side channels. Standard components do not automatically prove security of their composition.
+Multiplicative blinding establishes an exact uniform distribution for the public reply key after one honest relay. The custom reply KEM still requires an independent key-privacy and multi-user chosen-ciphertext analysis, including malicious point selection, active tagging, transcript substitution, failure timing, and side channels. Standard components do not automatically prove security of their composition.
 
 \subsection{Post-quantum migration}
 
@@ -1892,7 +1909,8 @@ A staged implementation should preserve module boundaries:
   \item a deterministic \Eone{} state machine separated from transport I/O;
   \item constant-time or timing-normalized cryptographic failure paths;
   \item a persistent, atomic gateway capability store with concurrency tests;
-  \item an independent implementation of the reply KEM and candidate transcript;
+  \item an independent implementation and game-based review of the reply KEM, multiplicative blinding chain, and candidate transcript;
+  \item a concrete private-directory prototype derived from \Done{}, including directory--gateway collusion and enumeration tests;
   \item property-based and network-emulation tests for selective ACKs, timeout ambiguity, replay, and bounded retry cleanup;
   \item a complete schedule-negotiation state machine covering loss, simultaneous offers, rejection, restart, and peer disagreement;
   \item differential scheduler tests for weighted service, queue admission, maximum-class overload, and fixed-profile breaks;
@@ -1902,7 +1920,7 @@ A staged implementation should preserve module boundaries:
   \item external cryptographic, transport, side-channel, and protocol review before any production claim.
 \end{enumerate}
 
-The disabled C2 transcription should remain reproducible. An author query should identify the exact equation, parameter chain, interpretation, counterexample, and executable checker, and ask whether an omitted embedding, different group action, or erratum resolves the discrepancy. A correction may reopen an endpoint-specific suite, but must not silently change the active \Rone{} security model.
+The disabled C2 transcription should remain reproducible and should be described as a project interpretation/transcription audit, not as evidence of a defect in the cited construction. An author query should identify the exact equation, parameter chain, interpretation, counterexample, and executable checker, and ask whether an omitted embedding, different group action, or erratum resolves the discrepancy. A correction may reopen an endpoint-specific suite, but must not silently change the active \Rone{} security model.
 
 \section{Conclusion}
 \label{sec:conclusion}
@@ -1911,7 +1929,7 @@ The disabled C2 transcription should remain reproducible. An author query should
 
 The semantic, fragmentation, recovery, and scheduling layers are distinct. Logical messages remain canonical and variable length; canonical fragments are bounded and reassembled before route semantics execute; and every adjacent-link cell has fixed length. Cumulative selective acknowledgements and bounded retries repair missing fragments without copying a recovery identifier across a relay. \Ttwo{} then chooses fixed, quantized-adaptive, or work-conserving release, bounds rate transitions and overload, and divides admitted new DATA with weighted deficit round robin.
 
-Route, reassembly, sender, acknowledgement, retry, negotiation, queue, schedule, registration, and redemption state have explicit lifetimes and budgets. The measured reliability and overload improvements are accompanied by explicit retry, queueing, chaff, and public-rate costs. The security claims distinguish per-hop representation replacement and conditional fixed-epoch shape from adaptive-rate leakage and global traffic-flow anonymity, exposing the directory/gateway and congestion-management trust boundaries rather than hiding them. \Tthree{} demonstrates that equal total bandwidth is not equal count-trace shape. \Tfour{} then shows that packet timestamps, clock assumptions, partial observation, route churn, and unknown routes materially change the evaluation. Its bounded selective-delay detector is retained as a regression test but supplies no active-security theorem.
+Route, reassembly, sender, acknowledgement, retry, negotiation, queue, schedule, registration, and redemption state have explicit lifetimes and budgets. The measured reliability and overload improvements are accompanied by explicit retry, queueing, chaff, and public-rate costs. The security claims distinguish per-hop representation replacement and conditional fixed-epoch shape from adaptive-rate leakage and global traffic-flow anonymity, exposing the directory/gateway and congestion-management trust boundaries rather than hiding them. In particular, Core does not complete endpoint anonymity until a private descriptor-distribution profile is implemented and reviewed. \Tthree{} demonstrates that equal total bandwidth is not equal count-trace shape. \Tfour{} then shows that packet timestamps, clock assumptions, partial observation, route churn, and unknown routes materially change the evaluation. Its bounded selective-delay detector is retained as a regression test but supplies no active-security theorem.
 
 The unresolved universal-rerandomization candidates remain cited, executable, and falsifiable but are not active dependencies. The resulting document is a coherent interoperability and review baseline, not a production-ready anonymity guarantee.
 
@@ -1927,7 +1945,9 @@ An implementation claiming \Uone{}, \Eone{}, \Rone{}, \Mtwo{}, \Wtwo{}, \Tone{},
   \item omit endpoint capabilities, endpoint keys, endpoint addresses, descriptor commitments, gateway pseudonyms, global discovery identifiers, and complete routes from \textsc{Discover};
   \item encode the active suite as \code{0101} and require exactly one non-zero 32-byte service-query nonce;
   \item replace branch token, query nonce, reply public key, logical-message encoding, wire message identifier, padding, and link ciphertext for every forwarded child;
-  \item use an independent root reply key for every first-hop branch;
+  \item use an independent root reply key for every first-hop branch and update child keys as $X_{i+1}=b_iX_i$ for independently sampled non-zero $b_i$;
+  \item recover reverse-layer secrets as $x_{i+1}=b_ix_i\bmod q$ and reject zero factors, identity keys, and non-canonical encodings;
+  \item derive each reply-layer AEAD key and nonce with one HKDF-Extract and one 44-byte HKDF-Expand, and expose no deterministic-ephemeral input in the production API;
   \item verify the gateway pseudonym only inside the authenticated candidate payload and only against the private descriptor;
   \item create tentative state on \textsc{Candidate}, reserve pending state on \textsc{Commit}, and authorize data only after final \textsc{Ready};
   \item transmit the rendezvous capability only inside an end-to-end protected active route;
@@ -1953,7 +1973,7 @@ An implementation claiming \Uone{}, \Eone{}, \Rone{}, \Mtwo{}, \Wtwo{}, \Tone{},
   \item for \Tthree{} comparisons, use exact per-link super-epoch budgets, disjoint balanced training and test samples, training-only normalization, reported baselines, bounded probes, and explicit failure accounting;
   \item retain no \Tthree{} or \Tfour{} trace, feature, route label, token kind, clock, churn, classifier, or probe metadata in forwarding messages or route-semantic state;
   \item for \Tfour{} comparisons, publish exact packet, clock, jitter, bottleneck, observation, churn, unknown-class, threshold, selective-delay, service, budget, and cleanup parameters; use disjoint unknown calibration and unknown test routes; and report monitored TPR and unknown FPR separately;
-  \item refrain from private-directory, directory/gateway-collusion, global traffic-flow, hidden-adaptation, end-to-end congestion, post-quantum, or production-security claims unless separately specified and reviewed.
+  \item refrain from complete-system endpoint-anonymity, private-directory, directory/gateway-collusion, full reply-layer unlinkability, global traffic-flow, hidden-adaptation, end-to-end congestion, post-quantum, or production-security claims unless separately specified and reviewed.
 \end{enumerate}
 
 \section{Message-class summary}
@@ -2009,7 +2029,7 @@ Provider & Suite & Network status & Purpose \\
 R1 rendezvous capability & \code{0101} & Active experimental & Generic gateway discovery; endpoint capability after \textsc{Ready}. \\
 C1 URE negative control & \code{0001} & Research only & Reproduce persistent algebraic ratio tagging. \\
 C2 symbolic oracle & \code{0002} & Research only & Exercise ideal replay-equivalence and mutation-rejection placement. \\
-C2 $k=2$ transcription & \code{7f02} & Disabled & Reproduce source equations and finite-field audit; fail closed. \\
+C2 $k=2$ transcription & \code{7f02} & Disabled & Reproduce the project transcription and interpretation audit; fail closed. \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -2207,6 +2227,18 @@ Tor Specifications, section 13.4, accessed July 2026.
 The Tor Project,
 ``Tor Rendezvous Specification, Version 3: The Rendezvous Protocol,''
 Tor Specifications, section 13.5, accessed July 2026.
+
+\bibitem{dp5}
+G. Danezis, N. Borisov, and I. Goldberg,
+``Privacy-Preserving Presence Sharing,''
+\emph{Proceedings on Privacy Enhancing Technologies}, vol. 2015, no. 2, 2015, pp. 4--24,
+doi:10.1515/popets-2015-0008.
+
+\bibitem{ohttp}
+M. Thomson and C. A. Wood,
+``Oblivious HTTP,''
+RFC 9458, January 2024,
+doi:10.17487/RFC9458.
 
 \bibitem{hpke}
 R. Barnes, K. Bhargavan, B. Lipp, and C. A. Wood,
