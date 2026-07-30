@@ -1,0 +1,5 @@
+scenario,runs,route_success_rate,mean_transmissions,mean_wire_bytes,mean_crypto_failures,mean_tags_created,mean_downstream_tag_observations,cleanup_rate
+c1-clean,100,1,16,16832,0,0,0,1
+c1-ratio-tag,100,0,8,8416,1,2,1,1
+c2-symbolic-clean,100,1,16,16832,0,0,0,1
+c2-symbolic-marker-tag,100,0,4,4208,1,1,0,1

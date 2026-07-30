@@ -1,7 +1,8 @@
 """Deterministic discrete-event model for the Trahens route lifecycle.
 
 The model integrates the U1 branch transformations, the E1 event lifecycle, the
-C1 cryptographic operations, the M1 variable-length message codec, and the W2 fixed-size adjacent-link cell profile.
+C1 or symbolic C2 eligibility operations, the M2 suite-agile variable-length
+message codec, and the W2 fixed-size adjacent-link cell profile.
 It remains a protocol model rather than a packet-timing or traffic-analysis
 benchmark.
 """
@@ -17,7 +18,7 @@ import hmac
 import random
 from typing import Any, Iterable
 
-from trahens_codec.m1w2 import (
+from trahens_codec.m2w2 import (
     CELL_RECORD_BYTES,
     CandidateRecord as WireCandidateRecord,
     CodecError,
@@ -36,6 +37,7 @@ from trahens_codec.m1w2 import (
 )
 from trahens_crypto import ristretto as r255
 from trahens_crypto.c1 import (
+    C1_SUITE_ID,
     CryptoError,
     URECiphertext,
     build_endpoint_keys,
@@ -43,6 +45,13 @@ from trahens_crypto.c1 import (
     ure_encrypt,
     ure_is_eligible,
     ure_rerandomize,
+)
+from trahens_crypto.c2_ideal import (
+    C2Error,
+    C2IdealOracle,
+    C2_SUITE_ID,
+    apply_literal_tag,
+    contains_literal_tag,
 )
 from trahens_crypto.candidate import (
     build_responder_payload,
@@ -134,6 +143,7 @@ class EventLifecycleConfig:
     duplicate_probability: float = 0.0
     forced_drop_types: tuple[str, ...] = ()
     enable_crypto: bool = True
+    eligibility_profile: str = "c1"
     wire_tamper_probability: float = 0.0
     reassembly_timeout_ms: int = 40
     reassembly_max_messages: int = 128
@@ -232,6 +242,8 @@ class EventLifecycleConfig:
             value = getattr(self, name)
             if not 0.0 <= value <= 1.0:
                 raise ValueError(f"{name} must be between 0 and 1")
+        if self.eligibility_profile not in {"c1", "c2-ideal"}:
+            raise ValueError("eligibility_profile must be c1 or c2-ideal")
         if self.tag_scalar_seed < 0:
             raise ValueError("tag_scalar_seed cannot be negative")
         if not 0.0 <= self.malicious_fraction <= 1.0:
@@ -281,7 +293,7 @@ class _BranchContext:
     branch_token: bytes = b""
     reply_public_key: bytes | None = None
     reply_delta: bytes | None = None
-    eligibility_capsule: URECiphertext | None = None
+    eligibility_capsule: bytes | None = None
     root_reply_secret: bytes | None = None
     status: str = "live"
     child_context_ids: set[int] = field(default_factory=set)
@@ -409,6 +421,22 @@ class _LifecycleSimulator:
             config.tag_scalar_seed.to_bytes(8, "big"),
             dst=b"Trahens-C1-active-tag-scalar-v1",
         )
+        self.c2_tag = hashlib.sha256(
+            b"Trahens-C2-active-tag-v1"
+            + config.tag_scalar_seed.to_bytes(8, "big")
+        ).digest()[:16]
+        self.c2_oracle: C2IdealOracle | None = None
+        self.c2_endpoint_keys = None
+        if config.eligibility_profile == "c2-ideal":
+            self.c2_oracle = C2IdealOracle(
+                b"Trahens-event-C2/" + config.seed.to_bytes(8, "big")
+            )
+            self.c2_endpoint_keys = self.c2_oracle.keygen(
+                f"event-target/{config.seed}".encode("ascii")
+            )
+            self.crypto_suite_id = C2_SUITE_ID
+        else:
+            self.crypto_suite_id = C1_SUITE_ID
 
         self.queue: list[_ScheduledEvent] = []
         self.sequence = 0
@@ -665,13 +693,69 @@ class _LifecycleSimulator:
             dst=b"Trahens-event-model/" + label,
         )
 
+    def _encrypt_eligibility(self) -> bytes:
+        if self.config.eligibility_profile == "c2-ideal":
+            if self.c2_oracle is None or self.c2_endpoint_keys is None:
+                raise C2Error("C2 ideal oracle is unavailable")
+            return self.c2_oracle.encrypt(self.c2_endpoint_keys.public)
+        return ure_encrypt(
+            self.endpoint_keys.eligibility_public,
+            r0=self._scalar(b"ure-root-r0"),
+            r1=self._scalar(b"ure-root-r1"),
+        ).encode()
+
+    def _rerandomize_eligibility(self, capsule: bytes) -> bytes:
+        if self.config.eligibility_profile == "c2-ideal":
+            if self.c2_oracle is None:
+                raise C2Error("C2 ideal oracle is unavailable")
+            return self.c2_oracle.rerandomize(capsule)
+        return ure_rerandomize(
+            URECiphertext.decode(capsule),
+            s0=self._scalar(b"ure-s0"),
+            s1=self._scalar(b"ure-s1"),
+        ).encode()
+
+    def _eligibility_accepts(self, capsule: bytes) -> bool:
+        if self.config.eligibility_profile == "c2-ideal":
+            return bool(
+                self.c2_oracle
+                and self.c2_endpoint_keys
+                and self.c2_oracle.is_eligible(
+                    self.c2_endpoint_keys.secret, capsule
+                )
+            )
+        try:
+            return ure_is_eligible(
+                self.endpoint_keys.eligibility_secret,
+                URECiphertext.decode(capsule),
+            )
+        except (CryptoError, ValueError):
+            return False
+
+    def _apply_active_tag(self, capsule: bytes) -> bytes:
+        if self.config.eligibility_profile == "c2-ideal":
+            return apply_literal_tag(capsule, self.c2_tag)
+        return apply_ratio_tag(
+            URECiphertext.decode(capsule), self.tag_scalar
+        ).encode()
+
+    def _matches_active_tag(self, capsule: bytes) -> bool:
+        if self.config.eligibility_profile == "c2-ideal":
+            return contains_literal_tag(capsule, self.c2_tag)
+        try:
+            return matches_ratio_tag(
+                URECiphertext.decode(capsule), self.tag_scalar
+            )
+        except (CryptoError, ValueError):
+            return False
+
     def _make_discover_body(
         self,
         *,
         hop_remaining: int,
         fanout_class: int,
         reply_public_key: bytes,
-        eligibility_capsule: URECiphertext,
+        eligibility_capsule: bytes,
         branch_token: bytes | None = None,
     ) -> bytes:
         return encode_discover(
@@ -683,6 +767,7 @@ class _LifecycleSimulator:
                 options=0,
                 reply_public_key=reply_public_key,
                 eligibility_capsule=eligibility_capsule,
+                crypto_suite_id=self.crypto_suite_id,
             )
         )
 
@@ -701,6 +786,7 @@ class _LifecycleSimulator:
                 expiry_class=1,
                 layer_count=layer_count,
                 candidate_blob=candidate_blob,
+                crypto_suite_id=self.crypto_suite_id,
             )
         )
 
@@ -730,6 +816,7 @@ class _LifecycleSimulator:
                 generation=generation,
                 expiry_class=1,
                 protected_body=protected,
+                crypto_suite_id=self.crypto_suite_id,
             )
         )
 
@@ -802,6 +889,19 @@ class _LifecycleSimulator:
             self.codec_failures += 1
             return
 
+        # The suite carried by every encrypted W2 fragment is an immutable
+        # property of the reassembly context.  The completed M2 envelope must
+        # repeat the same suite and the simulator instance must be configured
+        # for that suite.  Perform this check before allocating any semantic
+        # branch, candidate, or route state.
+        if fragment.crypto_suite_id != self.crypto_suite_id:
+            self.codec_failures += 1
+            return
+        decoded_suite = getattr(decoded, "crypto_suite_id", None)
+        if decoded_suite is not None and decoded_suite != fragment.crypto_suite_id:
+            self.codec_failures += 1
+            return
+
         expected_kind = str(data["logical_kind"])
         expected_type = {
             "DISCOVER": MessageType.DISCOVER,
@@ -831,7 +931,7 @@ class _LifecycleSimulator:
             and self.config.active_tagging
             and int(data["receiver"]) in self.malicious_nodes
             and isinstance(decoded, WireDiscoverRecord)
-            and matches_ratio_tag(decoded.eligibility_capsule, self.tag_scalar)
+            and self._matches_active_tag(bytes(decoded.eligibility_capsule))
         ):
             self.tag_observations += 1
         self._schedule_local(
@@ -1034,11 +1134,7 @@ class _LifecycleSimulator:
                 try:
                     root_secret = self._scalar(b"root-reply")
                     root_public = r255.scalarmult_base(root_secret)
-                    capsule = ure_encrypt(
-                        self.endpoint_keys.eligibility_public,
-                        r0=self._scalar(b"ure-root-r0"),
-                        r1=self._scalar(b"ure-root-r1"),
-                    )
+                    capsule = self._encrypt_eligibility()
                     message_data["origin_reply_secret"] = root_secret
                     message_data["logical_message"] = self._make_discover_body(
                         hop_remaining=max(ring.hop_limit - 1, 0),
@@ -1046,7 +1142,7 @@ class _LifecycleSimulator:
                         reply_public_key=root_public,
                         eligibility_capsule=capsule,
                     )
-                except (CryptoError, CodecError, r255.RistrettoError):
+                except (CryptoError, C2Error, CodecError, r255.RistrettoError):
                     self.crypto_failures += 1
                     continue
             self._send(
@@ -1176,7 +1272,7 @@ class _LifecycleSimulator:
             ),
             reply_delta=data.get("reply_delta"),
             eligibility_capsule=(
-                None if decoded is None else decoded.eligibility_capsule
+                None if decoded is None else bytes(decoded.eligibility_capsule)
             ),
             root_reply_secret=data.get("origin_reply_secret"),
         )
@@ -1203,9 +1299,8 @@ class _LifecycleSimulator:
             if context.eligibility_capsule is None:
                 eligible = False
             else:
-                eligible = ure_is_eligible(
-                    self.endpoint_keys.eligibility_secret,
-                    context.eligibility_capsule,
+                eligible = self._eligibility_accepts(
+                    context.eligibility_capsule
                 )
                 if receiver in self.responders and not eligible:
                     self.crypto_failures += 1
@@ -1261,10 +1356,8 @@ class _LifecycleSimulator:
                     child_public = reply_tweak_public(
                         context.reply_public_key, delta
                     )
-                    child_capsule = ure_rerandomize(
-                        context.eligibility_capsule,
-                        s0=self._scalar(b"ure-s0"),
-                        s1=self._scalar(b"ure-s1"),
+                    child_capsule = self._rerandomize_eligibility(
+                        context.eligibility_capsule
                     )
                     self.crypto_discover_transforms += 1
                     if (
@@ -1272,8 +1365,8 @@ class _LifecycleSimulator:
                         and legitimate
                         and receiver in self.malicious_nodes
                     ):
-                        child_capsule = apply_ratio_tag(
-                            child_capsule, self.tag_scalar
+                        child_capsule = self._apply_active_tag(
+                            child_capsule
                         )
                         self.tagged_branches_created += 1
                     child_data["reply_delta"] = delta
@@ -1285,7 +1378,7 @@ class _LifecycleSimulator:
                         reply_public_key=child_public,
                         eligibility_capsule=child_capsule,
                     )
-                except (CryptoError, CodecError, r255.RistrettoError):
+                except (CryptoError, C2Error, CodecError, r255.RistrettoError):
                     self.crypto_failures += 1
                     continue
             self._send(
@@ -1504,7 +1597,7 @@ class _LifecycleSimulator:
                 )
                 outgoing_layers = decoded.layer_count + 1
                 self.crypto_candidate_layers += 1
-            except (CryptoError, CodecError, r255.RistrettoError):
+            except (CryptoError, C2Error, CodecError, r255.RistrettoError):
                 self.crypto_failures += 1
                 return
 
@@ -2000,7 +2093,7 @@ class _LifecycleSimulator:
                             reply_public_key=public,
                             eligibility_capsule=capsule,
                         )
-                    except (CryptoError, CodecError, r255.RistrettoError):
+                    except (CryptoError, C2Error, CodecError, r255.RistrettoError):
                         self.crypto_failures += 1
                         continue
                 self._send(

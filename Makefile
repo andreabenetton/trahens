@@ -1,10 +1,13 @@
-.PHONY: test crypto-vectors experiments sweep policy-compare unlinkability-compare lifecycle-compare tagging-compare fragmentation-compare paper check reproduce clean
+.PHONY: test crypto-vectors c2-symbolic-vectors experiments sweep policy-compare unlinkability-compare lifecycle-compare tagging-compare fragmentation-compare c2-compare paper check reproduce clean
 
 test:
 	PYTHONPATH=simulator python -m unittest discover -s simulator/tests -v
 
 crypto-vectors:
 	PYTHONPATH=simulator python tools/generate_crypto_vectors.py --output spec/crypto-test-vectors-c1.json
+
+c2-symbolic-vectors:
+	PYTHONPATH=simulator python tools/generate_c2_symbolic_vectors.py --output spec/crypto-test-vectors-c2-symbolic.json
 
 experiments:
 	./tools/run_experiments.sh
@@ -27,6 +30,9 @@ tagging-compare:
 fragmentation-compare:
 	./tools/run_fragmentation_comparison.sh
 
+c2-compare:
+	./tools/run_c2_comparison.sh
+
 paper:
 	mkdir -p build/paper
 	latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir=build/paper paper/rewrite/main.tex
@@ -37,6 +43,7 @@ check:
 
 reproduce:
 	$(MAKE) crypto-vectors
+	$(MAKE) c2-symbolic-vectors
 	$(MAKE) experiments
 	$(MAKE) sweep
 	$(MAKE) policy-compare
@@ -44,6 +51,7 @@ reproduce:
 	$(MAKE) lifecycle-compare
 	$(MAKE) tagging-compare
 	$(MAKE) fragmentation-compare
+	$(MAKE) c2-compare
 	$(MAKE) paper
 
 clean:

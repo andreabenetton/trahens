@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trahens-sim"
-version = "0.7.0"
-description = "Deterministic Trahens protocol models with C1, M1, and W2 conformance code"
+version = "0.8.0"
+description = "Deterministic Trahens models with C2 security games, M2 messages, and W2 cells"
 requires-python = ">=3.11"
 dependencies = ["cryptography>=43"]
 authors = [{name = "Andrea Benetton", email = "andrea.benetton@blueteam.ee"}]
@@ -17,6 +17,7 @@ trahens-policy-compare = "trahens_sim.policy_compare:main"
 trahens-unlinkability-compare = "trahens_sim.unlinkability_compare:main"
 trahens-lifecycle-compare = "trahens_sim.lifecycle_compare:main"
 trahens-fragmentation-compare = "trahens_sim.fragmentation_compare:main"
+trahens-c2-compare = "trahens_sim.c2_compare:main"
 
 [tool.setuptools]
 package-dir = {"" = "simulator"}
