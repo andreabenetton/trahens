@@ -390,3 +390,104 @@ fn main() {
         std::process::exit(1);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forward_control_rewrites_the_label_and_nothing_else() {
+        let incoming = Control {
+            message_type: MessageType::Commit,
+            local_label: [0xaa; 16],
+            generation: 9,
+            expiry_class: 3,
+            protected_body: vec![1, 2, 3],
+        };
+
+        let envelope = forward_control(incoming.clone(), [0xbb; 16]);
+
+        assert_eq!(envelope.suite_id, SUITE_R1);
+        let Message::Control(forwarded) = envelope.message else {
+            panic!("forward_control must produce a control message");
+        };
+        // The child label is branch-local: rewriting it is the whole point of
+        // the hop, and every other field must survive untouched.
+        assert_eq!(forwarded.local_label, [0xbb; 16]);
+        assert_eq!(forwarded.message_type, incoming.message_type);
+        assert_eq!(forwarded.generation, incoming.generation);
+        assert_eq!(forwarded.expiry_class, incoming.expiry_class);
+        assert_eq!(forwarded.protected_body, incoming.protected_body);
+    }
+
+    #[test]
+    fn forward_control_does_not_reuse_the_incoming_label() {
+        let incoming = Control {
+            message_type: MessageType::Ready,
+            local_label: [0x11; 16],
+            generation: 1,
+            expiry_class: 1,
+            protected_body: Vec::new(),
+        };
+
+        let envelope = forward_control(incoming, [0x22; 16]);
+
+        let Message::Control(forwarded) = envelope.message else {
+            panic!("forward_control must produce a control message");
+        };
+        assert_ne!(forwarded.local_label, [0x11; 16]);
+    }
+
+    #[test]
+    fn cleanup_route_drops_both_directions() {
+        let parent = [0x01; 16];
+        let child = [0x02; 16];
+        let mut routes = HashMap::new();
+        let mut reverse = HashMap::new();
+        routes.insert(
+            parent,
+            RelayRoute {
+                parent_label: parent,
+                child_label: child,
+                incoming_reply_public: [0; 32],
+                blinding_factor: [7; 32],
+                depth: 1,
+                parent_discovery_nonce: [0; 32],
+                child_discovery_nonce: [0; 32],
+                generation: 1,
+                expires_at_ms: 0,
+            },
+        );
+        reverse.insert(child, parent);
+        let mut states = RouteTable::default();
+
+        cleanup_route(
+            parent,
+            &mut routes,
+            &mut reverse,
+            &mut states,
+            Event::CloseAccepted,
+        );
+
+        assert!(routes.is_empty(), "parent mapping must be removed");
+        assert!(reverse.is_empty(), "child reverse mapping must be removed");
+    }
+
+    #[test]
+    fn cleanup_route_is_idempotent_for_unknown_labels() {
+        let mut routes: HashMap<[u8; 16], RelayRoute> = HashMap::new();
+        let mut reverse: HashMap<[u8; 16], [u8; 16]> = HashMap::new();
+        let mut states = RouteTable::default();
+
+        cleanup_route(
+            [0xff; 16],
+            &mut routes,
+            &mut reverse,
+            &mut states,
+            Event::CloseAccepted,
+        );
+
+        assert!(routes.is_empty());
+        assert!(reverse.is_empty());
+    }
+}

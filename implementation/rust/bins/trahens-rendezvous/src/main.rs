@@ -405,3 +405,29 @@ fn main() {
         std::process::exit(1);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn control_envelopes_carry_the_r1_suite() {
+        let envelope = control(MessageType::RendezvousResult, [0x07; 16], 2, vec![1]);
+        assert_eq!(envelope.suite_id, SUITE_R1);
+    }
+
+    #[test]
+    fn control_preserves_its_arguments() {
+        let body = vec![8, 8, 8];
+        let envelope = control(MessageType::RendezvousOpen, [0x0c; 16], 11, body.clone());
+
+        let Message::Control(built) = envelope.message else {
+            panic!("control must produce a control message");
+        };
+        assert_eq!(built.message_type, MessageType::RendezvousOpen);
+        assert_eq!(built.local_label, [0x0c; 16]);
+        assert_eq!(built.generation, 11);
+        assert_eq!(built.protected_body, body);
+        assert_eq!(built.expiry_class, 1);
+    }
+}

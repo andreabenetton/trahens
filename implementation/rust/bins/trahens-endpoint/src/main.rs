@@ -332,3 +332,45 @@ fn main() {
         std::process::exit(1);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn control_envelopes_carry_the_r1_suite() {
+        let envelope = control(MessageType::Discover, [0x05; 16], 3, vec![9, 9]);
+        assert_eq!(envelope.suite_id, SUITE_R1);
+    }
+
+    #[test]
+    fn control_preserves_its_arguments() {
+        let body = vec![4, 5, 6, 7];
+        let envelope = control(MessageType::Commit, [0x0a; 16], 42, body.clone());
+
+        let Message::Control(built) = envelope.message else {
+            panic!("control must produce a control message");
+        };
+        assert_eq!(built.message_type, MessageType::Commit);
+        assert_eq!(built.local_label, [0x0a; 16]);
+        assert_eq!(built.generation, 42);
+        assert_eq!(built.protected_body, body);
+    }
+
+    #[test]
+    fn control_uses_the_single_p1_expiry_class() {
+        // P1 pins every control message to expiry class 1; a second class
+        // would be an observable distinguisher between messages.
+        for message_type in [
+            MessageType::Discover,
+            MessageType::Commit,
+            MessageType::Close,
+        ] {
+            let envelope = control(message_type, [0; 16], 0, Vec::new());
+            let Message::Control(built) = envelope.message else {
+                panic!("control must produce a control message");
+            };
+            assert_eq!(built.expiry_class, 1);
+        }
+    }
+}
