@@ -1,6 +1,6 @@
 # ADR-0006: Evaluate expanding-ring discovery before fixed broad flooding
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-07-30
 
 ## Context
@@ -30,4 +30,6 @@ The design must also measure whether retry timing or reused identifiers increase
 
 ## Validation
 
-Implement expanding-ring simulation and compare expected transmissions, success probability, latency steps, duplicate deliveries, and colluding-relay observations against fixed flooding.
+Iteration 0003 implemented the policy and compared it with a fixed hop-5/fan-out-4 flood on 500-node, average-degree-8 graphs. At a 2 percent responder fraction, expanding rings retained 100 percent observed success while reducing mean DISCOVER transmissions from 895.12 to 157.65. The simulator also reports relay overlap across attempts as a correlation surface.
+
+The decision is accepted for the active Core v0.2 draft. Ring parameters remain deployment policy and require further topology and adversary testing.

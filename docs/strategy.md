@@ -24,7 +24,7 @@ Turn the 2020 concept into a falsifiable research program and then into an inter
 
 ### A. Protocol scope and semantics
 
-Define Trahens Core as a bounded discovery and bidirectional route-state establishment protocol. Exclude the global directory, economic incentives, inter-domain policy, and a replacement layer-2 stack from Core v0.1.
+Define Trahens Core as a bounded expanding-ring discovery and bidirectional route-state establishment protocol. Exclude the global directory, economic incentives, inter-domain policy, and a replacement layer-2 stack from Core v0.2.
 
 ### B. Security and privacy model
 
@@ -32,7 +32,7 @@ Create adversary classes rather than one ambiguous global adversary. Define conf
 
 ### C. Cryptographic redesign
 
-Replace BIP32-derived routing keys and generic `E/S/V` notation with explicit, reviewed constructions. Bind every message to the protocol version, discovery instance, direction, hop context, and expiration. Add replay and downgrade defenses.
+Replace BIP32-derived routing keys and generic `E/S/V` notation with explicit, reviewed constructions. Bind every message to the protocol version, attempt or route instance, direction, hop context, and expiration. Add replay and downgrade defenses.
 
 ### D. Resource and denial-of-service model
 
@@ -78,7 +78,7 @@ Deliverables:
 
 Exit gate: the original design can be cited without being mistaken for the current specification.
 
-### Phase 1 - Core v0.1 semantics
+### Phase 1 - Core v0.2 semantics
 
 Deliverables:
 
@@ -95,14 +95,15 @@ Exit gate: two implementers can independently describe the same state transition
 
 Deliverables:
 
-- discovery identifiers and duplicate suppression;
-- hard fan-out and hop limits;
+- local logical-discovery context and fresh attempt identifiers;
+- attempt-local duplicate suppression;
+- hard ring, fan-out, hop, and cumulative limits;
 - per-link quotas;
 - state and CPU budgets;
 - replay and stale-message behavior;
 - overload tests in the simulator.
 
-Exit gate: every accepted input has a calculable upper bound on local work and retained state.
+Exit gate: every accepted input has a calculable upper bound on local work and retained state, and every logical discovery has a cumulative policy budget.
 
 ### Phase 3 - Cryptographic profile v0.1
 
@@ -166,11 +167,11 @@ Exit gate: the directory does not silently invalidate the privacy properties of 
 
 ## Immediate backlog
 
-1. Validate Core v0.1 state machines against the legacy algorithms.
-2. Remove all normative dependence on obfuscated neighbor degree from Core.
-3. Define a relay resource-accounting model.
-4. Decide whether route labels are random capabilities or hashes of ephemeral keys.
-5. Specify discovery deduplication and route-candidate diversity.
-6. Model colluding adjacent relays and compromised responders.
-7. Replace the original cryptographic derivation scheme.
-8. Produce message test vectors before implementing network I/O.
+1. Add event time and explicit candidate windows to expanding-ring simulation.
+2. Model delayed candidates from earlier attempts and cancellation races.
+3. Add malicious fresh-attempt floods and relay-local token buckets.
+4. Simulate candidate reverse propagation, tentative state, COMMIT, and READY.
+5. Define deterministic eviction and overload behavior under mixed state pressure.
+6. Model colluding relays that correlate attempts through timing and overlap.
+7. Define the cryptographic transcript and concrete profile after setup semantics stabilize.
+8. Produce canonical message test vectors before network I/O.

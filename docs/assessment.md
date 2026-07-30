@@ -24,7 +24,7 @@ The legacy draft contains a credible research direction but not yet an implement
 | Wire format | Several messages and facility operations are not encoded | Define canonical encoding and validation rules before code |
 | Directory | Beacon and authority lifecycle is incomplete | Defer the directory layer until local discovery is measurable |
 | Claims | Unlinkability statements are stronger than the analysis | Convert each claim into an experiment, proof obligation, or hypothesis |
-| Routing model | Unweighted, undirected graph only | Keep this for Core v0.1, then add metrics and policy in a later profile |
+| Routing model | Unweighted, undirected graph only | Keep this for Core v0.2 simulation, then add weighted, asymmetric, and policy-aware topologies |
 
 ## Primary risks
 
