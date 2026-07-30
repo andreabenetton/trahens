@@ -11,15 +11,19 @@ pub fn suite_is_network_valid(value: [u8; 2]) -> bool {
 mod tests {
     use super::*;
 
-    // SUITE_C2_SYMBOLIC is deliberately not asserted here: core-v1.5.md names
-    // only C1 v2 and R1 as network suites, but suite_is_network_valid accepts
-    // the symbolic suite as well. Resolving that is a spec decision, so no
-    // expectation is frozen in either direction until it is settled.
-
     #[test]
     fn operative_suites_are_accepted() {
         assert!(suite_is_network_valid(SUITE_C1_V2));
         assert!(suite_is_network_valid(SUITE_R1));
+    }
+
+    #[test]
+    fn symbolic_c2_is_accepted_as_a_research_only_suite() {
+        // message-codec-m2.md defines a parser for 0x0002 and marks it
+        // research-only rather than rejected, unlike the retired 0x0001 and
+        // the reserved audit suite 0x7f02. The Python reference decoder
+        // (_require_suite_id in trahens_codec/m2w2.py) admits the same three.
+        assert!(suite_is_network_valid(SUITE_C2_SYMBOLIC));
     }
 
     #[test]
