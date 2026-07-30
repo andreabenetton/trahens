@@ -1,0 +1,4 @@
+profile,observation_epochs,traces,cells_per_link,expected_total_cells_per_trace,minimum_total_cells,maximum_total_cells,all_traces_equal_budget,mean_boundary_alignment,mean_pairwise_lag_correlation,mean_delivery_rate,cleanup_rate
+fixed,128,80,5120,20480,20480,20480,True,0.0,0.0,1.0,1
+adaptive,128,80,5120,20480,20480,20480,True,1.0,0.7165472478253644,1.0,1
+hybrid,128,80,5120,20480,20480,20480,True,0.0,0.23051572906091217,1.0,1

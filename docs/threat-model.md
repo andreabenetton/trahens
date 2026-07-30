@@ -1,11 +1,11 @@
 # Threat model
 
-- Status: Core v1.2 research model
+- Status: Core v1.3 research model
 - Date: 2026-07-30
 
 ## 1. Scope
 
-This model covers bounded gateway discovery, U1 branch-local replacement, nested candidate return, E1 route commitment and cleanup, R1 capability redemption, M2 logical messages, W2 fragmentation, T1 selective recovery, and T2 adjacent-link scheduling. It does not specify a private directory, global endpoint lookup, incentives, inter-domain policy, application anonymity, end-to-end congestion control, or a production traffic-analysis defense.
+This model covers bounded gateway discovery, U1 branch-local replacement, nested candidate return, E1 route commitment and cleanup, R1 capability redemption, M2 logical messages, W2 fragmentation, T1 selective recovery, T2 adjacent-link scheduling, and T3 multi-link traffic-analysis evaluation. It does not specify a private directory, global endpoint lookup, incentives, inter-domain policy, application anonymity, end-to-end congestion control, or a production traffic-analysis defense.
 
 ## 2. Protected assets
 
@@ -29,7 +29,7 @@ This model covers bounded gateway discovery, U1 branch-local replacement, nested
 7. T2 peers enforce the negotiated finite rate menu, queue limits, and epoch boundaries.
 8. A fully compromised endpoint cannot preserve its own secrets or anonymity.
 
-The directory and gateway are explicit trust roles. Core v1.2 makes no privacy claim against their collusion. T2 negotiation contents are confidential only from parties that do not control either adjacent endpoint; cadence remains public.
+The directory and gateway are explicit trust roles. Core v1.3 makes no privacy claim against their collusion. T2 negotiation contents are confidential only from parties that do not control either adjacent endpoint; cadence remains public.
 
 ## 4. Adversary classes
 
@@ -42,6 +42,7 @@ The directory and gateway are explicit trust roles. Core v1.2 makes no privacy c
 - **A6 compromised initiator or destination:** controls descriptors, capabilities, keys, randomness, and route choices.
 - **A7 malicious directory or gateway:** observes or manipulates descriptor delivery, registration, candidate response, redemption, endpoint handles, and selective service.
 - **A8 congestion adversary:** induces queue pressure, burst loss, ACK suppression, or competing traffic to force rate changes, visible overload, or deadline failure.
+- **A9 T3 trace adversary:** observes several directed links over a declared window, uses correlated background traffic and labeled training traces, and injects a bounded positive-demand probe without modifying authenticated records.
 
 ## 5. Security objectives
 
@@ -79,6 +80,16 @@ The directory and gateway are explicit trust roles. Core v1.2 makes no privacy c
 - Weighted service cannot be remotely converted into unbounded priority or deficit.
 - DATA, ACK, SCHEDULE, and CHAFF share the declared physical-cell budget; controls do not create hidden extra slots.
 
+
+### T3 traffic-analysis evaluation
+
+- Every compared profile uses the same exact per-link super-epoch cell budget.
+- Training and testing traces are disjoint; feature normalization uses training data only.
+- Route-class balance, random baseline, observation window, cross-traffic condition, and failure accounting are explicit.
+- Probe amplitude and duty cycle are finite and reported.
+- T3 trace and classifier state never enters forwarding messages or route-semantic state.
+- No one-classifier result is promoted to a global traffic-flow anonymity claim.
+
 ### Resource safety
 
 - Accepted work is bounded per peer and globally.
@@ -104,6 +115,11 @@ Inside a pre-existing, non-overloaded fixed epoch, public timestamps and lengths
 
 Adaptive T2 does **not** claim activity-presence hiding. The public rate-class sequence and transition times are treated as coarse traffic evidence. Encrypted negotiation hides reasons and local queue values, not the resulting cadence.
 
+
+### C-T3: equal-budget adversarial evaluation
+
+T3 removes aggregate byte count as a trivial feature by equalizing complete per-link super-epoch cell budgets. It does not claim equal trace distributions. Route classification, transition phases, lagged correlation, and active-probe detectability are measured and reported as evidence of residual schedule leakage.
+
 ### C-GLOBAL: traffic-flow unlinkability
 
 No C-GLOBAL claim is made. Equal-length cells, local replacement, CHAFF, and quantized adaptation do not by themselves prevent a global observer from correlating timing and volume.
@@ -118,7 +134,7 @@ No C-GLOBAL claim is made. Equal-length cells, local replacement, CHAFF, and qua
 - **Queue capture:** atomic first-send reservation, per-flow/per-peer/global limits, finite weights, and DRR.
 - **Burst loss:** finite recovery and cleanup; no assumption that every loss proves congestion.
 - **Schedule fingerprinting:** fixed profile for the narrow shape claim; adaptive profile declares rate leakage; realistic classifiers remain required.
-- **Multi-link correlation:** outside current protection; tracked experiments serve only as negative or comparative evidence.
+- **Multi-link correlation:** T3 provides an equal-budget classifier and active-probe baseline; learned, open-world, packet-level, and deployment attacks remain outside protection.
 - **Capability replay:** atomic one-time consume and generic failure.
 - **Directory/gateway collusion:** not prevented; must be addressed by a separate profile.
 

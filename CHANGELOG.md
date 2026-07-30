@@ -1,5 +1,17 @@
 # Changelog
 
+## Core v1.3 - 2026-07-30
+
+- Added T3 as a multi-link traffic-analysis evaluation profile layered over T2 without changing the wire format.
+- Added exact equal-bandwidth super-epoch comparison for fixed, adaptive, and hybrid schedules on every observed link.
+- Added a four-class route model, independent and correlated background traffic, hop-delayed target signals, and observation windows from 32 to 256 epochs.
+- Added a transparent nearest-centroid classifier using binned counts, first differences, boundary metadata, and lagged cross-link correlations.
+- Added a bounded active bandwidth-probe experiment with trained present/absent detection and explicit TPR/FPR reporting.
+- Added a hybrid evaluation policy with non-zero baseline, smoothed response, independent decoy uplifts, non-boundary transition phases, and exact budget compensation.
+- Added deterministic T3 vectors, nine model tests, three tracked reports, and repository smoke/reproduction targets, bringing the complete suite to 117 tests.
+- Published Core v1.3, T3 transport-analysis, message, state-machine, invariant, resource-accounting, and ADR updates.
+- Expanded the formal paper with the T3 adversary, equal-budget methodology, classifiers, probing, results, and point-of-use citations to flow-correlation, routing, watermarking, and traffic-shaping research.
+
 ## Core v1.2 - 2026-07-30
 
 - Added T2 fixed, quantized-adaptive, and work-conserving adjacent-link schedule modes.

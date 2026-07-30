@@ -1,7 +1,7 @@
 # Trahens W2 fixed-size adjacent-link cell profile
 
 - Status: Active research profile
-- Applies to: Trahens Core v1.2 with U1, E1, R1, M2, T1, and T2
+- Applies to: Trahens Core v1.3 with U1, E1, R1, M2, T1, and T2
 - Reference implementation: `simulator/trahens_codec/m2w2.py`
 
 ## 1. Purpose

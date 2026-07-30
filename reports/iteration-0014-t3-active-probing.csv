@@ -1,0 +1,4 @@
+profile,observation_epochs,training_per_class,testing_per_class,classifier_accuracy,true_positive_rate,false_positive_rate,absent_mean_score,present_mean_score,threshold
+fixed,128,40,40,0.5,0.0,0.0,0.0,0.0,0.0
+adaptive,128,40,40,0.9125,0.9,0.075,0.20301838738890132,0.45703369333316773,0.31987986723261885
+hybrid,128,40,40,0.5875,0.4,0.225,0.18792346947678584,0.22900930088469498,0.21251048063578987

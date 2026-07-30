@@ -4,7 +4,7 @@ Trahens is a research protocol for privacy-enabled route discovery in decentrali
 
 ## Status
 
-The active specification is **Trahens Core v1.2**, composed of:
+The active specification is **Trahens Core v1.3**, composed of:
 
 - **U1** - branch-local representation replacement and conditional passive unlinkability;
 - **E1** - deterministic event and route-state lifecycle;
@@ -12,7 +12,8 @@ The active specification is **Trahens Core v1.2**, composed of:
 - **M2** - canonical suite-agile variable-length logical messages;
 - **W2** - canonical 992-byte fragmentation and fixed-size authenticated adjacent-link records;
 - **T1** - hop-local selective recovery, fresh retry ciphertexts, and fragment interleaving;
-- **T2** - fixed or quantized-adaptive schedule epochs, authenticated rate negotiation, weighted fair service, and bounded overload behavior.
+- **T2** - fixed or quantized-adaptive schedule epochs, authenticated rate negotiation, weighted fair service, and bounded overload behavior;
+- **T3** - equal-budget multi-link route classification, correlated background traffic, boundary-phase measurement, and active probing.
 
 Endpoint-specific material is absent from active `DISCOVER` messages. A destination issues a random, short-lived capability, registers its commitment at selected rendezvous gateways, and privately distributes a descriptor to an authorized initiator. Discovery returns authenticated gateway candidates. After `COMMIT` and `READY`, the initiator presents the capability through the active route; the gateway atomically consumes it and starts the local rendezvous procedure.
 
@@ -30,7 +31,9 @@ T2 adds three release modes:
 
 Weighted deficit round robin shares new-data service among backlogged link-local transmissions. Queue admission, schedule-control reserve, retry work, rate transitions, and overload cleanup are finite. Adaptive scheduling reduces reserved CHAFF, but public rate transitions reveal coarse queue activity and therefore carry no activity-presence privacy claim.
 
-The deterministic model shows the intended trade-off. Under the equal-overload workload, adaptive scheduling delivered all admitted work with a peak queue of 98 cells and 370 chaff cells, whereas the fixed low-rate profile dropped 15% of offered work and the fixed high-rate profile emitted 1,600 chaff cells. A simple rate-class distinguisher had no advantage against fixed-high active versus idle traces, but perfect advantage against the evaluated adaptive traces. These are model results, not network benchmarks or anonymity proofs.
+The deterministic T2 model shows the intended trade-off. Under the equal-overload workload, adaptive scheduling delivered all admitted work with a peak queue of 98 cells and 370 chaff cells, whereas the fixed low-rate profile dropped 15% of offered work and the fixed high-rate profile emitted 1,600 chaff cells. A simple rate-class distinguisher had no advantage against fixed-high active versus idle traces, but perfect advantage against the evaluated adaptive traces.
+
+T3 removes total bandwidth as a trivial feature by assigning fixed, adaptive, and hybrid traces the same exact per-link super-epoch cell budget. It then evaluates four route labels over longer windows, independent and correlated background traffic, public transition phases, and a bounded active bandwidth probe. The fixed count trace is route-independent in this model. Adaptive traces remain strongly classifiable and probe-responsive. The hybrid profile uses a non-zero baseline, smoothing, independent decoy uplifts, and non-boundary transitions; it lowers the simple classifier and probe advantage but does not establish traffic-flow unlinkability. These are deterministic model results, not network benchmarks or anonymity proofs.
 
 ## Cryptographic research status
 
@@ -60,10 +63,12 @@ make test
 make r1-vectors
 make t1-vectors
 make t2-vectors
+make t3-vectors
 make t1-compare
 make t2-compare
+make t3-compare
 make paper
 make check
 ```
 
-Start with [`spec/core-v1.2.md`](spec/core-v1.2.md), [`spec/rendezvous-capability-r1.md`](spec/rendezvous-capability-r1.md), [`spec/message-codec-m2.md`](spec/message-codec-m2.md), [`spec/wire-cell-w2.md`](spec/wire-cell-w2.md), [`spec/transport-profile-t1.md`](spec/transport-profile-t1.md), [`spec/transport-profile-t2.md`](spec/transport-profile-t2.md), [`docs/threat-model.md`](docs/threat-model.md), and [`docs/citation-audit.md`](docs/citation-audit.md).
+Start with [`spec/core-v1.3.md`](spec/core-v1.3.md), [`spec/rendezvous-capability-r1.md`](spec/rendezvous-capability-r1.md), [`spec/message-codec-m2.md`](spec/message-codec-m2.md), [`spec/wire-cell-w2.md`](spec/wire-cell-w2.md), [`spec/transport-profile-t1.md`](spec/transport-profile-t1.md), [`spec/transport-profile-t2.md`](spec/transport-profile-t2.md), [`spec/transport-profile-t3.md`](spec/transport-profile-t3.md), [`docs/threat-model.md`](docs/threat-model.md), and [`docs/citation-audit.md`](docs/citation-audit.md).
