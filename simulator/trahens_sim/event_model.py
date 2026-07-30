@@ -1,9 +1,9 @@
-"""Deterministic discrete-event model for the Trahens Core route lifecycle.
+"""Deterministic discrete-event model for the Trahens route lifecycle.
 
-The model is intentionally protocol-level. It represents branch-local U1
-contexts, candidate return, tentative route mappings, COMMIT/READY activation,
-expiry, cancellation races, adjacent-link loss/duplication, and malicious fresh
-branch generation. It does not implement cryptography or a traffic scheduler.
+The model integrates the U1 branch transformations, the E1 event lifecycle, the
+C1 cryptographic operations, and the W1 fixed-size adjacent-link record codec.
+It remains a protocol model rather than a packet-timing or traffic-analysis
+benchmark.
 """
 
 from __future__ import annotations
@@ -11,9 +11,47 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import asdict, dataclass, field
 from enum import IntEnum
+import hashlib
 import heapq
+import hmac
 import random
 from typing import Any, Iterable
+
+from trahens_codec.c1 import (
+    BODY_BYTES,
+    LINK_RECORD_BYTES,
+    CandidateRecord as WireCandidateRecord,
+    CodecError,
+    ControlRecord as WireControlRecord,
+    DiscoverRecord as WireDiscoverRecord,
+    MessageType,
+    decode_body,
+    derive_link_key,
+    encode_candidate,
+    encode_control,
+    encode_discover,
+    open_link_record,
+    seal_link_record,
+)
+from trahens_crypto import ristretto as r255
+from trahens_crypto.c1 import (
+    CryptoError,
+    URECiphertext,
+    build_endpoint_keys,
+    reply_tweak_public,
+    ure_encrypt,
+    ure_is_eligible,
+    ure_rerandomize,
+)
+from trahens_crypto.candidate import (
+    build_responder_payload,
+    commit_proof,
+    open_candidate_chain,
+    ready_proof,
+    seal_responder_candidate,
+    wrap_relay_candidate,
+)
+from trahens_crypto.tagging import apply_ratio_tag, matches_ratio_tag
 
 from .model import Graph, choose_responders
 
@@ -94,6 +132,10 @@ class EventLifecycleConfig:
     loss_probability: float = 0.0
     duplicate_probability: float = 0.0
     forced_drop_types: tuple[str, ...] = ()
+    enable_crypto: bool = True
+    wire_tamper_probability: float = 0.0
+    active_tagging: bool = False
+    tag_scalar_seed: int = 23
 
     malicious_fraction: float = 0.0
     attack_start_ms: int = 0
@@ -175,10 +217,16 @@ class EventLifecycleConfig:
         ):
             if getattr(self, name) < 1:
                 raise ValueError(f"{name} must be positive")
-        for name in ("loss_probability", "duplicate_probability"):
+        for name in (
+            "loss_probability",
+            "duplicate_probability",
+            "wire_tamper_probability",
+        ):
             value = getattr(self, name)
             if not 0.0 <= value <= 1.0:
                 raise ValueError(f"{name} must be between 0 and 1")
+        if self.tag_scalar_seed < 0:
+            raise ValueError("tag_scalar_seed cannot be negative")
         if not 0.0 <= self.malicious_fraction <= 1.0:
             raise ValueError("malicious_fraction must be between 0 and 1")
         if self.attack_start_ms < 0:
@@ -223,6 +271,11 @@ class _BranchContext:
     relay_fanout: int
     legitimate: bool
     expires_at_ms: int
+    branch_token: bytes = b""
+    reply_public_key: bytes | None = None
+    reply_delta: bytes | None = None
+    eligibility_capsule: URECiphertext | None = None
+    root_reply_secret: bytes | None = None
     status: str = "live"
     child_context_ids: set[int] = field(default_factory=set)
 
@@ -245,6 +298,7 @@ class _CandidateRecord:
     hop_count: int
     arrival_time_ms: int
     offer_expires_at_ms: int
+    commit_challenge: bytes = b""
 
 
 @dataclass(frozen=True)
@@ -274,6 +328,14 @@ class EventLifecycleResult:
     active_capacity_drops: int
     token_bucket_drops: int
     stale_parent_drops: int
+    wire_auth_failures: int
+    codec_failures: int
+    crypto_failures: int
+    crypto_discover_transforms: int
+    crypto_candidate_layers: int
+    tagged_branches_created: int
+    tag_observations: int
+    wire_bytes: int
     legitimate_transmissions: int
     attack_transmissions: int
     total_transmissions: int
@@ -323,6 +385,13 @@ class _LifecycleSimulator:
         self.responder_offer_delays = responder_offer_delays or {}
         self.malicious_nodes = malicious_nodes
         self.rng = random.Random(config.seed)
+        self.endpoint_keys = build_endpoint_keys(
+            f"event-target/{config.seed}".encode("ascii")
+        )
+        self.tag_scalar = r255.scalar_from_label(
+            config.tag_scalar_seed.to_bytes(8, "big"),
+            dst=b"Trahens-C1-active-tag-scalar-v1",
+        )
 
         self.queue: list[_ScheduledEvent] = []
         self.sequence = 0
@@ -337,7 +406,7 @@ class _LifecycleSimulator:
         self.tentatives: dict[tuple[int, int], _TentativeState] = {}
         self.pending_keys: set[tuple[int, int]] = set()
         self.active_keys: set[tuple[int, int]] = set()
-        self.offers: dict[int, tuple[int, int]] = {}
+        self.offers: dict[int, tuple[int, int, bytes]] = {}
         self.candidates: dict[int, _CandidateRecord] = {}
         self.candidate_responders: set[int] = set()
         self.replay_seen: set[tuple[str, int, int, int]] = set()
@@ -377,6 +446,13 @@ class _LifecycleSimulator:
         self.attack_branch_allocations = 0
         self.candidate_responses = 0
         self.candidates_received_count = 0
+        self.wire_auth_failures = 0
+        self.codec_failures = 0
+        self.crypto_failures = 0
+        self.crypto_discover_transforms = 0
+        self.crypto_candidate_layers = 0
+        self.tagged_branches_created = 0
+        self.tag_observations = 0
 
         self.peak_branch_state = 0
         self.peak_offer_state = 0
@@ -443,6 +519,16 @@ class _LifecycleSimulator:
             active_capacity_drops=self.active_capacity_drops,
             token_bucket_drops=self.token_bucket_drops,
             stale_parent_drops=self.stale_parent_drops,
+            wire_auth_failures=self.wire_auth_failures,
+            codec_failures=self.codec_failures,
+            crypto_failures=self.crypto_failures,
+            crypto_discover_transforms=self.crypto_discover_transforms,
+            crypto_candidate_layers=self.crypto_candidate_layers,
+            tagged_branches_created=self.tagged_branches_created,
+            tag_observations=self.tag_observations,
+            wire_bytes=(
+                self.legitimate_transmissions + self.attack_transmissions
+            ) * LINK_RECORD_BYTES if self.config.enable_crypto else 0,
             legitimate_transmissions=self.legitimate_transmissions,
             attack_transmissions=self.attack_transmissions,
             total_transmissions=(
@@ -489,6 +575,16 @@ class _LifecycleSimulator:
             handler = handlers[event.kind]
         except KeyError as exc:  # pragma: no cover - internal programming error
             raise AssertionError(f"unknown event kind: {event.kind}") from exc
+        if self.config.enable_crypto and event.kind in {
+            "DISCOVER",
+            "CANDIDATE",
+            "CANCEL",
+            "COMMIT",
+            "READY",
+        }:
+            if not self._validate_wire_event(event.kind, event.data):
+                self._update_peaks()
+                return
         handler(event.data)
         self._update_peaks()
 
@@ -517,6 +613,146 @@ class _LifecycleSimulator:
             high = self.config.control_delay_max_ms
         return self.rng.randint(low, high)
 
+    def _randbytes(self, length: int) -> bytes:
+        return bytes(self.rng.getrandbits(8) for _ in range(length))
+
+    def _token(self) -> bytes:
+        while True:
+            value = self._randbytes(16)
+            if value != bytes(16):
+                return value
+
+    def _scalar(self, label: bytes) -> bytes:
+        return r255.scalar_from_label(
+            self._randbytes(32),
+            dst=b"Trahens-event-model/" + label,
+        )
+
+    def _make_discover_body(
+        self,
+        *,
+        hop_remaining: int,
+        fanout_class: int,
+        reply_public_key: bytes,
+        eligibility_capsule: URECiphertext,
+        branch_token: bytes | None = None,
+    ) -> bytes:
+        return encode_discover(
+            WireDiscoverRecord(
+                branch_token=self._token() if branch_token is None else branch_token,
+                hop_remaining=hop_remaining,
+                fanout_class=fanout_class,
+                expiry_class=1,
+                options=0,
+                reply_public_key=reply_public_key,
+                eligibility_capsule=eligibility_capsule,
+            ),
+            rng=self.rng,
+        )
+
+    def _make_candidate_body(
+        self,
+        *,
+        candidate_blob: bytes,
+        layer_count: int,
+        candidate_token: bytes | None = None,
+    ) -> bytes:
+        return encode_candidate(
+            WireCandidateRecord(
+                candidate_token=(
+                    self._token() if candidate_token is None else candidate_token
+                ),
+                expiry_class=1,
+                layer_count=layer_count,
+                candidate_blob=candidate_blob,
+            ),
+            rng=self.rng,
+        )
+
+    def _make_control_body(
+        self, message_type: str, data: dict[str, Any]
+    ) -> bytes:
+        type_map = {
+            "COMMIT": MessageType.COMMIT,
+            "READY": MessageType.READY,
+            "CANCEL": MessageType.CANCEL,
+        }
+        protected = data.get("protected_body")
+        if not isinstance(protected, bytes):
+            stable = [
+                (key, value)
+                for key, value in sorted(data.items())
+                if isinstance(value, (bool, int, str))
+            ]
+            protected = hashlib.sha256(repr(stable).encode("utf-8")).digest()
+        generation = int(
+            data.get("candidate_id", data.get("context_id", 0))
+        ) & 0xFFFFFFFF
+        return encode_control(
+            WireControlRecord(
+                message_type=type_map[message_type],
+                local_label=self._token(),
+                generation=generation,
+                expiry_class=1,
+                protected_body=protected,
+            ),
+            rng=self.rng,
+        )
+
+    def _validate_wire_event(
+        self, expected_kind: str, data: dict[str, Any]
+    ) -> bool:
+        if self._is_replay(data):
+            return False
+        data["_replay_checked"] = True
+        encoded = data.get("wire_record")
+        if not isinstance(encoded, bytes):
+            self.codec_failures += 1
+            return False
+        try:
+            key = derive_link_key(
+                self.config.seed, int(data["sender"]), int(data["receiver"])
+            )
+            _, _, body = open_link_record(
+                encoded,
+                key=key,
+                expected_epoch=1,
+                expected_sequence=int(data["message_id"]),
+            )
+            decoded = decode_body(body)
+        except CodecError:
+            self.wire_auth_failures += 1
+            return False
+        expected_type = {
+            "DISCOVER": MessageType.DISCOVER,
+            "CANDIDATE": MessageType.CANDIDATE,
+            "COMMIT": MessageType.COMMIT,
+            "READY": MessageType.READY,
+            "CANCEL": MessageType.CANCEL,
+        }[expected_kind]
+        actual_type = (
+            MessageType.DISCOVER
+            if isinstance(decoded, WireDiscoverRecord)
+            else MessageType.CANDIDATE
+            if isinstance(decoded, WireCandidateRecord)
+            else decoded.message_type
+            if isinstance(decoded, WireControlRecord)
+            else decoded
+        )
+        if actual_type is not expected_type:
+            self.codec_failures += 1
+            return False
+        data["decoded_record"] = decoded
+        if (
+            expected_kind == "DISCOVER"
+            and self.config.active_tagging
+            and int(data["receiver"]) in self.malicious_nodes
+            and isinstance(decoded, WireDiscoverRecord)
+            and matches_ratio_tag(decoded.eligibility_capsule, self.tag_scalar)
+        ):
+            self.tag_observations += 1
+        return True
+
     def _send(
         self,
         message_type: str,
@@ -538,6 +774,7 @@ class _LifecycleSimulator:
         message_id = self.next_message_id
         self.next_message_id += 1
         payload = dict(data)
+        record_plaintext = payload.pop("record_plaintext", None)
         payload.update(
             {
                 "sender": sender,
@@ -547,6 +784,33 @@ class _LifecycleSimulator:
                 "message_type": message_type,
             }
         )
+        if self.config.enable_crypto:
+            try:
+                if record_plaintext is None:
+                    if message_type in {"DISCOVER", "CANDIDATE"}:
+                        raise CodecError(
+                            f"missing explicit {message_type} record body"
+                        )
+                    record_plaintext = self._make_control_body(
+                        message_type, payload
+                    )
+                if len(record_plaintext) != BODY_BYTES:
+                    raise CodecError("invalid record body length")
+                key = derive_link_key(self.config.seed, sender, receiver)
+                wire_record = seal_link_record(
+                    record_plaintext,
+                    key=key,
+                    epoch=1,
+                    sequence=message_id,
+                )
+                if self.rng.random() < self.config.wire_tamper_probability:
+                    mutable = bytearray(wire_record)
+                    mutable[20] ^= 0x01
+                    wire_record = bytes(mutable)
+                payload["wire_record"] = wire_record
+            except CodecError:
+                self.codec_failures += 1
+                return False
         self._account_transmission(message_type, legitimate)
 
         if (
@@ -584,6 +848,8 @@ class _LifecycleSimulator:
         return self.legitimate_transmissions + self.attack_transmissions
 
     def _is_replay(self, data: dict[str, Any]) -> bool:
+        if data.get("_replay_checked"):
+            return False
         key = (
             str(data["message_type"]),
             int(data["receiver"]),
@@ -614,18 +880,39 @@ class _LifecycleSimulator:
             self.graph.neighbors(self.config.origin), ring.initial_fanout
         )
         for child in children:
+            message_data: dict[str, Any] = {
+                "parent_context_id": None,
+                "ring_index": ring_index,
+                "hop_count": 1,
+                "hop_limit": ring.hop_limit,
+                "relay_fanout": ring.relay_fanout,
+                "reply_delta": None,
+            }
+            if self.config.enable_crypto:
+                try:
+                    root_secret = self._scalar(b"root-reply")
+                    root_public = r255.scalarmult_base(root_secret)
+                    capsule = ure_encrypt(
+                        self.endpoint_keys.eligibility_public,
+                        r0=self._scalar(b"ure-root-r0"),
+                        r1=self._scalar(b"ure-root-r1"),
+                    )
+                    message_data["origin_reply_secret"] = root_secret
+                    message_data["record_plaintext"] = self._make_discover_body(
+                        hop_remaining=max(ring.hop_limit - 1, 0),
+                        fanout_class=ring.relay_fanout,
+                        reply_public_key=root_public,
+                        eligibility_capsule=capsule,
+                    )
+                except (CryptoError, CodecError, r255.RistrettoError):
+                    self.crypto_failures += 1
+                    continue
             self._send(
                 "DISCOVER",
                 sender=self.config.origin,
                 receiver=child,
                 legitimate=True,
-                data={
-                    "parent_context_id": None,
-                    "ring_index": ring_index,
-                    "hop_count": 1,
-                    "hop_limit": ring.hop_limit,
-                    "relay_fanout": ring.relay_fanout,
-                },
+                data=message_data,
                 priority=EventPriority.DISCOVER,
             )
         self._schedule_local(
@@ -718,6 +1005,14 @@ class _LifecycleSimulator:
             self.per_node_branch_drops += 1
             return
 
+        decoded: WireDiscoverRecord | None = None
+        if self.config.enable_crypto:
+            candidate = data.get("decoded_record")
+            if not isinstance(candidate, WireDiscoverRecord):
+                self.codec_failures += 1
+                return
+            decoded = candidate
+
         context_id = self.next_context_id
         self.next_context_id += 1
         context = _BranchContext(
@@ -733,6 +1028,15 @@ class _LifecycleSimulator:
             relay_fanout=int(data["relay_fanout"]),
             legitimate=legitimate,
             expires_at_ms=self.now_ms + self.config.branch_ttl_ms,
+            branch_token=(b"" if decoded is None else decoded.branch_token),
+            reply_public_key=(
+                None if decoded is None else decoded.reply_public_key
+            ),
+            reply_delta=data.get("reply_delta"),
+            eligibility_capsule=(
+                None if decoded is None else decoded.eligibility_capsule
+            ),
+            root_reply_secret=data.get("origin_reply_secret"),
         )
         self.branches[context_id] = context
         self.live_branch_ids.add(context_id)
@@ -752,8 +1056,20 @@ class _LifecycleSimulator:
             {"context_id": context_id},
         )
 
+        eligible = True
+        if self.config.enable_crypto:
+            if context.eligibility_capsule is None:
+                eligible = False
+            else:
+                eligible = ure_is_eligible(
+                    self.endpoint_keys.eligibility_secret,
+                    context.eligibility_capsule,
+                )
+                if receiver in self.responders and not eligible:
+                    self.crypto_failures += 1
         if (
             legitimate
+            and eligible
             and receiver in self.responders
             and self.candidate_responses < self.config.candidate_response_limit
         ):
@@ -784,18 +1100,58 @@ class _LifecycleSimulator:
             context.relay_fanout,
         )
         for child in children:
+            child_data: dict[str, Any] = {
+                "parent_context_id": context_id,
+                "ring_index": context.ring_index,
+                "hop_count": context.hop_count + 1,
+                "hop_limit": context.hop_limit,
+                "relay_fanout": context.relay_fanout,
+            }
+            if self.config.enable_crypto:
+                if (
+                    context.reply_public_key is None
+                    or context.eligibility_capsule is None
+                ):
+                    self.crypto_failures += 1
+                    continue
+                try:
+                    delta = self._scalar(b"reply-delta")
+                    child_public = reply_tweak_public(
+                        context.reply_public_key, delta
+                    )
+                    child_capsule = ure_rerandomize(
+                        context.eligibility_capsule,
+                        s0=self._scalar(b"ure-s0"),
+                        s1=self._scalar(b"ure-s1"),
+                    )
+                    self.crypto_discover_transforms += 1
+                    if (
+                        self.config.active_tagging
+                        and legitimate
+                        and receiver in self.malicious_nodes
+                    ):
+                        child_capsule = apply_ratio_tag(
+                            child_capsule, self.tag_scalar
+                        )
+                        self.tagged_branches_created += 1
+                    child_data["reply_delta"] = delta
+                    child_data["record_plaintext"] = self._make_discover_body(
+                        hop_remaining=max(
+                            context.hop_limit - (context.hop_count + 1), 0
+                        ),
+                        fanout_class=context.relay_fanout,
+                        reply_public_key=child_public,
+                        eligibility_capsule=child_capsule,
+                    )
+                except (CryptoError, CodecError, r255.RistrettoError):
+                    self.crypto_failures += 1
+                    continue
             self._send(
                 "DISCOVER",
                 sender=receiver,
                 receiver=child,
                 legitimate=legitimate,
-                data={
-                    "parent_context_id": context_id,
-                    "ring_index": context.ring_index,
-                    "hop_count": context.hop_count + 1,
-                    "hop_limit": context.hop_limit,
-                    "relay_fanout": context.relay_fanout,
-                },
+                data=child_data,
                 priority=EventPriority.DISCOVER,
             )
 
@@ -857,13 +1213,45 @@ class _LifecycleSimulator:
         self.next_candidate_id += 1
         path = self._path_for_context(context_id)
         offer_expires = self.now_ms + self.config.offer_ttl_ms
-        self.offers[candidate_id] = (context.node, offer_expires)
+        commit_challenge = self._randbytes(32)
+        self.offers[candidate_id] = (
+            context.node,
+            offer_expires,
+            commit_challenge,
+        )
         self._schedule_local(
             offer_expires,
             EventPriority.EXPIRY,
             "OFFER_EXPIRE",
             {"candidate_id": candidate_id},
         )
+
+        candidate_blob: bytes | None = None
+        layer_count = 1
+        if self.config.enable_crypto:
+            if context.reply_public_key is None:
+                self.crypto_failures += 1
+                return
+            try:
+                responder_payload = build_responder_payload(
+                    self.endpoint_keys,
+                    responder_id=context.node,
+                    offer_expires_ms=offer_expires,
+                    final_reply_public=context.reply_public_key,
+                    commit_challenge=commit_challenge,
+                    responder_nonce=self._randbytes(16),
+                )
+                candidate_blob = seal_responder_candidate(
+                    context.reply_public_key,
+                    responder_payload,
+                    ephemeral_secret=self._scalar(b"candidate-responder-e"),
+                )
+                self.crypto_candidate_layers += 1
+            except (CryptoError, r255.RistrettoError):
+                self.crypto_failures += 1
+                self.offers.pop(candidate_id, None)
+                return
+
         if len(path) == 1:
             self._send_candidate_to_origin(
                 candidate_id,
@@ -871,23 +1259,34 @@ class _LifecycleSimulator:
                 path=path,
                 ring_index=int(context.ring_index or 0),
                 offer_expires=offer_expires,
+                candidate_blob=candidate_blob,
+                layer_count=layer_count,
             )
             return
         parent_index = len(path) - 2
         parent_context = self.branches[path[parent_index]]
+        message_data: dict[str, Any] = {
+            "candidate_id": candidate_id,
+            "responder": context.node,
+            "path": path,
+            "path_index": parent_index,
+            "ring_index": int(context.ring_index or 0),
+            "offer_expires": offer_expires,
+            "layer_count": layer_count,
+        }
+        if self.config.enable_crypto:
+            assert candidate_blob is not None
+            message_data["candidate_blob"] = candidate_blob
+            message_data["record_plaintext"] = self._make_candidate_body(
+                candidate_blob=candidate_blob,
+                layer_count=layer_count,
+            )
         self._send(
             "CANDIDATE",
             sender=context.node,
             receiver=parent_context.node,
             legitimate=True,
-            data={
-                "candidate_id": candidate_id,
-                "responder": context.node,
-                "path": path,
-                "path_index": parent_index,
-                "ring_index": int(context.ring_index or 0),
-                "offer_expires": offer_expires,
-            },
+            data=message_data,
             priority=EventPriority.CANDIDATE,
         )
 
@@ -917,7 +1316,10 @@ class _LifecycleSimulator:
             return
         key = (candidate_id, context_id)
         if key not in self.tentatives:
-            if len(self.tentatives) + len(self.pending_keys) >= self.config.tentative_capacity:
+            if (
+                len(self.tentatives) + len(self.pending_keys)
+                >= self.config.tentative_capacity
+            ):
                 self.tentative_capacity_drops += 1
                 return
             tentative = _TentativeState(
@@ -935,6 +1337,35 @@ class _LifecycleSimulator:
             )
 
         next_index = path_index - 1
+        outgoing_blob: bytes | None = None
+        outgoing_layers = int(data.get("layer_count", 1))
+        if self.config.enable_crypto:
+            decoded = data.get("decoded_record")
+            if not isinstance(decoded, WireCandidateRecord):
+                self.codec_failures += 1
+                return
+            if context.reply_public_key is None or path_index + 1 >= len(path):
+                self.crypto_failures += 1
+                return
+            child_context = self.branches[path[path_index + 1]]
+            if child_context.reply_delta is None:
+                self.crypto_failures += 1
+                return
+            try:
+                outgoing_blob = wrap_relay_candidate(
+                    context.reply_public_key,
+                    delta=child_context.reply_delta,
+                    child_candidate_token=decoded.candidate_token,
+                    forward_label=self._token(),
+                    child_blob=decoded.candidate_blob,
+                    ephemeral_secret=self._scalar(b"candidate-relay-e"),
+                )
+                outgoing_layers = decoded.layer_count + 1
+                self.crypto_candidate_layers += 1
+            except (CryptoError, CodecError, r255.RistrettoError):
+                self.crypto_failures += 1
+                return
+
         if next_index < 0:
             self._send_candidate_to_origin(
                 candidate_id,
@@ -943,22 +1374,33 @@ class _LifecycleSimulator:
                 ring_index=int(data["ring_index"]),
                 offer_expires=offer_expires,
                 sender=context.node,
+                candidate_blob=outgoing_blob,
+                layer_count=outgoing_layers,
             )
             return
         parent_context = self.branches[path[next_index]]
+        message_data: dict[str, Any] = {
+            "candidate_id": candidate_id,
+            "responder": int(data["responder"]),
+            "path": path,
+            "path_index": next_index,
+            "ring_index": int(data["ring_index"]),
+            "offer_expires": offer_expires,
+            "layer_count": outgoing_layers,
+        }
+        if self.config.enable_crypto:
+            assert outgoing_blob is not None
+            message_data["candidate_blob"] = outgoing_blob
+            message_data["record_plaintext"] = self._make_candidate_body(
+                candidate_blob=outgoing_blob,
+                layer_count=outgoing_layers,
+            )
         self._send(
             "CANDIDATE",
             sender=context.node,
             receiver=parent_context.node,
             legitimate=True,
-            data={
-                "candidate_id": candidate_id,
-                "responder": int(data["responder"]),
-                "path": path,
-                "path_index": next_index,
-                "ring_index": int(data["ring_index"]),
-                "offer_expires": offer_expires,
-            },
+            data=message_data,
             priority=EventPriority.CANDIDATE,
         )
 
@@ -970,23 +1412,40 @@ class _LifecycleSimulator:
         path: tuple[int, ...],
         ring_index: int,
         offer_expires: int,
+        candidate_blob: bytes | None = None,
+        layer_count: int = 1,
         sender: int | None = None,
     ) -> None:
         if sender is None:
             sender = self.branches[path[0]].node
+        message_data: dict[str, Any] = {
+            "candidate_id": candidate_id,
+            "responder": responder,
+            "path": path,
+            "path_index": -1,
+            "ring_index": ring_index,
+            "offer_expires": offer_expires,
+            "layer_count": layer_count,
+        }
+        if self.config.enable_crypto:
+            if candidate_blob is None:
+                self.crypto_failures += 1
+                return
+            message_data["candidate_blob"] = candidate_blob
+            try:
+                message_data["record_plaintext"] = self._make_candidate_body(
+                    candidate_blob=candidate_blob,
+                    layer_count=layer_count,
+                )
+            except CodecError:
+                self.codec_failures += 1
+                return
         self._send(
             "CANDIDATE",
             sender=sender,
             receiver=self.config.origin,
             legitimate=True,
-            data={
-                "candidate_id": candidate_id,
-                "responder": responder,
-                "path": path,
-                "path_index": -1,
-                "ring_index": ring_index,
-                "offer_expires": offer_expires,
-            },
+            data=message_data,
             priority=EventPriority.CANDIDATE,
         )
 
@@ -998,10 +1457,44 @@ class _LifecycleSimulator:
             self.late_candidates += 1
             self._abort_candidate_path(candidate_id, path)
             return
-        responder = int(data["responder"])
         if len(self.candidates) >= self.config.candidate_limit:
             self._abort_candidate_path(candidate_id, path)
             return
+
+        responder = int(data["responder"])
+        offer_expires = int(data["offer_expires"])
+        commit_challenge = b""
+        if self.config.enable_crypto:
+            decoded = data.get("decoded_record")
+            root_context = self.branches.get(path[0]) if path else None
+            if (
+                not isinstance(decoded, WireCandidateRecord)
+                or root_context is None
+                or root_context.root_reply_secret is None
+            ):
+                self.crypto_failures += 1
+                return
+            try:
+                opened = open_candidate_chain(
+                    root_context.root_reply_secret,
+                    decoded.candidate_blob,
+                    expected_address=self.endpoint_keys.address,
+                    expected_descriptor=self.endpoint_keys.descriptor,
+                    max_layers=max(8, len(path) + 1),
+                )
+            except CryptoError:
+                self.crypto_failures += 1
+                return
+            if opened.layer_count != decoded.layer_count:
+                self.crypto_failures += 1
+                return
+            responder = opened.payload.responder_id
+            offer_expires = opened.payload.offer_expires_ms
+            commit_challenge = opened.payload.commit_challenge
+            if offer_expires <= self.now_ms:
+                self.candidate_expiry_drops += 1
+                return
+
         candidate = _CandidateRecord(
             candidate_id=candidate_id,
             responder=responder,
@@ -1009,7 +1502,8 @@ class _LifecycleSimulator:
             ring_index=int(data["ring_index"]),
             hop_count=len(path),
             arrival_time_ms=self.now_ms,
-            offer_expires_at_ms=int(data["offer_expires"]),
+            offer_expires_at_ms=offer_expires,
+            commit_challenge=commit_challenge,
         )
         self.candidates[candidate_id] = candidate
         self.candidates_received_count += 1
@@ -1130,16 +1624,26 @@ class _LifecycleSimulator:
             if path_index == 0
             else self.branches[path[path_index - 1]].node
         )
+        message_data: dict[str, Any] = {
+            "candidate_id": candidate.candidate_id,
+            "path": path,
+            "path_index": path_index,
+        }
+        if self.config.enable_crypto:
+            try:
+                message_data["protected_body"] = commit_proof(
+                    candidate.commit_challenge, self.endpoint_keys.address
+                )
+            except CryptoError:
+                self.crypto_failures += 1
+                self._fail_selected_route("commit_crypto_failure")
+                return
         self._send(
             "COMMIT",
             sender=sender,
             receiver=context.node,
             legitimate=True,
-            data={
-                "candidate_id": candidate.candidate_id,
-                "path": path,
-                "path_index": path_index,
-            },
+            data=message_data,
             priority=EventPriority.CONTROL,
         )
 
@@ -1160,6 +1664,18 @@ class _LifecycleSimulator:
                 self.commit_failures += 1
                 self._fail_selected_route("commit_offer_expired")
                 return
+            if self.config.enable_crypto:
+                decoded = data.get("decoded_record")
+                if not isinstance(decoded, WireControlRecord):
+                    self.codec_failures += 1
+                    self._fail_selected_route("commit_codec_failure")
+                    return
+                expected = commit_proof(offer[2], self.endpoint_keys.address)
+                if not hmac.compare_digest(decoded.protected_body, expected):
+                    self.crypto_failures += 1
+                    self.commit_failures += 1
+                    self._fail_selected_route("commit_authentication_failed")
+                    return
             self.offers.pop(candidate_id, None)
             self._send_ready(candidate_id, path, index)
             return
@@ -1200,16 +1716,31 @@ class _LifecycleSimulator:
             if next_index < 0
             else self.branches[path[next_index]].node
         )
+        message_data: dict[str, Any] = {
+            "candidate_id": candidate_id,
+            "path": path,
+            "path_index": next_index,
+        }
+        if self.config.enable_crypto:
+            candidate = self.candidates.get(candidate_id)
+            if candidate is None:
+                self.crypto_failures += 1
+                self._fail_selected_route("ready_crypto_state_missing")
+                return
+            try:
+                message_data["protected_body"] = ready_proof(
+                    candidate.commit_challenge, self.endpoint_keys.address
+                )
+            except CryptoError:
+                self.crypto_failures += 1
+                self._fail_selected_route("ready_crypto_failure")
+                return
         self._send(
             "READY",
             sender=sender,
             receiver=receiver,
             legitimate=True,
-            data={
-                "candidate_id": candidate_id,
-                "path": path,
-                "path_index": next_index,
-            },
+            data=message_data,
             priority=EventPriority.CONTROL,
         )
 
@@ -1222,6 +1753,21 @@ class _LifecycleSimulator:
         if candidate_id != self.selected_candidate_id:
             return
         if index < 0:
+            if self.config.enable_crypto:
+                candidate = self.candidates.get(candidate_id)
+                decoded = data.get("decoded_record")
+                if candidate is None or not isinstance(decoded, WireControlRecord):
+                    self.codec_failures += 1
+                    self._fail_selected_route("ready_codec_failure")
+                    return
+                expected = ready_proof(
+                    candidate.commit_challenge, self.endpoint_keys.address
+                )
+                if not hmac.compare_digest(decoded.protected_body, expected):
+                    self.crypto_failures += 1
+                    self.ready_failures += 1
+                    self._fail_selected_route("ready_authentication_failed")
+                    return
             self.success = True
             self.stop_reason = "ready"
             self.setup_latency_ms = self.now_ms
@@ -1288,18 +1834,39 @@ class _LifecycleSimulator:
                 continue
             for _ in range(self.config.attack_branches_per_burst):
                 receiver = neighbors[self.rng.randrange(len(neighbors))]
+                message_data: dict[str, Any] = {
+                    "parent_context_id": None,
+                    "ring_index": None,
+                    "hop_count": 1,
+                    "hop_limit": self.config.attack_hop_limit,
+                    "relay_fanout": self.config.attack_fanout,
+                    "reply_delta": None,
+                }
+                if self.config.enable_crypto:
+                    try:
+                        public = r255.scalarmult_base(
+                            self._scalar(b"attack-root-reply")
+                        )
+                        capsule = ure_encrypt(
+                            self.endpoint_keys.eligibility_public,
+                            r0=self._scalar(b"attack-ure-r0"),
+                            r1=self._scalar(b"attack-ure-r1"),
+                        )
+                        message_data["record_plaintext"] = self._make_discover_body(
+                            hop_remaining=max(self.config.attack_hop_limit - 1, 0),
+                            fanout_class=self.config.attack_fanout,
+                            reply_public_key=public,
+                            eligibility_capsule=capsule,
+                        )
+                    except (CryptoError, CodecError, r255.RistrettoError):
+                        self.crypto_failures += 1
+                        continue
                 self._send(
                     "DISCOVER",
                     sender=attacker,
                     receiver=receiver,
                     legitimate=False,
-                    data={
-                        "parent_context_id": None,
-                        "ring_index": None,
-                        "hop_count": 1,
-                        "hop_limit": self.config.attack_hop_limit,
-                        "relay_fanout": self.config.attack_fanout,
-                    },
+                    data=message_data,
                     priority=EventPriority.DISCOVER,
                 )
 

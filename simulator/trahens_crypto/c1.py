@@ -85,7 +85,7 @@ class URECiphertext:
 
     def encode(self) -> bytes:
         for point in (self.u0, self.v0, self.u1, self.v1):
-            r255.require_point(point)
+            r255.require_point(point, allow_identity=False)
         return self.u0 + self.v0 + self.u1 + self.v1
 
     @classmethod
@@ -95,7 +95,7 @@ class URECiphertext:
         points = [encoded[index:index + 32] for index in range(0, URE_BYTES, 32)]
         try:
             for point in points:
-                r255.require_point(point)
+                r255.require_point(point, allow_identity=False)
         except r255.RistrettoError as exc:
             raise CryptoError("invalid URE ciphertext") from exc
         return cls(*points)
