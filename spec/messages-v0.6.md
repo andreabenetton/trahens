@@ -1,0 +1,270 @@
+# Trahens Core v0.6 messages and W1 encoding
+
+- Status: Active research design
+- Applies to: Core v0.6 with U1, E1, C1, and W1
+- Encoding status: the W1 adjacent-link record and all C1 cryptographic fields are concrete
+
+## 1. General requirements
+
+Every control message is carried in exactly one W1 adjacent-link record. The authenticated plaintext body is 1,024 bytes. The public link header is 12 bytes and the ChaCha20-Poly1305 tag is 16 bytes; therefore every reference record is exactly 1,052 bytes. Protocol type, profile identifiers, suite identifier, fields, and padding are encrypted on the adjacent link.
+
+C1 cryptographic fields use the canonical encodings in `crypto-profile-c1.md`. The exact byte offsets, integer byte order, maximum nested-candidate size, and link nonce construction are normative in `wire-codec-w1.md`. A sender MUST reconstruct, repad, and re-encrypt a complete canonical body at every hop. A sender MUST NOT forward an unchanged opaque field unless the field is transformed by a primitive whose selected security definition includes the required passive unlinkability property.
+
+No message contains a network-wide discovery identifier.
+
+## 2. Common validation order
+
+A receiver SHOULD process an adjacent-link record in this order:
+
+1. enforce the exact 1,052-byte W1 record length;
+2. enforce link byte and record rate;
+3. validate link epoch and exact replay domain;
+4. authenticate and decrypt the adjacent-link record;
+5. validate protocol version, U1, E1, C1, and W1 identifiers;
+6. validate canonical encoding and field bounds;
+7. convert lifetime classes into local half-open deadlines;
+8. reject state that is expired at the current local timestamp;
+9. check link-local branch, candidate, or label replay state;
+10. enforce the per-ingress-peer token bucket and node-global work budget;
+11. reserve local state capacity;
+12. perform URE, KEM, credential, or signature work;
+13. allocate full branch or route state;
+14. enqueue bounded outgoing work.
+
+A failure MUST NOT consume resources from later stages. Equal-time processing follows E1: expiry, cancellation, route control, candidate, discovery, then window closure.
+
+## 3. DISCOVER
+
+### 3.1 Purpose
+
+Propagate one independently transformed branch toward potential responders.
+
+### 3.2 Logical fields
+
+- `message_type` = `0x20`
+- `protocol_version`
+- `u1_profile_id`
+- `e1_profile_id`
+- `suite_id` = `0x0001` for C1
+- `w1_profile_id`
+- `branch_token`
+- `propagation_class`
+- `fanout_class`
+- `reply_public_key`: one canonical 32-byte non-identity `ristretto255` element
+- `eligibility_capsule`: four canonical `ristretto255` elements, 128 bytes total
+- `expiry_class`
+- `options`
+- `padding`
+
+### 3.3 Prohibited fields
+
+`DISCOVER` MUST NOT contain:
+
+- logical discovery ID;
+- attempt ID;
+- previous attempt ID;
+- ring index or retry count;
+- source route or path vector;
+- stable endpoint-address hash;
+- stable candidate or route ID;
+- unchanged eligibility ciphertext from the previous hop.
+
+### 3.4 Relay transformation
+
+For every selected child, the relay generates a fresh branch token, blinds the reply public key, rerandomizes the eligibility capsule, decrements or otherwise advances the bounded propagation control, regenerates padding, and seals a fresh link record.
+
+## 4. CANDIDATE
+
+### 4.1 Purpose
+
+Return an authenticated responder offer through the reverse branch context while installing tentative hop-local route mappings.
+
+### 4.2 Logical fields
+
+- `message_type` = `0x21`
+- `protocol_version`
+- `u1_profile_id`
+- `e1_profile_id`
+- `suite_id`
+- `w1_profile_id`
+- `candidate_token`
+- `nested_candidate_capsule`
+- `offer_expiry_class`
+- `padding`
+
+The responder candidate payload is inside the innermost C1 reply capsule. Each C1 capsule starts with a 32-byte `TR-KEM-R255` encapsulated element and ends with a full 16-byte ChaCha20-Poly1305 tag. A relay's parent-facing forward label is carried inside that relay's authenticated nested capsule, not as an outer W1 field. Relays MUST NOT receive the authenticated responder identity or service offer in plaintext.
+
+### 4.3 Relay transformation
+
+A relay receiving a valid child candidate token:
+
+1. verifies that the token is bound to one live child branch;
+2. reserves tentative-state capacity;
+3. generates a fresh parent candidate token;
+4. generates a fresh parent-facing forward label;
+5. wraps the child capsule using the incoming reply public key and stored blinding scalar;
+6. stores the child-to-parent mapping;
+7. sends a fresh fixed-size parent record.
+
+The child candidate token and child record bytes MUST NOT be copied into the parent-visible fields. The parent-facing forward label is protected inside the newly created relay layer and is revealed only while the initiator opens the nested chain.
+
+## 5. COMMIT
+
+### 5.1 Purpose
+
+Select one tentative route, reserve route capacity, and move its forward mappings to `PENDING_READY`.
+
+### 5.2 Logical fields
+
+- `incoming_forward_label`
+- `protected_commit_body`
+- `reverse_label_offer`
+- `commit_expiry_class`
+- `padding`
+
+The protected commit body contains the end-to-end commit challenge response. A relay processes only the local incoming label and the local mapping. No global candidate identifier is required.
+
+### 5.3 Idempotency
+
+A duplicate commit on the same peer, label, route generation, and transcript is processed idempotently. A different transcript on the same label is rejected.
+
+## 6. READY
+
+### 6.1 Purpose
+
+Confirm responder activation and complete reverse mappings.
+
+### 6.2 Logical fields
+
+- `incoming_reverse_label`
+- `protected_ready_body`
+- `route_limits_class`
+- `padding`
+
+`READY` is forwarded through matching `PENDING_READY` reverse mappings and converts them to `ACTIVE`. The initiator exposes the route to the data plane only after the protected ready body authenticates the selected transcript.
+
+## 7. ABORT
+
+`ABORT` removes one tentative route mapping identified by a local label and peer binding. Nodes do not rely on ABORT for eventual cleanup. The message uses the same fixed-size and transformation rules as other setup records.
+
+## 8. CLOSE
+
+`CLOSE` requests removal or draining of one active route mapping. It uses local labels and an end-to-end protected close reason class. Detailed local capacity or topology information MUST NOT be exposed.
+
+## 9. CHAFF
+
+A U1 `CHAFF` record:
+
+- occupies a real record-size class;
+- follows the same batching and scheduling path;
+- is indistinguishable from a real record to an observer without adjacent-link keys;
+- is recognized and discarded only after adjacent-link authentication and profile processing;
+- cannot allocate route or branch state beyond a small bounded parsing cost.
+
+## 10. Local idempotency keys
+
+The minimum local keys are:
+
+- `(link_epoch, incoming_peer, branch_token)` for DISCOVER exact replay;
+- `(incoming_peer, candidate_token)` for CANDIDATE;
+- `(incoming_peer, incoming_forward_label, transcript_hash)` for COMMIT;
+- `(incoming_peer, incoming_reverse_label, transcript_hash)` for READY;
+- `(incoming_peer, local_label, route_generation)` for ABORT and CLOSE.
+
+None of these keys is forwarded unchanged to another link.
+
+## 11. E1 lifetime and window rules
+
+Messages carry lifetime or expiry classes, not synchronized absolute timestamps. The receiver converts a class into a local deadline when state is admitted. State is valid on `[created, deadline)` and invalid at the deadline.
+
+Ring indexes, retry counts, candidate-window numbers, and selection state are initiator-local and MUST NOT appear in DISCOVER or CANDIDATE. A delayed candidate from an earlier local ring is indistinguishable on the wire from any other candidate and remains eligible only according to initiator-local E1 state.
+
+## 12. CANCEL
+
+### 12.1 Purpose
+
+Promptly reclaim one off-route branch subtree after route selection or termination.
+
+### 12.2 Logical fields
+
+- `incoming_branch_capability`
+- `cancellation_generation`
+- `expiry_class`
+- `padding`
+
+The cancellation generation is local to one adjacent mapping and MUST be replaced at every hop. CANCEL MUST NOT contain a global route, candidate, logical-discovery, or ring identifier.
+
+### 12.3 Processing
+
+A valid CANCEL removes the matching live branch context and forwards independently transformed CANCEL records through stored child mappings. It MAY remove tentative state associated only with the cancelled branch. It MUST NOT remove the selected route generation.
+
+CANCEL is advisory. Loss of CANCEL cannot prevent eventual cleanup because every affected state has an independent deadline.
+
+## 13. C1 cryptographic validation
+
+A C1 receiver MUST reject invalid or identity public keys, invalid encapsulated elements, non-canonical scalars, malformed URE points, URE consistency failure, eligibility marker mismatch, AEAD failure, candidate signature failure, and transcript mismatch through one state-machine result: `INVALID_CRYPTO`. The detailed reason is not transmitted.
+
+## 14. Error behavior
+
+Nodes SHOULD silently discard invalid discovery and candidate records after local accounting. When an error response is required, its class, size, timing policy, and amplification factor MUST be bounded and independent of secret state.
+
+
+## 15. W1 exact record envelope
+
+### 15.1 Public link header
+
+The public header is exactly 12 bytes:
+
+| Offset | Size | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 4 | `link_epoch` | unsigned big-endian |
+| 4 | 8 | `sequence` | unsigned big-endian |
+
+The complete link nonce is derived from the directional link association, epoch, and sequence. A sender MUST NOT reuse an `(association, direction, epoch, sequence)` tuple.
+
+### 15.2 Encrypted common prefix
+
+Every 1,024-byte plaintext begins with an 8-byte common prefix:
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 1 | message type |
+| 1 | 1 | protocol version |
+| 2 | 1 | U1 profile identifier |
+| 3 | 1 | E1 profile identifier |
+| 4 | 2 | C1 suite identifier |
+| 6 | 1 | W1 profile identifier |
+| 7 | 1 | reserved, zero |
+
+Reserved bits and bytes MUST be zero on transmission and MUST be rejected when non-zero.
+
+### 15.3 DISCOVER body
+
+After the common prefix, DISCOVER contains one 16-byte branch token, bounded propagation and fan-out classes, one 32-byte reply public key, one 128-byte URE eligibility capsule, bounded lifetime and option fields, and random padding to byte 1,023.
+
+### 15.4 CANDIDATE body
+
+After the common prefix, CANDIDATE contains one 16-byte candidate token, a one-byte offer-lifetime class, a one-byte relay-layer count, a two-byte nested-capsule length, at most 960 bytes of nested C1 candidate material, and random padding. Parent-facing forward labels occur only inside authenticated nested relay layers. The length MUST be canonical and MUST NOT exceed the declared W1 maximum.
+
+### 15.5 Route-control bodies
+
+COMMIT, READY, CANCEL, ABORT, and CLOSE use the common prefix, one local 16-byte capability, bounded generation and lifetime fields, a canonical two-byte protected-body length, at most 512 protected bytes, and random padding. CHAFF contains only the common prefix and random padding.
+
+## 16. Integrated cryptographic processing
+
+The reference processing path is:
+
+1. authenticate and open the W1 link record;
+2. parse and validate the exact message layout;
+3. apply E1 deadline and admission checks;
+4. execute the applicable C1 URE, reply-KEM, signature, or transcript operation;
+5. allocate or transition protocol state only after successful validation;
+6. construct a new W1 body and a new adjacent-link ciphertext for every outgoing record.
+
+Candidate payloads are exactly 256 bytes before nested relay wrapping. Every reverse relay layer carries one 32-byte reply-key tweak, one 16-byte child candidate capability, one 16-byte local forward label, one canonical child-length field, and the child capsule. The initiator MUST open every layer and authenticate the final responder payload before selection.
+
+## 17. Active-tagging claim boundary
+
+The C1 URE consistency pair is malleable. An active relay can install a persistent ratio relation that survives honest rerandomization and is recognizable by a colluding downstream relay. Therefore the current protocol MUST NOT claim active-adversary message unlinkability. Link authentication detects unauthorized modification on an edge, but it does not prevent a compromised relay from creating a fresh validly authenticated tagged outgoing record.
+
+A conforming implementation MUST count active-tag experiments separately from ordinary cryptographic failures and MUST NOT expose a detailed network error distinguishing endpoint ineligibility from malformed or tagged capsules.
