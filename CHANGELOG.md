@@ -1,5 +1,17 @@
 # Changelog
 
+## Registry 1.5.1 - 2026-07-30
+
+- Amended the frozen registry with constants that normative mandatory-limit
+  lists already required but that had no registry entry: T1 RTO clamp bounds
+  and initial value split (`t1_rto_min_ms`, `t1_rto_max_ms`), T1 ACK delay
+  bound and pending-ACK cap, per-class E1 lifecycle deadlines (branch,
+  offer, tentative, ready-hold, route-setup), the ADR-0013 ingress token
+  bucket parameters, branch-context and candidate-response ceilings, R1
+  registration bounds and endpoint-handle lifetime, and the fan-out class
+  bound. No wire encoding changes; the conformance corpus is byte-identical
+  and only the embedded registry version string moved to 1.5.1.
+
 ## Core v1.5 P1 prototype - 2026-07-30
 
 - Froze M2, W2, R1, T1, and the fixed T2 P1 profile in one machine-readable registry, including stable message, suite, error, width, limit, byte-order, and protection-class assignments.

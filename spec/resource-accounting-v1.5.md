@@ -19,10 +19,21 @@
 | routes globally | 2,048 |
 | candidate relay layers | 16 |
 | T1 retries | 8 |
+| T1 RTO | initial 100 ms, clamped to [25, 3000] ms |
+| T1 ACK delay | 25 ms maximum |
+| pending ACKs per link | 64 |
 | replay window | 1,024 cells |
 | fixed T2 queue per peer | 256 cells |
 | fixed T2 queue globally | 2,048 cells |
 | failed redemptions per route | 2 |
+| branch contexts per ingress peer | 64 |
+| branch contexts globally | 1,024 |
+| candidate responses per discovery | 64 |
+| ingress token bucket | capacity 8, +1 token per 100 ms |
+| registrations per endpoint | 8 |
+| registrations per gateway | 1,024 |
+| endpoint handle lifetime | 5,000 ms |
+| fan-out class | 3 maximum |
 
 The generated registry remains authoritative if this explanatory table disagrees.
 
@@ -40,6 +51,16 @@ The generated registry remains authoritative if this explanatory table disagrees
 10. outgoing queue reservation.
 
 A failure at one stage MUST NOT consume later-stage state.
+
+## State-class deadlines
+
+Every lifecycle state class carries an independent finite deadline from the
+registry: branch contexts expire after `branch_ttl_ms`, candidate offers
+after `offer_ttl_ms`, tentative routes after `tentative_ttl_ms`, the
+READY hold after `ready_hold_ms`, and a complete route setup attempt after
+`route_setup_timeout_ms`. Active routes keep `route_ttl_ms`, renewed on
+valid transitions per E1 §8. Reassembly, replay, and completion-cache
+lifetimes are unchanged.
 
 ## Memory discipline
 

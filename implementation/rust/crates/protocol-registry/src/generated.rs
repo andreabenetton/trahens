@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Generated from spec/protocol-registry-v1.5.json; do not edit.
-pub const REGISTRY_VERSION: &str = "1.5.0";
+pub const REGISTRY_VERSION: &str = "1.5.1";
 
 pub const VERSION: u8 = 1;
 pub const PRIVACY_PROFILE_U1: u8 = 1;
@@ -96,11 +96,30 @@ pub const LIMIT_MAX_ROUTES_GLOBAL: usize = 2048;
 pub const LIMIT_MAX_CANDIDATE_LAYERS: usize = 16;
 pub const LIMIT_MAX_T1_RETRIES: usize = 8;
 pub const LIMIT_T1_RTO_MS: usize = 100;
+pub const LIMIT_T1_RTO_MIN_MS: usize = 25;
+pub const LIMIT_T1_RTO_MAX_MS: usize = 3000;
+pub const LIMIT_T1_ACK_DELAY_MAX_MS: usize = 25;
+pub const LIMIT_T1_MAX_PENDING_ACKS: usize = 64;
 pub const LIMIT_REPLAY_WINDOW_CELLS: usize = 1024;
 pub const LIMIT_COMPLETION_CACHE_MS: usize = 1000;
 pub const LIMIT_ROUTE_TTL_MS: usize = 5000;
+pub const LIMIT_BRANCH_TTL_MS: usize = 8000;
+pub const LIMIT_OFFER_TTL_MS: usize = 8000;
+pub const LIMIT_TENTATIVE_TTL_MS: usize = 8000;
+pub const LIMIT_READY_HOLD_MS: usize = 5000;
+pub const LIMIT_ROUTE_SETUP_TIMEOUT_MS: usize = 30000;
 pub const LIMIT_CAPABILITY_TTL_MS: usize = 5000;
 pub const LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE: usize = 2;
+pub const LIMIT_INGRESS_BUCKET_CAPACITY: usize = 8;
+pub const LIMIT_INGRESS_BUCKET_REFILL_INTERVAL_MS: usize = 100;
+pub const LIMIT_INGRESS_BUCKET_REFILL_AMOUNT: usize = 1;
+pub const LIMIT_MAX_BRANCHES_PER_PEER: usize = 64;
+pub const LIMIT_MAX_BRANCHES_GLOBAL: usize = 1024;
+pub const LIMIT_MAX_CANDIDATE_RESPONSES_PER_DISCOVERY: usize = 64;
+pub const LIMIT_MAX_REGISTRATIONS_PER_ENDPOINT: usize = 8;
+pub const LIMIT_MAX_REGISTRATIONS_PER_GATEWAY: usize = 1024;
+pub const LIMIT_ENDPOINT_HANDLE_TTL_MS: usize = 5000;
+pub const LIMIT_MAX_FANOUT_CLASS: usize = 3;
 
 pub const FIXED_T2_PROFILE_ID: usize = 1;
 pub const FIXED_T2_EPOCH_MS: usize = 200;
