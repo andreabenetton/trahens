@@ -1,0 +1,7 @@
+workload,profile,runs,mean_delivery_rate,mean_drop_rate,mean_peak_queue_cells,mean_delay_epochs,mean_p95_delay_epochs,mean_weighted_fairness,mean_chaff_cells,mean_rate_changes,cleanup_rate
+equal-overload,fixed-low,30,0.7843137254901961,0.15,496,13.325,26.0,1.0,0,0,0
+equal-overload,fixed-high,30,1.0,0.0,0,0,0.0,1.0,1600,0,1
+equal-overload,adaptive-hysteresis,30,1.0,0.0,98,0.6416666666666667,2.0,1.0,370,7,1
+equal-overload,work-conserving,30,1.0,0.0,0,0,0.0,1.0,0,0,1
+weighted-saturation,fixed-high-drr,30,0.26666666666666666,0.0,3520,6.878125,14.0,0.9999963436193415,0,0,0
+weighted-saturation,adaptive-drr,30,0.2325,0.0,3684,8.469534050179211,15.0,1.0,0,2,0

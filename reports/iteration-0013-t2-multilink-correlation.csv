@@ -1,0 +1,4 @@
+profile,runs,mean_lag_one_correlation,mean_first_link_cells_per_epoch,mean_second_link_cells_per_epoch
+fixed,100,0.0,64,64
+adaptive,100,0.4784920703221599,30.418666666666667,26.237333333333332
+work-conserving,100,1.0,14.4995,14.4425

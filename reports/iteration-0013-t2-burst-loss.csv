@@ -1,0 +1,3 @@
+loss_model,nominal_mean_loss_probability,runs,mean_delivery_rate,mean_retry_exhaustions,mean_retransmitted_cells,mean_delay_epochs,mean_p95_delay_epochs,cleanup_rate
+independent,0.11142857142857143,100,0.998625,0.66,59.89,0.33892497862287513,1.02,1
+gilbert-elliott,0.11142857142857143,100,0.9967291666666667,1.57,57.25,0.36760334776187886,1.24,1

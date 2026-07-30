@@ -1,0 +1,4 @@
+profile,runs_per_class,idle_mean_cells_per_epoch,active_mean_cells_per_epoch,idle_mean_rate_changes,active_mean_rate_changes,classifier_accuracy,distinguishing_advantage,active_mean_chaff_cells
+fixed-high,100,64,64,0,0,0.5,0.0,1592
+adaptive-fast,100,8,14,0,6,1,1.0,180
+adaptive-hysteresis,100,8,14.857142857142858,0,4,1,1.0,208

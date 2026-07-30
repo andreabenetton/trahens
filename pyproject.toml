@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trahens-sim"
-version = "1.1.0"
-description = "Deterministic Trahens models with R1 rendezvous, E1 lifecycle, M2 messages, W2 cells, and T1 reliability scheduling"
+version = "1.2.0"
+description = "Deterministic Trahens models with R1 rendezvous, E1 lifecycle, M2 messages, W2 cells, and T1 recovery and T2 congestion scheduling"
 requires-python = ">=3.11"
 dependencies = ["cryptography>=43"]
 authors = [{name = "Andrea Benetton", email = "andrea.benetton@blueteam.ee"}]
@@ -20,6 +20,7 @@ trahens-fragmentation-compare = "trahens_sim.fragmentation_compare:main"
 trahens-c2-compare = "trahens_sim.c2_compare:main"
 trahens-r1-compare = "trahens_sim.r1_compare:main"
 trahens-t1-compare = "trahens_sim.t1_compare:main"
+trahens-t2-compare = "trahens_sim.t2_compare:main"
 
 [tool.setuptools]
 package-dir = {"" = "simulator"}

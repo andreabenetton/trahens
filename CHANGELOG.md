@@ -1,5 +1,17 @@
 # Changelog
 
+## Core v1.2 - 2026-07-30
+
+- Added T2 fixed, quantized-adaptive, and work-conserving adjacent-link schedule modes.
+- Added same-size encrypted SCHEDULE OFFER, ACCEPT, and REJECT frames with link-local negotiation identifiers.
+- Added finite public rate menus, one-class boundary transitions, peer maximums, minimum hold time, and asymmetric queue-pressure hysteresis.
+- Added weighted deficit round robin for admitted new DATA after bounded ACK, schedule-control, and retry reserves.
+- Added atomic first-send queue reservation, finite queue residence, overload rejection, and fail-closed maximum-class behavior.
+- Added deterministic independent and Gilbert-Elliott loss models, a rate-class activity distinguisher, Jain-normalized fairness, and two-link public-count correlation experiments.
+- Added T2 codec/model tests and deterministic schedule-control vectors, bringing the complete suite to 108 tests.
+- Published Core v1.2, T2 transport, message, state-machine, invariant, and resource-accounting specifications.
+- Expanded the formal paper with T2 notation, negotiation and service algorithms, point-of-use citations, congestion/fairness measurements, adaptive leakage, burst-loss results, and multi-link correlation limits.
+
 ## Core v1.1 - 2026-07-30
 
 - Added T1 hop-local reliability with encrypted cumulative selective ACK bitmaps, bounded RTO recovery, and finite retry exhaustion.
