@@ -1,7 +1,7 @@
 # Trahens U1 non-adjacent message unlinkability profile
 
 - Status: Research profile
-- Applies to: Core v0.4 (retained from Core v0.3)
+- Applies to: Core v0.5 (retained from Core v0.3)
 - Property class: cryptographic and batch-local message unlinkability
 
 ## 1. Objective

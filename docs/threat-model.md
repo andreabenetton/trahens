@@ -1,11 +1,11 @@
 # Threat model
 
-- Status: Core v0.4 research model
+- Status: Core v0.5 research model
 - Date: 2026-07-30
 
 ## 1. Scope
 
-This model covers branch-local discovery, candidate return, route commitment, E1 candidate windows and state deadlines, cancellation races, active hop-label state, and the U1 non-adjacent message unlinkability profile. It does not cover a global directory, endpoint malware, application-layer anonymity failures, incentives, or inter-domain routing policy.
+This model covers branch-local discovery, candidate return, route commitment, E1 candidate windows and state deadlines, cancellation races, active hop-label state, the U1 non-adjacent message unlinkability profile, and the C1 research cryptographic profile. It does not cover a global directory, endpoint malware, application-layer anonymity failures, incentives, or inter-domain routing policy.
 
 ## 2. Protected assets
 
@@ -20,9 +20,9 @@ This model covers branch-local discovery, candidate return, route commitment, E1
 
 ## 3. Trust assumptions
 
-Core v0.4 assumes:
+Core v0.5 assumes:
 
-1. selected primitives satisfy their documented security definitions;
+1. for each conditional claim, the selected primitives satisfy the explicitly named security assumptions;
 2. honest nodes generate independent randomness and erase expired secrets;
 3. the adjacent-link underlay provides authenticated encryption and a replay domain;
 4. U1-conforming relays apply every required field transformation and batch permutation;
@@ -83,7 +83,7 @@ Controls an initiator or responder, including keys, randomness, application stat
 
 ### Non-adjacent message unlinkability
 
-Under U1 and its passive challenge game, protocol fields should not permit matching of one input message to one output message across an honest transformation and mixing boundary. This property is conditional on the URE and reply-key-blinding primitives, fixed-size records, and the absence of timing side channels.
+Under U1 and its passive challenge game, protocol fields should not permit matching of one input message to one output message across an honest transformation and mixing boundary. This property is conditional on the C1 URE and reply-key assumptions, fixed-size records, an honest mixer, and the absence of timing side channels.
 
 ### Cross-attempt separation
 
@@ -119,7 +119,7 @@ Under U1 and its passive challenge game, protocol fields should not permit match
 | Active tagging resistance | No | Not claimed | Not claimed until reviewed primitive | Required by future profile |
 | Global timing correlation resistance | No | No | No | Experimentally evaluated |
 
-## 7. Explicit leakage in Core v0.4
+## 7. Explicit leakage in Core v0.5
 
 A compromised relay can observe:
 
@@ -143,11 +143,11 @@ Across local ring attempts, observers may correlate:
 
 ## 8. Claims not made
 
-Core v0.4 does not claim:
+Core v0.5 does not claim:
 
 - sender or receiver anonymity against A4;
 - flow unlinkability from adjacent-link encryption alone;
-- active-tagging resistance for an unspecified URE scheme;
+- active-tagging resistance for the unreviewed C1 URE construction;
 - that branch-local contexts are cheaper than attempt-wide deduplication;
 - that fixed-size records hide timing or origin adjacency;
 - post-quantum security.

@@ -1,7 +1,7 @@
 # Trahens event lifecycle profile E1
 
 - Status: Active research design
-- Applies to: Core v0.4 with U1
+- Applies to: Core v0.5 with U1
 - Purpose: Define event time, candidate windows, reverse setup, activation, cancellation, and deterministic cleanup
 
 ## 1. Time model
