@@ -662,3 +662,235 @@ def ring_schedule_to_string(rings: Sequence[RingStep]) -> str:
         f"{ring.hop_limit}:{ring.initial_fanout}:{ring.relay_fanout}"
         for ring in rings
     )
+
+
+@dataclass(frozen=True)
+class UnlinkableDiscoveryConfig:
+    """Configuration for the U1 branch-local discovery model.
+
+    The model deliberately removes attempt-wide duplicate suppression. Each
+    accepted ingress is an independent branch context identified only by
+    link-local state. Hard transmission, state, and per-node context limits are
+    therefore mandatory.
+    """
+
+    origin: int = 0
+    hop_limit: int = 4
+    initial_fanout: int = 3
+    relay_fanout: int = 3
+    candidate_limit: int = 4
+    candidate_response_limit: int = 16
+    responder_fraction: float = 0.05
+    seed: int = 1
+    transmission_budget: int = 512
+    state_budget: int = 512
+    per_node_context_limit: int = 8
+
+    def validate(self, graph: Graph) -> None:
+        if self.origin < 0 or self.origin >= graph.node_count:
+            raise ValueError("origin is outside the graph")
+        if self.hop_limit < 1:
+            raise ValueError("hop_limit must be positive")
+        if self.initial_fanout < 1:
+            raise ValueError("initial_fanout must be positive")
+        if self.relay_fanout < 1:
+            raise ValueError("relay_fanout must be positive")
+        if self.candidate_limit < 1:
+            raise ValueError("candidate_limit must be positive")
+        if self.candidate_response_limit < self.candidate_limit:
+            raise ValueError(
+                "candidate_response_limit cannot be smaller than candidate_limit"
+            )
+        if not 0.0 <= self.responder_fraction <= 1.0:
+            raise ValueError("responder_fraction must be between 0 and 1")
+        if self.transmission_budget < 1:
+            raise ValueError("transmission_budget must be positive")
+        if self.state_budget < 1:
+            raise ValueError("state_budget must be positive")
+        if self.per_node_context_limit < 1:
+            raise ValueError("per_node_context_limit must be positive")
+
+
+@dataclass(frozen=True)
+class UnlinkableDiscoveryResult:
+    node_count: int
+    edge_count: int
+    accepted_branch_contexts: int
+    unique_relays: int
+    repeated_node_contexts: int
+    hidden_loop_contexts: int
+    max_contexts_at_one_node: int
+    discover_transmissions: int
+    state_budget_drops: int
+    per_node_context_drops: int
+    candidate_responses: int
+    unique_candidate_count: int
+    candidate_responders: tuple[int, ...]
+    max_depth: int
+    transmission_budget_exhausted: bool
+    state_budget_exhausted: bool
+    branch_transformations: int
+    observed_node_ids: tuple[int, ...] = field(repr=False)
+
+    @property
+    def context_amplification(self) -> float:
+        if self.unique_relays == 0:
+            return 0.0
+        return self.accepted_branch_contexts / self.unique_relays
+
+    @property
+    def loop_context_fraction(self) -> float:
+        if self.accepted_branch_contexts == 0:
+            return 0.0
+        return self.hidden_loop_contexts / self.accepted_branch_contexts
+
+    def to_dict(self, *, include_node_ids: bool = False) -> dict[str, object]:
+        data = asdict(self)
+        data["context_amplification"] = self.context_amplification
+        data["loop_context_fraction"] = self.loop_context_fraction
+        if not include_node_ids:
+            data.pop("observed_node_ids", None)
+        return data
+
+
+def simulate_unlinkable_discovery(
+    graph: Graph,
+    config: UnlinkableDiscoveryConfig,
+    *,
+    responders: set[int] | None = None,
+) -> UnlinkableDiscoveryResult:
+    """Simulate the U1 branch-local discovery profile.
+
+    No attempt identifier or network-wide duplicate key exists. A relay rejects
+    only transport replays of the same link-local token; those exact replays are
+    outside this graph model. Deliveries that reach the same relay over another
+    branch are accepted as independent contexts, subject to mandatory limits.
+
+    The simulator knows the complete path solely to measure loop re-entry. The
+    protocol participant does not receive that path.
+    """
+
+    config.validate(graph)
+    rng = random.Random(config.seed)
+    if responders is None:
+        responders = choose_responders(
+            graph,
+            origin=config.origin,
+            responder_fraction=config.responder_fraction,
+            seed=config.seed,
+        )
+    else:
+        invalid = {
+            node
+            for node in responders
+            if node < 0 or node >= graph.node_count or node == config.origin
+        }
+        if invalid:
+            raise ValueError(f"invalid responders: {sorted(invalid)}")
+
+    # Queue entries are independent branch contexts. The path is retained only
+    # for measurement and is not protocol-visible relay state.
+    queue: deque[tuple[int, int, int, tuple[int, ...]]] = deque()
+    initial_children, initial_truncated = _sample_for_transmission(
+        graph.neighbors(config.origin),
+        fanout=config.initial_fanout,
+        remaining_budget=config.transmission_budget,
+        rng=rng,
+    )
+    for child in initial_children:
+        queue.append((config.origin, child, 1, (config.origin,)))
+
+    transmissions = len(initial_children)
+    accepted_contexts = 0
+    state_budget_drops = 0
+    per_node_context_drops = 0
+    repeated_contexts = 0
+    hidden_loop_contexts = 0
+    max_depth = 0
+    contexts_per_node: Counter[int] = Counter()
+    observed_nodes: set[int] = set()
+    candidate_responders: set[int] = set()
+    candidate_responses = 0
+    transmission_budget_exhausted = initial_truncated
+    state_budget_exhausted = False
+
+    while queue:
+        previous, node, hop_count, prefix = queue.popleft()
+        if hop_count > config.hop_limit:
+            raise AssertionError("queued event exceeded hop_limit")
+
+        if accepted_contexts >= config.state_budget:
+            state_budget_drops += 1
+            state_budget_exhausted = True
+            continue
+        if contexts_per_node[node] >= config.per_node_context_limit:
+            per_node_context_drops += 1
+            continue
+
+        current_path = prefix + (node,)
+        if node in observed_nodes:
+            repeated_contexts += 1
+        if node in prefix:
+            hidden_loop_contexts += 1
+
+        accepted_contexts += 1
+        contexts_per_node[node] += 1
+        observed_nodes.add(node)
+        max_depth = max(max_depth, hop_count)
+
+        if (
+            node in responders
+            and candidate_responses < config.candidate_response_limit
+        ):
+            candidate_responses += 1
+            if len(candidate_responders) < config.candidate_limit:
+                candidate_responders.add(node)
+
+        if hop_count >= config.hop_limit:
+            continue
+
+        remaining_budget = config.transmission_budget - transmissions
+        if remaining_budget <= 0:
+            transmission_budget_exhausted = True
+            continue
+
+        # Immediate backtracking is excluded. Longer cycles are intentionally
+        # not suppressed because a global or path-stable duplicate token would
+        # violate the U1 unlinkability profile.
+        children = (peer for peer in graph.neighbors(node) if peer != previous)
+        selected, truncated = _sample_for_transmission(
+            children,
+            fanout=config.relay_fanout,
+            remaining_budget=remaining_budget,
+            rng=rng,
+        )
+        transmission_budget_exhausted = (
+            transmission_budget_exhausted or truncated
+        )
+        for child in selected:
+            queue.append((node, child, hop_count + 1, current_path))
+        transmissions += len(selected)
+
+    return UnlinkableDiscoveryResult(
+        node_count=graph.node_count,
+        edge_count=graph.edge_count(),
+        accepted_branch_contexts=accepted_contexts,
+        unique_relays=len(observed_nodes),
+        repeated_node_contexts=repeated_contexts,
+        hidden_loop_contexts=hidden_loop_contexts,
+        max_contexts_at_one_node=max(contexts_per_node.values(), default=0),
+        discover_transmissions=transmissions,
+        state_budget_drops=state_budget_drops,
+        per_node_context_drops=per_node_context_drops,
+        candidate_responses=candidate_responses,
+        unique_candidate_count=len(candidate_responders),
+        candidate_responders=tuple(sorted(candidate_responders)),
+        max_depth=max_depth,
+        transmission_budget_exhausted=transmission_budget_exhausted,
+        state_budget_exhausted=state_budget_exhausted,
+        # Every transmitted branch is specified to receive a fresh link token,
+        # a fresh blinded reply key, a rerandomized eligibility capsule, and a
+        # fresh adjacent-link ciphertext.
+        branch_transformations=transmissions,
+        observed_node_ids=tuple(sorted(observed_nodes)),
+    )

@@ -7,9 +7,11 @@ from trahens_sim.model import (
     ExpandingRingConfig,
     Graph,
     RingStep,
+    UnlinkableDiscoveryConfig,
     parse_ring_schedule,
     simulate_discovery,
     simulate_expanding_ring,
+    simulate_unlinkable_discovery,
 )
 
 
@@ -197,6 +199,88 @@ class ExpandingRingTests(unittest.TestCase):
         )
 
 
+class UnlinkableDiscoveryTests(unittest.TestCase):
+    @staticmethod
+    def _diamond_graph() -> Graph:
+        graph = Graph(5)
+        for left, right in ((0, 1), (0, 2), (1, 3), (2, 3), (3, 4)):
+            graph.add_edge(left, right)
+        return graph
+
+    def test_result_is_reproducible(self) -> None:
+        graph = Graph.random_connected(100, 6.0, seed=61)
+        config = UnlinkableDiscoveryConfig(seed=61)
+        self.assertEqual(
+            simulate_unlinkable_discovery(graph, config),
+            simulate_unlinkable_discovery(graph, config),
+        )
+
+    def test_same_relay_can_hold_independent_branch_contexts(self) -> None:
+        graph = self._diamond_graph()
+        config = UnlinkableDiscoveryConfig(
+            hop_limit=2,
+            initial_fanout=2,
+            relay_fanout=2,
+            transmission_budget=20,
+            state_budget=20,
+            per_node_context_limit=4,
+            responder_fraction=0.0,
+            seed=4,
+        )
+        result = simulate_unlinkable_discovery(graph, config)
+        self.assertGreater(result.accepted_branch_contexts, result.unique_relays)
+        self.assertGreater(result.repeated_node_contexts, 0)
+
+    def test_hard_budgets_bound_branch_local_amplification(self) -> None:
+        graph = Graph.random_connected(100, 10.0, seed=62)
+        config = UnlinkableDiscoveryConfig(
+            hop_limit=8,
+            initial_fanout=8,
+            relay_fanout=8,
+            transmission_budget=37,
+            state_budget=19,
+            per_node_context_limit=3,
+            seed=62,
+        )
+        result = simulate_unlinkable_discovery(graph, config)
+        self.assertLessEqual(result.discover_transmissions, 37)
+        self.assertLessEqual(result.accepted_branch_contexts, 19)
+        self.assertEqual(
+            result.branch_transformations, result.discover_transmissions
+        )
+
+    def test_immediate_backtracking_is_not_forwarded(self) -> None:
+        graph = Graph(2)
+        graph.add_edge(0, 1)
+        config = UnlinkableDiscoveryConfig(
+            hop_limit=8,
+            initial_fanout=1,
+            relay_fanout=8,
+            transmission_budget=20,
+            state_budget=20,
+            seed=1,
+        )
+        result = simulate_unlinkable_discovery(graph, config)
+        self.assertEqual(result.discover_transmissions, 1)
+        self.assertEqual(result.accepted_branch_contexts, 1)
+
+    def test_candidate_responses_are_bounded_and_deduplicated_locally(self) -> None:
+        graph = self._diamond_graph()
+        config = UnlinkableDiscoveryConfig(
+            hop_limit=3,
+            initial_fanout=2,
+            relay_fanout=2,
+            candidate_limit=1,
+            candidate_response_limit=2,
+            transmission_budget=30,
+            state_budget=30,
+            seed=5,
+        )
+        result = simulate_unlinkable_discovery(graph, config, responders={3})
+        self.assertLessEqual(result.candidate_responses, 2)
+        self.assertEqual(result.unique_candidate_count, 1)
+
+
 class SweepTests(unittest.TestCase):
     def test_small_policy_comparison_is_deterministic(self) -> None:
         from trahens_sim.policy_compare import run_policy_comparison
@@ -219,6 +303,30 @@ class SweepTests(unittest.TestCase):
         self.assertEqual(
             run_policy_comparison(**kwargs),
             run_policy_comparison(**kwargs),
+        )
+
+    def test_small_unlinkability_comparison_is_deterministic(self) -> None:
+        from trahens_sim.unlinkability_compare import (
+            run_unlinkability_comparison,
+        )
+
+        kwargs = dict(
+            nodes=40,
+            average_degree=4.0,
+            runs=3,
+            hop_limits=[2],
+            fanouts=[2],
+            responder_fractions=[0.1],
+            candidate_limit=3,
+            candidate_response_limit=5,
+            transmission_budget=100,
+            state_budget=100,
+            per_node_context_limit=4,
+            seed_base=120,
+        )
+        self.assertEqual(
+            run_unlinkability_comparison(**kwargs),
+            run_unlinkability_comparison(**kwargs),
         )
 
     def test_small_sweep_is_deterministic(self) -> None:
