@@ -1,174 +1,175 @@
 # Threat model
 
-- Status: Initial model for Core v0.2
+- Status: Core v0.3 research model
 - Date: 2026-07-30
 
 ## 1. Scope
 
-This model covers expanding-ring discovery, candidate return, route commitment, and active hop-label state. It does not cover a global directory, economic incentives, endpoint malware, or application-layer anonymity failures.
+This model covers branch-local discovery, candidate return, route commitment, active hop-label state, and the U1 non-adjacent message unlinkability profile. It does not cover a global directory, endpoint malware, application-layer anonymity failures, incentives, or inter-domain routing policy.
 
 ## 2. Protected assets
 
-- endpoint long-term identity keys;
-- responder authentication keys;
-- route-selection intent;
+- endpoint and responder long-term authentication keys;
+- responder eligibility and route-selection intent;
 - complete route topology;
-- association between separate ring attempts;
-- hop labels and route-state mappings;
-- message plaintext and authentication transcripts;
-- availability of relay CPU, memory, bandwidth, timers, and label space;
-- unlinkability of separate logical discoveries where a privacy profile claims it.
+- association between protocol messages at non-adjacent hops;
+- association between local expanding-ring attempts;
+- hop labels, branch tokens, candidate tokens, and route-state mappings;
+- candidate and commit plaintexts;
+- relay CPU, memory, bandwidth, timers, queue space, and label space.
 
 ## 3. Trust assumptions
 
-Core v0.2 assumes:
+Core v0.3 assumes:
 
-1. cryptographic primitives satisfy their documented security properties;
-2. honest nodes generate fresh randomness and enforce local limits;
-3. the baseline underlay protects confidentiality and integrity on one adjacent link;
-4. local clocks are sufficient to enforce bounded expiry windows;
-5. an endpoint device that is fully compromised cannot preserve that endpoint's secrets or anonymity.
+1. selected primitives satisfy their documented security definitions;
+2. honest nodes generate independent randomness and erase expired secrets;
+3. the adjacent-link underlay provides authenticated encryption and a replay domain;
+4. U1-conforming relays apply every required field transformation and batch permutation;
+5. local clocks are sufficient for bounded expiry and queue deadlines;
+6. a fully compromised endpoint cannot preserve its own secrets or anonymity.
 
-Core does not assume that relays, responders, directories, or network operators are globally trusted.
+No relay, responder, network operator, or future directory is globally trusted.
 
 ## 4. Adversary classes
 
 ### A0 - Passive adjacent peer
 
-Controls one adjacent peer session and records all messages, sizes, timing, and attempt identifiers visible at that node but otherwise follows the protocol.
+Controls one adjacent peer session and records plaintext protocol bodies, local tokens, sizes, and timing visible at that node while otherwise following the protocol.
 
 ### A1 - Active relay
 
-Controls one relay and can inspect local state, delay, drop, replay, reorder, modify, inject, or selectively forward messages subject to verification by honest nodes.
+Controls one relay and can inspect local state, delay, drop, replay, reorder, modify, inject, tag, or selectively forward messages subject to validation by honest nodes.
 
 ### A2 - Colluding relays
 
-Controls multiple relays and combines their local state and observations. Adjacency, placement, and corruption fraction are experiment parameters.
+Controls multiple relays and combines their local states and observations. Placement, distance, corruption fraction, and whether an honest mixing boundary lies between observations are explicit experiment parameters.
 
-### A3 - Link observer
+### A3 - Partial link observer
 
-Observes timing, direction, and size on some underlay links but cannot decrypt honest adjacent-link payloads.
+Observes direction, size, and timing on selected underlay links but cannot decrypt records on honest adjacent links.
 
 ### A4 - Global network observer
 
-Observes all underlay links and may correlate timing and volume. It does not automatically control node memory or keys.
+Observes all underlay links and correlates timing and volume. It does not automatically control node memory or keys.
 
 ### A5 - Resource adversary
 
-Creates many peer sessions, fresh attempt IDs, duplicates, candidate responses, malformed messages, or incomplete commitments to exhaust bandwidth, CPU, memory, timers, or label space. It may operate Sybil nodes where the underlay admits them.
+Creates many peer sessions, branch tokens, rerandomized messages, candidates, malformed capsules, or incomplete commitments to exhaust bandwidth, cryptographic work, memory, timers, or mixing queues. It may operate Sybil nodes where admitted by the underlay.
 
 ### A6 - Compromised endpoint
 
-Controls an initiator or responder, including long-term keys, randomness, application state, ring schedule, and route choices. Protection of that endpoint's own identity is outside scope, but damage to unrelated routes should remain bounded.
+Controls an initiator or responder, including keys, randomness, application state, local ring policy, and route choices. Harm to unrelated routes must remain bounded.
 
 ## 5. Security objectives
 
 ### Authentication
 
-- An initiator can verify that READY corresponds to the selected responder and committed transcript.
-- A responder can verify that COMMIT is authorized by the attempt initiator or by a capability carried in the selected profile.
-- A relay accepts forwarding labels only from the peer and direction to which each label is bound.
+- The initiator verifies that READY corresponds to the selected responder candidate and commit transcript.
+- The responder verifies the protected commit challenge.
+- A relay accepts branch tokens and route labels only from their bound peer and link epoch.
 
 ### Confidentiality
 
-- Adjacent passive observers cannot read control-message plaintext under the baseline underlay.
-- End-to-end protected candidate and commitment fields are not readable or modifiable by relays unless explicitly defined as relay-visible.
+- Adjacent external observers cannot read link-protected protocol bodies.
+- Relays cannot read end-to-end candidate, commit, and ready payloads.
+- Eligibility information is hidden according to the selected rerandomizable-encryption profile.
 
 ### Route-position privacy
 
-- One relay should not learn the complete ordered route.
-- A relay necessarily learns its predecessor, selected successors, timing, local labels, and local state lifetime.
-- Core v0.2 exposes a stable attempt ID within one attempt; A2 adversaries can correlate that attempt.
+- A relay does not receive the complete ordered route.
+- A relay necessarily learns its ingress peer, selected child peers, local queue behavior, local capabilities, and state lifetime.
+
+### Non-adjacent message unlinkability
+
+Under U1 and its passive challenge game, protocol fields should not permit matching of one input message to one output message across an honest transformation and mixing boundary. This property is conditional on the URE and reply-key-blinding primitives, fixed-size records, and the absence of timing side channels.
 
 ### Cross-attempt separation
 
-- The local logical-discovery ID is never transmitted.
-- Every ring uses a fresh attempt ID and fresh attempt-scoped ephemeral material.
-- Messages do not expose a previous attempt ID, ring index, or retry count.
-- No claim is made that timing and topology observers cannot correlate attempts.
+- Logical-discovery and ring identifiers are local only.
+- First-hop branches use independent keys, tokens, and ciphertexts.
+- No claim is made that origin adjacency, scheduling, or topology cannot correlate local attempts.
 
 ### Replay resistance
 
-- Replayed messages cannot allocate unbounded state, extend expiration without fresh authorization, or reactivate expired routes.
-- A replay from one attempt is invalid in another attempt context.
+- Exact link-local replays cannot allocate unbounded state or extend lifetimes.
+- A token or label is invalid outside its peer, link epoch, direction, and generation.
+- Distinct branch tokens are not treated as duplicates, and their cost is bounded separately.
 
 ### Availability
 
-- Accepted work and state are bounded per peer, per attempt, per time window, globally, and at the initiator across a logical discovery.
-- Error behavior does not create a useful amplification oracle.
-- Local cleanup does not require cooperation from a malicious peer.
+- Accepted work is bounded per peer, branch, physical node, time window, queue, and node global state.
+- Local cleanup does not require remote cooperation.
+- Error behavior does not provide an amplification or detailed capacity oracle.
 
-## 6. Privacy objectives by profile
+## 6. Privacy properties by profile
 
-| Objective | Baseline encrypted-link profile | Padded batch profile | Scheduled constant-rate profile |
-|---|---|---|---|
-| Payload confidentiality on one link | Required | Required | Required |
-| Message-size hiding | No | Partial or class-based | Required by profile |
-| Timing hiding from A3 | No | Limited | Target property |
-| Correlation resistance to A4 | No | Hypothesis only | Experimentally evaluated, not assumed |
-| Within-attempt correlation resistance to A2 | No, stable attempt ID | No, stable attempt ID | No, stable attempt ID |
-| Cross-attempt direct identifier linkage | Removed | Removed | Removed |
-| Cross-attempt timing/topology linkage | Present | Reduced only if profile demonstrates it | Experimentally evaluated |
+| Property | Encrypted-link baseline | U1 wire transformation | U1 plus mixing | Future traffic-scheduling profile |
+|---|---|---|---|---|
+| Link payload confidentiality | Required | Required | Required | Required |
+| Stable protocol-field removal | No | Required | Required | Required |
+| Fixed-size control records | Optional | Required | Required | Required |
+| Eligibility-capsule rerandomization | No | Required | Required | Required |
+| Reply-key blinding | No | Required | Required | Required |
+| Batch input/output permutation | No | No | Required | Required |
+| Passive non-adjacent matching resistance | No | Cryptographic wire-image only | Conditional U1 claim | Conditional plus timing model |
+| Active tagging resistance | No | Not claimed | Not claimed until reviewed primitive | Required by future profile |
+| Global timing correlation resistance | No | No | No | Experimentally evaluated |
 
-## 7. Explicit leakage in Core v0.2
+## 7. Explicit leakage in Core v0.3
 
-A relay can observe:
+A compromised relay can observe:
 
-- a stable attempt ID for one ring;
-- incoming and selected outgoing adjacent peers;
-- hop count and hop limit unless a later profile hides them;
-- service selector unless a later profile protects it;
-- message timing and size at the local node;
+- its ingress and selected egress peers;
+- one link-local branch token and local child tokens;
+- propagation and fan-out classes unless later hidden;
+- record class and local timing;
 - whether a child returned a candidate;
-- whether the candidate was committed;
-- route lifetime and local traffic volume.
+- whether a local tentative mapping was committed;
+- route lifetime and local traffic volume;
+- repeated independent branch contexts reaching the same physical relay.
 
-Across attempts, an observer may infer a relationship from:
+Across local ring attempts, observers may correlate:
 
-- the same origin-adjacent peer;
-- close timing or regular candidate-window spacing;
-- similar service selector or options;
-- overlapping relay sets;
-- similar message-size and profile fingerprints.
+- the same origin-adjacent link;
+- close or periodic candidate windows;
+- identical record-class and suite fingerprints;
+- overlapping relay populations;
+- similar resource and stop behavior.
 
-The specification must not describe fresh attempt IDs as sufficient unlinkability.
+## 8. Claims not made
 
-## 8. Attacks to simulate next
+Core v0.3 does not claim:
 
-1. duplicate injection within one attempt;
-2. many fresh attempt IDs from one peer;
-3. high-degree topology with maximum legal fan-out;
-4. malicious responder candidate spam;
-5. delayed candidate arriving during a later ring;
-6. replayed COMMIT after tentative state removal;
-7. selective forwarding by a strategically placed relay;
-8. colluding relays correlating attempts through timing and overlap;
-9. peer disconnect during DISCOVER, CANDIDATE, COMMIT, and READY;
-10. state pressure that forces deterministic eviction;
-11. a Sybil cluster that attracts expanding-ring traffic;
-12. adversarial attempts that consume the initiator's full schedule without producing a candidate.
+- sender or receiver anonymity against A4;
+- flow unlinkability from adjacent-link encryption alone;
+- active-tagging resistance for an unspecified URE scheme;
+- that branch-local contexts are cheaper than attempt-wide deduplication;
+- that fixed-size records hide timing or origin adjacency;
+- post-quantum security.
 
-## 9. Required experiment metrics
+## 9. Required experiments
 
-Cross-attempt experiments must report at least:
-
-- attempts used;
-- total transmissions and state allocations;
-- unique relays observing any attempt;
-- relays observing multiple attempts;
-- repeated relay observations;
-- candidate repeats;
-- success and failure reason;
-- setup-time proxy or simulated elapsed time.
+1. U1 matching game with two compromised non-adjacent relays and one honest mixer;
+2. unchanged-field and malformed-capsule negative tests;
+3. active tagging and selective-delay experiments;
+4. branch-context amplification on cyclic and high-degree graphs;
+5. malicious fresh-branch floods under token buckets;
+6. candidate spam and incomplete commit pressure;
+7. cross-ring correlation by origin adjacency and timing;
+8. mixing queue overflow and minimum-chaff behavior;
+9. packet loss, churn, and delayed candidate return;
+10. Sybil clusters and strategically placed relays.
 
 ## 10. Claim discipline
 
-Every future privacy or security claim must include:
+Every claim names:
 
 - adversary class and placement;
-- corrupted-node fraction or count;
-- underlay and privacy profile;
-- topology and traffic model;
+- passive or active behavior;
+- honest-relay count between observations;
+- underlay, U1, mixing, and traffic profiles;
+- topology and workload;
 - protected value and success metric;
-- baseline comparison;
-- assumptions and known counterexamples.
+- resource limits;
+- assumptions, exclusions, and known counterexamples.
