@@ -5,6 +5,7 @@ required_files="
 README.md
 ROADMAP.md
 docs/strategy.md
+docs/citation-audit.md
 docs/threat-model.md
 docs/adr/0008-branch-local-unlinkable-contexts.md
 docs/adr/0009-blinded-reply-key-chain.md
@@ -21,11 +22,13 @@ docs/adr/0019-variable-m1-messages-fixed-w2-cells.md
 docs/adr/0020-bounded-w2-reassembly.md
 docs/adr/0021-c2-anonymous-rerandomizable-rcca-eligibility.md
 docs/adr/0022-suite-agile-m2-envelope.md
-spec/core-v0.8.md
+docs/adr/0023-c2-k2-transcription-audit.md
+spec/core-v0.9.md
 spec/unlinkability-profile-u1.md
 spec/event-lifecycle-profile-e1.md
 spec/crypto-profile-c1.md
 spec/crypto-profile-c2.md
+spec/crypto-profile-c2-k2.md
 spec/active-unlinkability-games-c2.md
 spec/crypto-transcript-v0.2.md
 spec/crypto-test-vectors-c1.json
@@ -33,19 +36,21 @@ spec/crypto-test-vectors-c2-symbolic.json
 spec/message-codec-m2.md
 spec/wire-cell-w2.md
 spec/active-tagging-analysis.md
-spec/messages-v0.8.md
-spec/state-machines-v0.8.md
-spec/invariants-v0.8.md
-spec/resource-accounting-v0.8.md
+spec/messages-v0.9.md
+spec/state-machines-v0.9.md
+spec/invariants-v0.9.md
+spec/resource-accounting-v0.9.md
 simulator/trahens_crypto/ristretto.py
 simulator/trahens_crypto/c1.py
 simulator/trahens_crypto/c2_ideal.py
+simulator/trahens_crypto/c2_klinear.py
 simulator/trahens_crypto/candidate.py
 simulator/trahens_crypto/tagging.py
 simulator/trahens_codec/m2w2.py
 simulator/tests/test_crypto_c1.py
 simulator/tests/test_crypto_c2_ideal.py
 simulator/tests/test_crypto_c2_vectors.py
+simulator/tests/test_crypto_c2_klinear.py
 simulator/tests/test_message_cell_codec_m2.py
 simulator/tests/test_candidate_chain.py
 simulator/tests/test_active_tagging.py
@@ -54,6 +59,7 @@ simulator/trahens_sim/fragmentation_compare.py
 simulator/trahens_sim/c2_compare.py
 tools/generate_crypto_vectors.py
 tools/generate_c2_symbolic_vectors.py
+tools/generate_c2_k2_audit.py
 tools/run_fragmentation_comparison.sh
 tools/run_c2_comparison.sh
 paper/legacy/trahens-2020.tex
@@ -66,10 +72,12 @@ reports/iteration-0007-wire-tagging-comparison.csv
 reports/iteration-0008-message-cell-capacity.csv
 reports/iteration-0008-lifecycle-fragmentation.csv
 reports/iteration-0009-c2-active-security.csv
+reports/c2-k2-transcription-audit.json
 docs/review-log/iteration-0006.md
 docs/review-log/iteration-0007.md
 docs/review-log/iteration-0008.md
 docs/review-log/iteration-0009.md
+docs/review-log/iteration-0010.md
 "
 
 for path in $required_files; do
@@ -84,11 +92,14 @@ PYTHONPATH=simulator python -m unittest discover -s simulator/tests -v
 
 vectors_tmp=$(mktemp)
 c2_vectors_tmp=$(mktemp)
-trap 'rm -f "$vectors_tmp" "$c2_vectors_tmp" /tmp/trahens-expanding-smoke.json /tmp/trahens-u1-smoke.csv /tmp/trahens-e1-smoke.csv /tmp/trahens-tag-smoke.csv /tmp/trahens-m1w2-capacity.csv /tmp/trahens-m1w2-life.csv /tmp/trahens-c2-smoke.csv' EXIT
+c2_k2_tmp=$(mktemp)
+trap 'rm -f "$vectors_tmp" "$c2_vectors_tmp" "$c2_k2_tmp" /tmp/trahens-expanding-smoke.json /tmp/trahens-u1-smoke.csv /tmp/trahens-e1-smoke.csv /tmp/trahens-tag-smoke.csv /tmp/trahens-m1w2-capacity.csv /tmp/trahens-m1w2-life.csv /tmp/trahens-c2-smoke.csv' EXIT
 PYTHONPATH=simulator python tools/generate_crypto_vectors.py --output "$vectors_tmp"
 cmp spec/crypto-test-vectors-c1.json "$vectors_tmp"
 PYTHONPATH=simulator python tools/generate_c2_symbolic_vectors.py --output "$c2_vectors_tmp"
 cmp spec/crypto-test-vectors-c2-symbolic.json "$c2_vectors_tmp"
+PYTHONPATH=simulator python tools/generate_c2_k2_audit.py --output "$c2_k2_tmp"
+cmp reports/c2-k2-transcription-audit.json "$c2_k2_tmp"
 
 ./tools/run_experiments.sh
 

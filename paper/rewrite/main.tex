@@ -131,7 +131,7 @@
 \vspace{-1.0em}
 
 \begin{statusbox}
-\textbf{Document status.} This document specifies the current research draft of the \ProtoName{} protocol. It defines bounded route discovery, deterministic route-state activation, a receiver-anonymous rerandomizable RCCA security contract for destination eligibility, canonical suite-agile logical messages, and fixed-size authenticated adjacent-link cells with bounded reassembly. The eligibility contract is integrated through an executable ideal functionality; a reviewed concrete construction is not yet implemented. The protocol is not suitable for production deployment, and no concrete active-adversary unlinkability claim is made.
+\textbf{Document status.} This document specifies the current research draft of the \ProtoName{} protocol. It defines bounded route discovery, deterministic route-state activation, a receiver-anonymous rerandomizable RCCA security contract for destination eligibility, canonical suite-agile logical messages, and fixed-size authenticated adjacent-link cells with bounded reassembly. The eligibility contract is integrated through an executable ideal functionality. A separate $k=2$ transcription audits the concrete construction of Wang et al.~\cite{anonrcca2021}. The audit proves that the construction's literal finite-field map $\mu(u)=u\bmod q$ is not multiplicative under ordinary quadratic-residue-group multiplication; concrete rerandomization is therefore disabled. The protocol is not suitable for production deployment, and no concrete active-adversary unlinkability claim is made.
 \end{statusbox}
 
 \begin{abstract}
@@ -141,7 +141,7 @@ The protocol binds five profiles. \Uone{} requires every forwarded branch to rep
 
 This separation avoids treating a fixed transmission unit as the logical message format. A short control message usually occupies one cell, whereas a deeply nested candidate may occupy several. Individual cell length no longer reveals message type or exact logical length, but cell count and timing remain observable unless a separate scheduling profile conceals them. The integrated reference model executes cryptography, canonical encoding, fragmentation, reassembly, and route-state transitions in one event lifecycle. It demonstrates clean multi-cell route activation, bounded cleanup after fragment loss, and rejection of malformed or unauthenticated cells before route-state allocation.
 
-The analysis retains the C1 eligibility capsule as a negative control. Its persistent algebraic ratio tag survives an honest rerandomizing relay and is recognizable by a separated colluder. In the symbolic C2 experiment, an arbitrary mutation is rejected by the first honest transformation and no transformed capsule reaches that colluder. This result validates protocol composition and failure placement, not the security of a concrete cryptosystem. The paper therefore presents a precise, falsifiable research baseline rather than a security proof or production benchmark.
+The analysis retains the C1 eligibility capsule as a negative control. Its persistent algebraic ratio tag survives an honest rerandomizing relay and is recognizable by a separated colluder. In the symbolic C2 experiment, an arbitrary mutation is rejected by the first honest transformation and no transformed capsule reaches that colluder. The concrete audit fixes $k=2$, related quadratic-residue groups, a canonical 412-byte ciphertext, and deterministic vectors from the source equations~\cite{anonrcca2021}; key generation, encryption, decryption, mutation rejection, and the linear strand equations execute successfully. The source also explains the inner tag by the integer reduction $u\bmod q$ and states that this operation supplies the required homomorphism~\cite{anonrcca2021}. An exact counterexample disproves that literal multiplicative claim, so the implementation fails closed. These results validate protocol composition and isolate a concrete algebraic blocker; they do not establish the security of a deployable cryptosystem or refute the paper's generic framework. The paper therefore presents a falsifiable research baseline rather than a security proof or production benchmark.
 \end{abstract}
 \linenumbers
 \modulolinenumbers[5]
@@ -171,7 +171,7 @@ This paper makes the following contributions:
   \item It defines \Mtwo{} as a canonical variable-length logical-message codec and \Wtwo{} as a fixed-size encrypted-cell profile with deterministic fragmentation and bounded out-of-order reassembly.
   \item It formalizes the boundary between per-cell length equality and message-size leakage: a message of length $L$ occupies $\lceil L/992\rceil$ W2 cells unless a scheduling profile pads or obscures that count.
   \item It integrates \Uone{}, \Eone{}, \Ctwo{}, \Mtwo{}, and \Wtwo{} in one deterministic event model while preserving the executable C1 reply and authentication components.
-  \item It gives both an executable C1 ratio-tag counterexample and a symbolic C2 rejection experiment, and it states the concrete implementation and review gate required before an active-adversary claim.
+  \item It gives both an executable C1 ratio-tag counterexample and a symbolic C2 rejection experiment, then transcribes the selected $k=2$ construction into canonical bytes and records the exact related-group operation that still requires independent interoperability review.
 \end{enumerate}
 
 \subsection{Scope and reading guide}
@@ -193,11 +193,13 @@ These systems begin with a route or layered packet structure already selected by
 
 \subsection{Universal re-encryption and active security}
 
-Ordinary rerandomizable ElGamal permits ciphertext rerandomization when the public key is known. Universal re-encryption (URE) additionally permits a mixer to transform a ciphertext without knowing which public key protects it~\cite{gjjs}. That property is useful for \ProtoName{} because including the destination public key beside each discovery capsule would itself create a stable selector. The Golle--Jakobsson--Juels--Syverson construction doubles the ElGamal representation: one pair carries the message and a second pair carries an encryption of the identity, enabling public-key-free rerandomization.
+Universal re-encryption (URE) augments public-key encryption with a transformation that does not require the recipient public key and preserves the encrypted plaintext. Golle, Jakobsson, Juels, and Syverson introduced this mechanism for mixnets by adding an auxiliary encryption of the identity to an ElGamal-style ciphertext~\cite{gjjs}. This property is relevant to \ProtoName{} because forwarding the destination public key beside every discovery branch would create a stable recipient selector.
 
-Security terminology for URE has evolved. Recent work emphasizes encryption anonymity, minimal security notions, and composable application behavior rather than rerandomization correctness alone~\cite{ure2023}. Public rerandomization is therefore necessary but not sufficient: a compromised relay may create a fresh relation that survives honest processing even though every output byte changes.
+Rerandomization correctness alone is not an adequate anonymity definition. Banfi, Maurer, and Ritsch distinguish the minimal secrecy and unlinkability properties of URE and formulate a composable application-level notion for mixnet use~\cite{ure2023}. Their analysis reinforces the protocol distinction between byte-changing rerandomization, recipient anonymity, and resistance to active relations that survive an honest transform.
 
-Replayable chosen-ciphertext security permits a controlled notion of ciphertext replay while preventing arbitrary related-message manipulation. Prabhakaran and Rosulek formalized rerandomizable RCCA encryption, but receiver anonymity remained a separate problem~\cite{rcca2007}. Wang et al. subsequently presented an anonymous rerandomizable RCCA-secure public-key encryption framework and a concrete construction from rerandomizable smooth projective hash functions~\cite{anonrcca2021}. \Ctwo{} adopts that combined security contract as the eligibility target. The present protocol integration specifies the required games and failure behavior but does not claim to implement the cited construction.
+Replayable chosen-ciphertext security (RCCA) was introduced by Canetti, Krawczyk, and Nielsen as a relaxation of CCA security that permits transformations yielding the same plaintext while retaining chosen-ciphertext protection against other modifications~\cite{rcca2003}. Key privacy, introduced for public-key encryption by Bellare et al., asks that a ciphertext not reveal which admissible public key was used~\cite{keyprivacy2001}. Prabhakaran and Rosulek combined perfect rerandomization with RCCA security and formulated the stronger receiver-anonymity objective, but their concrete scheme did not realize that objective~\cite{rcca2007}.
+
+Wang et al. subsequently constructed the first receiver-anonymous rerandomizable RCCA-secure public-key encryption framework. Their construction extends the smooth projective hash-function paradigm of Cramer and Shoup~\cite{sphf2002} with rerandomizable tag-SPHFs and supplies a concrete $k$-linear instantiation~\cite{anonrcca2021}. \Ctwo{} adopts that combined security contract as the eligibility target. The protocol also uses the paper's concrete construction as the subject of the byte-level audit in \cref{sec:c2audit}; the audit is not treated as a proof or as deployment approval.
 
 \subsection{HPKE and the custom reply KEM}
 
@@ -412,6 +414,7 @@ Function & Primitive & Rationale and status \\
 \midrule
 Eligibility target & Anonymous rerandomizable RCCA PKE & C2 contract: receiver anonymity, public rerandomization, replay equivalence, chosen-ciphertext robustness, and cross-hop tag resistance~\cite{anonrcca2021}. \\
 Eligibility model & Executable ideal functionality & Opaque symbolic ciphertext registry used only to test composition and failure paths; not cryptography. \\
+Concrete audit & Figure 6, $k=2$, related QR groups & Canonical 412-byte transcription and deterministic equation audit; reserved suite \code{7f02}; full rerandomization fail-closed~\cite{anonrcca2021}. \\
 Prime-order group & \code{ristretto255}, RFC~9496 & Retained C1 group for reply-key and negative-control operations~\cite{ristretto}. \\
 Hash and KDF & SHA-256, SHA-512, HKDF-SHA-256 & Domain-separated transcript hashes and extract-and-expand derivation~\cite{hkdf}. \\
 AEAD & ChaCha20-Poly1305 & 256-bit key, 96-bit nonce, full 128-bit tag~\cite{chacha}. \\
@@ -423,7 +426,7 @@ Reply KEM & \code{TR-KEM-R255} & HPKE-inspired custom KEM with additive public-k
 \end{table}
 
 \begin{warningbox}[Cryptographic gate]
-The protocol has selected the C2 security contract but has not implemented the concrete anonymous rerandomizable RCCA construction. The symbolic backend cannot justify deployment or a cryptographic active-unlinkability claim. In addition, the retained reply KEM is custom and unregistered, and the executable component set is classical rather than post-quantum.
+The protocol has selected the C2 security contract and transcribed the cited $k=2$ construction, but it has not completed a reviewed concrete anonymous rerandomizable RCCA implementation. The symbolic backend cannot justify deployment, and the concrete audit remains disabled because the literal finite-field tag map is non-homomorphic. In addition, the retained reply KEM is custom and unregistered, and the executable component set is classical rather than post-quantum.
 \end{warningbox}
 
 \subsection{Canonical encodings and domain separation}
@@ -462,7 +465,7 @@ A discovery initiator needs the descriptor, not merely the address hash, because
 \subsection{C2 eligibility syntax and security contract}
 \label{sec:c2}
 
-C2 defines four algorithms:
+Following the receiver-anonymous rerandomizable RCCA syntax of Wang et al.~\cite{anonrcca2021}, C2 defines four algorithms:
 \begin{align}
 \mathsf{KeyGen}(1^\lambda)&\rightarrow(pk,sk),\\
 \mathsf{Enc}(pk,m;r)&\rightarrow Q,\\
@@ -472,7 +475,7 @@ C2 defines four algorithms:
 The only eligibility plaintext is a fixed domain-separated marker $m_\star$. A destination is eligible exactly when decryption returns $m_\star$. The rerandomization algorithm receives neither $pk$ nor $sk$. For an honestly generated $Q$, every honest rerandomization decrypts to the same marker and belongs to the scheme-defined replay-equivalence class.
 
 \begin{definition}[Receiver anonymity]
-Given two admissible public keys and one equal-length marker, an adaptive adversary with the decryption access permitted by the selected RCCA definition cannot determine which key was used with non-negligible advantage.
+Given two admissible public keys and one equal-length marker, an adaptive adversary with the decryption access permitted by the selected RCCA definition cannot determine which key was used with non-negligible advantage. This extends the key-privacy objective of Bellare et al.~\cite{keyprivacy2001} to the RCCA setting formalized by Canetti et al.~\cite{rcca2003} and used by the selected construction~\cite{anonrcca2021}.
 \end{definition}
 
 \begin{definition}[Protocol tag resistance]
@@ -487,10 +490,102 @@ The reference model represents a valid C2 capsule by an opaque 640-byte string s
 
 This ideal functionality tests suite agility, state-machine composition, generic failure, and the active-tag game. It cannot test group or ring encodings, proof verification, concrete receiver anonymity, hardness assumptions, side channels, or real computational cost. A conforming implementation must replace it with exact algorithms, canonical encodings, deterministic vectors, negative tests, and an independently reviewed security mapping.
 
+\subsection{Concrete \texorpdfstring{$k=2$}{k=2} transcription and finite-field audit}
+\label{sec:c2audit}
+
+The concrete audit targets the $k$-linear public-key encryption construction given in Section~6.3 and Figure~6 of Wang et al.~\cite{anonrcca2021}. The source construction combines two outer strands carrying the eligibility plaintext with an inner malleable encryption of a random mask. Its security analysis uses rerandomizable tag-SPHFs; the smoothness results needed by the instantiation require $k\geq2$~\cite{anonrcca2021}. The audit therefore selects the smallest admissible value,
+\begin{equation}
+k=2.
+\end{equation}
+
+The source proposes two related quadratic-residue groups obtained from a Cunningham chain of the first kind of length three~\cite{anonrcca2021}. For the deterministic audit, let
+\begin{equation}
+\begin{aligned}
+q &= 175513086009046434629810696245711941989,\\
+p &= 2q+1,\\
+r &= 2p+1=4q+3,
+\end{aligned}
+\label{eq:c2chain}
+\end{equation}
+where $q,p,r$ are prime. Define the inner group $\overline{\Group}=\operatorname{QR}^{*}_{p}$ of order $q$ and the outer group $\Group=\operatorname{QR}^{*}_{r}$ of order $p$. The chain in \cref{eq:c2chain} is a fast conformance parameter set only; it is not proposed as a production security parameter.
+
+The finite-field explanation in the source uses the integer representative of an inner-group element as an exponent modulo $q$. In particular, it identifies the relevant exponent with $u\bmod q$ and states that modular reduction supplies the homomorphism required by rerandomization~\cite{anonrcca2021}. The literal map under audit is therefore
+\begin{equation}
+\mu:\operatorname{QR}^{*}_{p}\longrightarrow \mathbb{Z}_{q},
+\qquad \mu(u)=u\bmod q.
+\label{eq:tagmap}
+\end{equation}
+For a rerandomization multiplier $v\in\operatorname{QR}^{*}_{p}$, the source-shaped inner proof update requires the multiplicative compatibility condition
+\begin{equation}
+\mu(vu\bmod p)=\mu(v)\mu(u)\bmod q.
+\label{eq:taghom}
+\end{equation}
+
+\begin{proposition}[The literal reduction is not multiplicative]
+The map in \cref{eq:tagmap} is not, in general, a multiplicative group homomorphism from $\operatorname{QR}^{*}_{p}$ to $\mathbb{Z}_{q}$ when $p=2q+1$ and group multiplication is taken modulo $p$.
+\end{proposition}
+
+\begin{proof}
+Take $q=5$ and $p=11$. Both $3$ and $4$ are elements of $\operatorname{QR}^{*}_{11}$. Their group product is $3\cdot4\bmod11=1$, hence $\mu(3\cdot4\bmod11)=1$. By contrast, $\mu(3)\mu(4)\bmod5=3\cdot4\bmod5=2$. Thus \cref{eq:taghom} fails. The same failure occurs for the deterministic conformance parameters and is recorded with the exact operands in the machine-readable audit report.
+\end{proof}
+
+This proposition is deliberately narrow. It blocks the literal finite-field action described above and explains the failed full-rerandomization test. It does not invalidate the generic rerandomizable tag-SPHF framework, an author-confirmed corrected action, or a different instantiation of that framework~\cite{anonrcca2021}.
+
+For $k=2$, each language vector contains three group elements. The transcription maps Figure~6 to four strands: two outer strands $(x_1,e_1,\pi^b_1)$ and $(x_2,\pi_2,\pi^e_2)$, and two inner strands $(x_3,e_3,\pi^b_3)$ and $(x_4,\pi_4,\pi^e_4)$. The complete ciphertext contains the components summarized in \cref{tab:c2auditshape}.
+
+\begin{table}[ht]
+\centering
+\caption{Canonical shape of the $k=2$ transcription audit}
+\label{tab:c2auditshape}
+\begin{tabularx}{\textwidth}{@{}p{0.22\textwidth}p{0.18\textwidth}X@{}}
+\toprule
+Region & Elements & Contents \\
+\midrule
+Audit header & 4 bytes & Version, reserved local suite \code{7f02}, and parameter-set identifier. \\
+Outer ciphertext & 12 elements & Two three-element language vectors, $e_1$, $\pi_2$, and four tag-SPHF hash values. \\
+Inner ciphertext & 12 elements & Two three-element language vectors, $e_3$, $\pi_4$, and four inner tag-SPHF hash values. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Every element is encoded as a canonical unsigned 17-byte big-endian representative after range and subgroup validation. Thus the audit ciphertext length is
+\begin{equation}
+4+12\cdot17+12\cdot17=412\ \text{bytes}.
+\label{eq:c2auditbytes}
+\end{equation}
+The reserved value \code{7f02} is not an M2/W2 network suite. It prevents a partially validated arithmetic transcription from being selected accidentally as route cryptography.
+
+The audit implements deterministic key generation, encryption, canonical decoding, decryption, wrong-recipient rejection, component-wise mutation rejection, and the linear strand-combination equations of Figure~6~\cite{anonrcca2021}. These operations pass the deterministic tests. The full rerandomization procedure additionally samples a non-identity mask multiplier, updates the outer proof values, applies the source malleable-encryption multiplication to the inner mask ciphertext, and rerandomizes the two inner strands~\cite{anonrcca2021}.
+
+\begin{table}[ht]
+\centering
+\caption{Result of the concrete-transcription audit}
+\label{tab:c2auditresult}
+\begin{tabularx}{\textwidth}{@{}p{0.45\textwidth}p{0.18\textwidth}X@{}}
+\toprule
+Check & Result & Interpretation \\
+\midrule
+Key generation and public projections & Pass & Dimensions and projective-key equations are executable. \\
+Encrypt/decrypt eligibility marker & Pass & Outer and inner verification equations accept the original ciphertext. \\
+Canonical 412-byte round trip & Pass & All 24 elements are range- and subgroup-checked. \\
+Wrong-recipient and selected component mutations & Reject & Invalid inputs converge on the generic local failure. \\
+Linear strand combination with identity tag multiplier & Pass & The independently testable strand equations preserve the plaintext. \\
+Literal map $\mu(u)=u\bmod q$ is multiplicative & Fail & A minimal exact counterexample and the deterministic parameter witness violate the required equation. \\
+M2/W2 deployment eligibility & Disabled & Full rerandomization fails closed. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The failed row is an exact algebraic result for the literal finite-field interpretation. The source states both that the groups must be related through the Cunningham chain and that the integer reduction $u\bmod q$ supplies the required homomorphism~\cite{anonrcca2021}. The counterexample above shows that ordinary group multiplication followed by integer reduction does not have that property. Consequently, multiplying the inner mask as a group element and reusing its reduced representative in the tag-SPHF exponents cannot preserve the source-shaped inner validation equations in general. A deployable profile now requires either an author-confirmed corrected action or a different independently reviewed construction.
+
+\begin{warningbox}[Fail-closed concrete status]
+The public concrete \textsf{ReRand} entry point is disabled and raises a conformance-gap error. The exact arithmetic, counterexample, and byte representation are retained so that an author-confirmed correction or independently reviewed replacement can be compared field by field. Until a valid action, modern parameters, proof mapping, and independent implementation agree, the symbolic C2 functionality remains the only protocol-facing C2 model and no concrete active-security claim is made.
+\end{warningbox}
+
 \subsection{C1 negative-control eligibility capsule}
 \label{sec:ure}
 
-C1 represents eligibility by one fixed group element $M_\star$, derived from a domain-separated 64-byte hash using the RFC~9496 element-derivation interface. It remains implemented because its equations are useful as a passive-rerandomization baseline and because its active ratio tag is a mandatory negative test. It is not the active-security eligibility profile.
+C1 represents eligibility by one fixed group element $M_\star$, derived from a domain-separated 64-byte hash using the RFC~9496 element-derivation interface. Its two-pair construction follows the universal re-encryption pattern of Golle et al.~\cite{gjjs}. It remains implemented because its equations are useful as a passive-rerandomization baseline and because its active ratio tag is a mandatory negative test. It is not the active-security eligibility profile.
 
 \subsubsection{Encryption}
 
@@ -1160,7 +1255,9 @@ The evaluation uses deterministic graph and event models rather than a packet-le
 
 The retained C1 component implementation uses \code{libsodium} for group operations. Ed25519 and ChaCha20-Poly1305 use the Python \code{cryptography} package. Deterministic vectors cover the negative-control URE, wrong-key rejection, reply-key tweak consistency, KEM/AEAD opening, tamper and context mismatch, descriptor/address derivation, and candidate signature binding.
 
-The C2 ideal functionality has a separate deterministic vector set covering opaque encryption, repeated rerandomization, replay equivalence, wrong-recipient rejection, arbitrary mutation, and suite integration. Those symbolic vectors are state-machine conformance data, not cryptographic interoperability data.
+The C2 ideal functionality has a separate deterministic vector set covering opaque encryption, repeated rerandomization, replay equivalence, wrong-recipient rejection, arbitrary mutation, and suite integration. Those symbolic vectors are state-machine conformance data, not cryptographic interoperability data.\par
+
+A third deterministic artifact transcribes the $k=2$ construction of Wang et al.~\cite{anonrcca2021}. It executes the source key-generation, encryption, decryption, public-projection, canonical-encoding, mutation-rejection, and linear strand equations over a small related-group conformance parameter set. The audit additionally evaluates the literal full-rerandomization formula and records both a minimal counterexample and a large deterministic witness to the non-homomorphism of $u\mapsto u\bmod q$. The concrete public entry point therefore fails closed. This artifact is an equation and finite-field audit, not evidence for the receiver-anonymity or RCCA reductions of the cited construction.
 
 \subsection{U1 branch-local cost}
 
@@ -1219,15 +1316,30 @@ URE rerandomization & Ciphertext bytes change; decrypted marker remains identica
 Wrong eligibility key & Wrong endpoint does not recognize the marker. & Pass \\
 C2 symbolic rerandomization & Opaque ciphertext changes while recipient, marker, and replay class remain hidden in the oracle. & Pass \\
 C2 arbitrary mutation & A marker mutation is invalid and cannot be rerandomized by an honest C2 interface. & Pass \\
+C2-$k=2$ key generation, encryption, and decryption & The literal Figure~6 transcription accepts a canonical original ciphertext under the intended key and rejects wrong-recipient and selected component mutations~\cite{anonrcca2021}. & Pass \\
+C2-$k=2$ canonical encoding & Twenty-four validated group elements and a four-byte audit header round-trip to exactly 412 bytes. & Pass \\
+C2-$k=2$ full rerandomization & The literal finite-field tag map must satisfy the multiplicative compatibility equation. & Failed; disabled \\
 M2/W2 suite binding & Cross-suite fragments invalidate reassembly; the M2 suite must equal the W2 suite. & Pass \\
 Reply public/secret tweak & $(x+\delta)B=X+\delta B$. & Pass \\
 Reply KEM and AEAD & Correct context opens; tamper, AAD, and info mismatch fail generically. & Pass \\
 Candidate signature & Any transcript-field change invalidates the Ed25519 signature. & Pass \\
-Vector reproducibility & Generated JSON equals the tracked canonical vector file. & Pass \\
-Complete deterministic suite & 73 unit, lifecycle, message, cell, reassembly, cryptographic, and tagging tests before paper-specific checks. & Pass \\
+Vector reproducibility & Generated JSON equals each tracked canonical vector and audit file. & Pass \\
+Complete deterministic suite & 83 unit, lifecycle, message, cell, reassembly, cryptographic, transcription-audit, and tagging tests. & Pass \\
 \bottomrule
 \end{tabularx}
 \end{table}
+
+\subsection{Concrete C2 transcription audit}
+
+The concrete audit uses the exact algorithmic structure in Section~6.3 and Figure~6 of Wang et al.~\cite{anonrcca2021}. The source requires related quadratic-residue groups obtained from a length-three Cunningham chain and proves the relevant tag-SPHF smoothness properties for $k\geq2$~\cite{anonrcca2021}. The audit fixes $k=2$ and a small deterministic prime chain solely to make byte-level tests reproducible. It does not claim that the parameter set has a modern security level.
+
+The original ciphertext decrypts to the eligibility marker, a canonical encode/decode cycle preserves all 24 group elements, the wrong recipient rejects, and selected component mutations reject. Restricting the tag multiplier to the identity also validates the two linear strand-combination paths. The full source rerandomization, however, includes a non-identity multiplier that simultaneously changes the outer tag-SPHF values and the inner malleable encryption~\cite{anonrcca2021}. Under the literal finite-field map tested here, the required multiplicative equation fails before any security interpretation is considered. The audit therefore returns the machine-readable status \code{finite-field-tag-reduction-nonhomomorphic}, and the callable concrete \textsf{ReRand} interface raises a conformance-gap error.
+
+\begin{claimbox}[Interpretation of the audit]
+The result identifies an algebraic blocker in the literal finite-field instantiation. It does not refute the generic security framework, establish an attack on a corrected construction, or justify substituting an ad hoc coercion. A network suite can be assigned only after an author-confirmed correction or independently reviewed replacement is specified, full nontrivial rerandomization validates over randomized test populations, modern parameters are selected, and a second implementation reproduces the vectors.
+\end{claimbox}
+
+\Cref{tab:c2auditresult} gives the equation-level result; the tracked audit artifact additionally fixes the public-key hash, original ciphertext hash, strand-only rerandomized hash, mutation hash, complete 412-byte ciphertext, and exact prime parameters. Keeping this artifact separate from the symbolic C2 vectors prevents a protocol oracle from being mistaken for concrete cryptographic interoperability evidence.
 
 \subsection{M2 logical size and W2 cell capacity}
 
@@ -1313,7 +1425,9 @@ The C1 tag survives the intervening honest C1 transformation, so the downstream 
 
 C2 states the active-security contract that the eligibility capsule must satisfy: recipient anonymity, public rerandomization, rerandomizable RCCA security, resistance to persistent tagging, and bounded failure behavior. The symbolic C2 functionality used in the executable model enforces this contract as an oracle: an honest transform accepts only a valid equivalence-class member, emits an independently distributed member of the same class, and rejects arbitrary mutation before a downstream colluder can observe a descendant capsule. This is useful for protocol integration and falsification, but it is not a cryptographic construction and supplies no computational reduction.
 
-The principal remaining cryptographic gate is therefore an exact, implementable construction with an agreed algebraic setting, byte encoding, parameter set, validity relation, rerandomization algorithm, decryption behavior, and reduction to stated assumptions. Its ciphertext must fit the M2/W2 resource model, and its receiver-anonymity and rerandomizable-RCCA definitions must remain valid under the surrounding protocol transcript. Until this gate is passed, the paper claims only the behavior of the symbolic functionality and does not claim concrete active-adversary unlinkability.
+The selected construction is no longer unspecified: the repository contains a typed $k=2$ transcription of Section~6.3 and Figure~6 of Wang et al.~\cite{anonrcca2021}, an explicit related-group parameter set, canonical public-key and 412-byte ciphertext encodings, deterministic positive and negative vectors, and a fail-closed public interface. The audit validates the original-ciphertext path and proves that the literal integer-reduction tag map used by full rerandomization is non-homomorphic. The remaining gate is therefore an author-confirmed correction or independently reviewed replacement, followed by confirmation of the source-to-code mapping, reviewed modern parameters, and independent reproduction of all equations.
+
+The ciphertext must continue to satisfy the M2/W2 resource bounds. The receiver-anonymity and rerandomizable-RCCA reductions of the cited construction must also remain applicable when the construction is composed with the surrounding protocol transcript. Until the complete rerandomization path is independently validated, the paper claims only the behavior of the symbolic functionality and the recorded arithmetic audit; it does not claim concrete active-adversary unlinkability.
 
 \subsection{Independent cryptographic review}
 
@@ -1349,10 +1463,11 @@ Timing, direction, volume, cell count, fragment spacing, and topology remain maj
 Development should proceed through explicit gates:
 
 \begin{enumerate}
-  \item select and specify one concrete anonymous rerandomizable RCCA construction that satisfies the C2 syntax and games;
-  \item publish the construction's assumptions, parameter set, canonical encodings, validity relation, failure behavior, proof obligations, and deterministic interoperability vectors;
+  \item obtain an author-confirmed correction or select an independently reviewed replacement for the non-homomorphic literal finite-field tag map in the selected $k=2$ construction~\cite{anonrcca2021};
+  \item publish the confirmed algebraic mapping, modern parameter-generation procedure, canonical public-key and ciphertext encodings, validity relation, generic failure behavior, proof obligations, and deterministic interoperability vectors;
+  \item require a second implementation to reproduce encryption, decryption, full rerandomization, replay equivalence, wrong-recipient rejection, mutation rejection, and every tracked byte string before assigning a network suite;
   \item obtain independent review of the C2 construction and the retained reply-key, nested-candidate, and signature mechanisms;
-  \item replace the symbolic C2 oracle in the simulator with the concrete implementation and rerun the complete tag, mutation, replay-equivalence, key-substitution, malformed-input, and selective-failure suite;
+  \item replace the symbolic C2 oracle in the simulator only after the concrete implementation passes the full tag, mutation, replay-equivalence, key-substitution, malformed-input, and selective-failure suite;
   \item define M2 and W2 in a reviewed machine-readable schema and implement an independent second codec;
   \item cross-check minimal VarUInt encodings, suite binding, message boundaries, canonical fragmentation, conflict handling, and cryptographic vectors across implementations;
   \item fuzz malformed M2 lengths, W2 headers, fragment order, duplicate conflicts, message identifiers, eligibility capsules, nested candidate boundaries, point encodings, transcript substitutions, and state races;
@@ -1369,13 +1484,13 @@ The first overlay prototype should use ordinary IP connectivity only as an exper
 \section{Conclusion}
 \label{sec:conclusion}
 
-\ProtoName{} defines a privacy-enabled route-discovery control plane rather than a replacement for IP or BGP. Its current form has a precise operational boundary. U1 removes explicit cross-hop equality handles under passive observation; E1 gives deterministic bounded route setup and cleanup; C2 states the receiver-anonymous, rerandomizable-RCCA active-security contract for endpoint eligibility; M2 gives each logical control operation one canonical suite-agile variable-length representation; and W2 carries those messages in independently authenticated fixed-size adjacent-link cells with bounded reassembly. The current executable C2 realization is symbolic, while the reply KEM, nested candidate protection, signatures, and C1 negative control remain concrete classical components.
+\ProtoName{} defines a privacy-enabled route-discovery control plane rather than a replacement for IP or BGP. Its current form has a precise operational boundary. U1 removes explicit cross-hop equality handles under passive observation; E1 gives deterministic bounded route setup and cleanup; C2 states the receiver-anonymous, rerandomizable-RCCA active-security contract for endpoint eligibility; M2 gives each logical control operation one canonical suite-agile variable-length representation; and W2 carries those messages in independently authenticated fixed-size adjacent-link cells with bounded reassembly. The protocol-facing C2 realization remains symbolic. In parallel, a concrete $k=2$ transcription of the construction of Wang et al.~\cite{anonrcca2021} fixes dimensions, related groups, canonical bytes, and deterministic arithmetic tests, but deliberately refuses full rerandomization because the literal finite-field tag reduction is non-homomorphic. The reply KEM, nested candidate protection, signatures, and C1 negative control remain concrete classical components.
 
 The separation between M2 and W2 resolves a layering defect. Fixed width is retained where it hides an observable transmission-unit length, while the protocol grammar remains compact and extensible. Deep candidates can span several cells instead of failing at a one-record boundary. The cost is explicit: cell count and timing may reveal a message-size class, multi-cell messages have greater loss exposure, and reassembly requires additional bounded state.
 
-The integrated model shows that cryptographic interfaces, canonical encoding, fragmentation, reassembly, and lifecycle can be exercised together. Clean routes activate only after authenticated candidate, \textsc{Commit}, and \textsc{Ready} processing; malformed or unauthenticated cells fail before route-state allocation; incomplete messages expire; and every evaluated scenario reclaims all state. The C1 negative control retains the known persistent ratio tag. Under the symbolic C2 contract, arbitrary mutation is rejected at the first honest transformation and no descendant tag observation is produced. This establishes the required protocol behavior and test harness, not the security of a concrete cryptosystem.
+The integrated model shows that cryptographic interfaces, canonical encoding, fragmentation, reassembly, and lifecycle can be exercised together. Clean routes activate only after authenticated candidate, \textsc{Commit}, and \textsc{Ready} processing; malformed or unauthenticated cells fail before route-state allocation; incomplete messages expire; and every evaluated scenario reclaims all state. The C1 negative control retains the known persistent ratio tag. Under the symbolic C2 contract, arbitrary mutation is rejected at the first honest transformation and no descendant tag observation is produced. The concrete audit separately demonstrates that key generation, encryption, decryption, canonical encoding, and linear strand recombination are executable, while proving that the literal finite-field tag reduction cannot support the full transformation. These results establish protocol behavior, a reproducible source-to-code map, and a falsification harness, not the security of a concrete cryptosystem.
 
-The protocol is therefore suitable as a falsifiable research specification and interoperability target, but not as a production anonymity system. The next gate is a concrete, independently reviewed C2 construction and its integration vectors. Subsequent gates are an independent M2/W2 implementation with fuzzing, a bounded reliability profile for multi-cell messages, and a traffic scheduler that explicitly addresses cell-count and timing leakage.
+The protocol is therefore suitable as a falsifiable research specification and interoperability target, but not as a production anonymity system. The next gate is an author-confirmed correction or independently reviewed replacement for the failed literal finite-field C2 instantiation, followed by reviewed modern parameters and protocol integration vectors. Subsequent gates are an independent M2/W2 implementation with fuzzing, a bounded reliability profile for multi-cell messages, and a traffic scheduler that explicitly addresses cell-count and timing leakage.
 
 \appendix
 \section{Normative requirement summary}
@@ -1411,6 +1526,7 @@ An implementation claiming U1, E1, C2, M2, and W2 conformance MUST:
   \item create tentative state on \textsc{Candidate}, reserve pending state on \textsc{Commit}, and authorize data only after final \textsc{Ready};
   \item reclaim all reassembly and setup state by local expiry without remote cooperation;
   \item retain C1 only as an explicitly identified negative-control suite and never use its passive rerandomization behavior as evidence for C2 active security;
+  \item treat reserved audit suite \code{7f02} as non-network input, reject it in M2/W2, and keep concrete C2 full rerandomization fail-closed until the related-group action and independent vectors are approved;
   \item make batch-local unlinkability claims only for a declared cell interleaving, batching, and observable cell-count profile;
   \item refrain from concrete active-adversary, traffic-flow, post-quantum, or production-security claims until the selected C2 construction and the complete implementation have been independently reviewed and tested;
   \item expose no detailed error behavior that distinguishes tagged eligibility failure from other invalid cryptographic, message, cell, or reassembly input.
@@ -1419,7 +1535,7 @@ An implementation claiming U1, E1, C2, M2, and W2 conformance MUST:
 \section{Conformance artifact summary}
 \label{app:vectors}
 
-Two deterministic artifact sets support interoperability and regression testing. The C1 set fixes the retained classical and negative-control operations. The symbolic C2 set fixes the protocol-facing oracle behavior, suite binding, rerandomization transition, mutation rejection, and replay-equivalence metadata. The symbolic set is not a concrete cryptographic test vector and MUST NOT be cited as evidence of computational security.
+Three deterministic artifact sets support interoperability, audit, and regression testing. The C1 set fixes the retained classical and negative-control operations. The symbolic C2 set fixes the protocol-facing oracle behavior, suite binding, rerandomization transition, mutation rejection, and replay-equivalence metadata. The concrete C2-$k=2$ audit set fixes the exact related-group parameters, canonical public-key and 412-byte ciphertext encodings, successful original-ciphertext equations, restricted strand transformation, selected mutation, and fail-closed full-rerandomization status derived from Figure~6 of Wang et al.~\cite{anonrcca2021}. The symbolic set is not a concrete cryptographic test vector, and the audit set is not deployment approval; neither MUST be cited as evidence of computational security.
 
 \begin{table}[ht]
 \centering
@@ -1439,6 +1555,12 @@ C2 symbolic suite identifier & \code{0002} \\
 C2 symbolic marker & {\ttfamily\small\seqsplit{2dd139b84bc859362a7887402411b0e5ed83b2c417b8823f84e0edede7d2a090}} \\
 C2 original-capsule SHA-256 & {\ttfamily\small\seqsplit{d2409fa73ac4180a584a3be0a2583fefe61430f6b2942fc1bc945811efb447c2}} \\
 C2 rerandomized-capsule SHA-256 & {\ttfamily\small\seqsplit{d78c2cea65e2997357632bf7c8831f8264bb64b601189ec7dc09eceaa5ecebbf}} \\
+C2-$k=2$ reserved audit suite & \code{7f02} \\
+C2-$k=2$ parameter set & $k=2$; $q=$ {\ttfamily\small\seqsplit{175513086009046434629810696245711941989}} \\
+C2-$k=2$ ciphertext length & 412 bytes \\
+C2-$k=2$ original-ciphertext SHA-256 & {\ttfamily\small\seqsplit{beb3a5b38457fff9f9714caaaa8facee82497d6f8f957663be093474aca13044}} \\
+C2-$k=2$ strand-rerandomized SHA-256 & {\ttfamily\small\seqsplit{835a3679f9661856caaaa70f38e7dcd8a6ba4ddf1cd8439e99009f58f68b09c8}} \\
+C2-$k=2$ tag-map status & \code{finite-field-tag-reduction-nonhomomorphic}; network use disabled \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1490,6 +1612,22 @@ P. Golle, M. Jakobsson, A. Juels, and P. Syverson,
 ``Universal Re-encryption for Mixnets,''
 in \emph{Topics in Cryptology -- CT-RSA 2004}, LNCS 2964, 2004, pp. 163--178.
 
+\bibitem{rcca2003}
+R. Canetti, H. Krawczyk, and J. B. Nielsen,
+``Relaxing Chosen-Ciphertext Security,''
+in \emph{Advances in Cryptology -- CRYPTO 2003}, LNCS 2729, 2003.
+
+\bibitem{keyprivacy2001}
+M. Bellare, A. Boldyreva, A. Desai, and D. Pointcheval,
+``Key-Privacy in Public-Key Encryption,''
+in \emph{Advances in Cryptology -- ASIACRYPT 2001}, LNCS 2248, 2001, pp. 566--582,
+doi:10.1007/3-540-45682-1\_33.
+
+\bibitem{sphf2002}
+R. Cramer and V. Shoup,
+``Universal Hash Proofs and a Paradigm for Adaptive Chosen Ciphertext Secure Public-Key Encryption,''
+in \emph{Advances in Cryptology -- EUROCRYPT 2002}, LNCS 2332, 2002.
+
 \bibitem{rcca2007}
 M. Prabhakaran and M. Rosulek,
 ``Rerandomizable RCCA Encryption,''
@@ -1498,7 +1636,8 @@ in \emph{Advances in Cryptology -- CRYPTO 2007}, LNCS 4622, 2007, pp. 517--534.
 \bibitem{anonrcca2021}
 Y. Wang, R. Chen, G. Yang, X. Huang, B. Wang, and M. Yung,
 ``Receiver-Anonymity in Rerandomizable RCCA-Secure Cryptosystems Resolved,''
-in \emph{Advances in Cryptology -- CRYPTO 2021}, LNCS 12828, 2021, pp. 270--300.
+in \emph{Advances in Cryptology -- CRYPTO 2021}, LNCS 12828, 2021, pp. 270--300,
+doi:10.1007/978-3-030-84259-8\_10; full version, IACR ePrint 2021/862.
 
 \bibitem{ure2023}
 F. Banfi, U. Maurer, and S. Ritsch,
