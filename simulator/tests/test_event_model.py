@@ -5,9 +5,18 @@ import unittest
 
 from trahens_sim.event_model import (
     EventLifecycleConfig,
+    EventPriority,
+    _LifecycleSimulator,
     TimedRingStep,
     parse_timed_ring_schedule,
     simulate_event_lifecycle,
+)
+from trahens_codec.m1w2 import (
+    ControlRecord,
+    MessageType,
+    derive_link_key,
+    encode_control,
+    encode_to_link_cells,
 )
 from trahens_sim.lifecycle_compare import (
     LifecycleScenario,
@@ -126,6 +135,28 @@ class EventLifecycleTests(unittest.TestCase):
         self.assertTrue(result.cleanup_complete)
         self.assertEqual(result.final_active_state, 0)
 
+    def test_deep_candidate_is_fragmented_and_reassembled(self) -> None:
+        graph = line_graph(9)
+        config = deterministic_config(
+            rings=(TimedRingStep(8, 1, 1, 30),),
+            branch_ttl_ms=120,
+            offer_ttl_ms=160,
+            tentative_ttl_ms=100,
+            route_setup_timeout_ms=140,
+            active_lifetime_ms=40,
+            max_simulation_ms=320,
+            transmission_budget=1_000,
+            reassembly_timeout_ms=20,
+        )
+        result = simulate_event_lifecycle(graph, config, responders={8})
+        self.assertTrue(result.success)
+        self.assertEqual(result.selected_hop_count, 8)
+        self.assertGreater(result.fragmented_messages_sent, 0)
+        self.assertGreater(result.reassembly_completed, result.logical_messages_sent - 2)
+        self.assertGreater(result.peak_reassembly_reserved_bytes, 992)
+        self.assertEqual(result.final_reassembly_messages, 0)
+        self.assertTrue(result.cleanup_complete)
+
     def test_tentative_expiry_causes_commit_failure(self) -> None:
         graph = line_graph(3)
         config = deterministic_config(
@@ -193,6 +224,58 @@ class EventLifecycleTests(unittest.TestCase):
         self.assertGreaterEqual(result.ready_failures, 1)
         self.assertGreaterEqual(result.loss_drops, 1)
         self.assertTrue(result.cleanup_complete)
+
+    def test_unauthenticated_cell_cannot_poison_replay_window(self) -> None:
+        graph = line_graph(2)
+        config = deterministic_config()
+        simulator = _LifecycleSimulator(
+            graph,
+            config,
+            responders=set(),
+            responder_offer_delays=None,
+            malicious_nodes=set(),
+        )
+        logical = encode_control(
+            ControlRecord(
+                message_type=MessageType.COMMIT,
+                local_label=b"L" * 16,
+                generation=1,
+                expiry_class=1,
+                protected_body=b"proof",
+            )
+        )
+        key = derive_link_key(config.seed, 0, 1)
+        valid = encode_to_link_cells(
+            logical,
+            key=key,
+            epoch=1,
+            first_sequence=9,
+            message_local_id=b"M" * 16,
+        )[0]
+        forged = bytearray(valid)
+        forged[20] ^= 1
+        data = {
+            "sender": 0,
+            "receiver": 1,
+            "message_id": 9,
+            "message_type": "WIRE_CELL",
+            "legitimate": True,
+            "logical_kind": "COMMIT",
+            "logical_priority": int(EventPriority.CONTROL),
+            "logical_message_serial": 1,
+            "logical_data": {},
+            "wire_cell": bytes(forged),
+        }
+        simulator._handle_wire_cell(data)
+        self.assertEqual(simulator.wire_auth_failures, 1)
+        self.assertEqual(simulator.exact_replay_drops, 0)
+        self.assertEqual(len(simulator.replay_seen), 0)
+
+        data["wire_cell"] = valid
+        simulator._handle_wire_cell(data)
+        self.assertEqual(len(simulator.replay_seen), 1)
+        simulator._handle_wire_cell(data)
+        self.assertEqual(simulator.exact_replay_drops, 1)
 
     def test_exact_link_duplicates_do_not_allocate_new_contexts(self) -> None:
         graph = line_graph(3)

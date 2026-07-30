@@ -1,4 +1,4 @@
-"""Reproducible W1/C1 integration and active-tagging comparison."""
+"""Reproducible M1/W2/C1 integration and active-tagging comparison."""
 
 from __future__ import annotations
 
@@ -139,7 +139,7 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fields = list(TaggingAggregate.__dataclass_fields__)
     with args.output.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle)
+        writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(fields)
         for row in rows:
             values = []

@@ -1,4 +1,4 @@
-.PHONY: test crypto-vectors experiments sweep policy-compare unlinkability-compare lifecycle-compare tagging-compare paper check reproduce clean
+.PHONY: test crypto-vectors experiments sweep policy-compare unlinkability-compare lifecycle-compare tagging-compare fragmentation-compare paper check reproduce clean
 
 test:
 	PYTHONPATH=simulator python -m unittest discover -s simulator/tests -v
@@ -24,6 +24,9 @@ lifecycle-compare:
 tagging-compare:
 	./tools/run_tagging_comparison.sh
 
+fragmentation-compare:
+	./tools/run_fragmentation_comparison.sh
+
 paper:
 	mkdir -p build/paper
 	latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir=build/paper paper/rewrite/main.tex
@@ -40,6 +43,7 @@ reproduce:
 	$(MAKE) unlinkability-compare
 	$(MAKE) lifecycle-compare
 	$(MAKE) tagging-compare
+	$(MAKE) fragmentation-compare
 	$(MAKE) paper
 
 clean:

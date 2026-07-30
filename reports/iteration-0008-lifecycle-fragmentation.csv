@@ -1,0 +1,9 @@
+scenario,route_hops,runs,success_rate,cleanup_rate,mean_logical_messages,mean_wire_cells,mean_fragmented_messages,mean_wire_bytes,mean_peak_reassembly_bytes,mean_reassembly_timeouts
+clean,2,40,1.0,1.0,8,8,0,8416,449,0
+clean,5,40,1.0,1.0,20,20,0,21040,794,0
+clean,8,40,1.0,1.0,32,34,2,35768,1139,0
+clean,12,40,1.0,1.0,48,54,6,56808,1599,0
+cell_loss_2pct,2,40,0.8,1.0,7.525,7.525,0,7916.3,429.15,0
+cell_loss_2pct,5,40,0.65,1.0,16.425,16.425,0,17279.1,678.525,0
+cell_loss_2pct,8,40,0.5,1.0,25.55,27.15,1.6,28561.8,967.175,0.05
+cell_loss_2pct,12,40,0.3,1.0,30.825,34.3,3.475,36083.6,1047.05,0.1

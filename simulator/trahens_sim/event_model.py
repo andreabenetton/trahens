@@ -1,7 +1,7 @@
 """Deterministic discrete-event model for the Trahens route lifecycle.
 
 The model integrates the U1 branch transformations, the E1 event lifecycle, the
-C1 cryptographic operations, and the W1 fixed-size adjacent-link record codec.
+C1 cryptographic operations, the M1 variable-length message codec, and the W2 fixed-size adjacent-link cell profile.
 It remains a protocol model rather than a packet-timing or traffic-analysis
 benchmark.
 """
@@ -17,21 +17,22 @@ import hmac
 import random
 from typing import Any, Iterable
 
-from trahens_codec.c1 import (
-    BODY_BYTES,
-    LINK_RECORD_BYTES,
+from trahens_codec.m1w2 import (
+    CELL_RECORD_BYTES,
     CandidateRecord as WireCandidateRecord,
     CodecError,
     ControlRecord as WireControlRecord,
     DiscoverRecord as WireDiscoverRecord,
     MessageType,
-    decode_body,
+    Reassembler,
+    decode_cell,
+    decode_message,
     derive_link_key,
     encode_candidate,
     encode_control,
     encode_discover,
-    open_link_record,
-    seal_link_record,
+    encode_to_link_cells,
+    open_link_cell,
 )
 from trahens_crypto import ristretto as r255
 from trahens_crypto.c1 import (
@@ -134,6 +135,9 @@ class EventLifecycleConfig:
     forced_drop_types: tuple[str, ...] = ()
     enable_crypto: bool = True
     wire_tamper_probability: float = 0.0
+    reassembly_timeout_ms: int = 40
+    reassembly_max_messages: int = 128
+    reassembly_max_bytes: int = 256 * 1024
     active_tagging: bool = False
     tag_scalar_seed: int = 23
 
@@ -214,6 +218,9 @@ class EventLifecycleConfig:
             "active_capacity",
             "per_node_branch_limit",
             "candidate_response_limit",
+            "reassembly_timeout_ms",
+            "reassembly_max_messages",
+            "reassembly_max_bytes",
         ):
             if getattr(self, name) < 1:
                 raise ValueError(f"{name} must be positive")
@@ -336,6 +343,16 @@ class EventLifecycleResult:
     tagged_branches_created: int
     tag_observations: int
     wire_bytes: int
+    logical_messages_sent: int
+    fragmented_messages_sent: int
+    reassembly_completed: int
+    reassembly_duplicate_fragments: int
+    reassembly_timeouts: int
+    reassembly_capacity_drops: int
+    reassembly_metadata_failures: int
+    peak_reassembly_messages: int
+    peak_reassembly_reserved_bytes: int
+    final_reassembly_messages: int
     legitimate_transmissions: int
     attack_transmissions: int
     total_transmissions: int
@@ -397,8 +414,10 @@ class _LifecycleSimulator:
         self.sequence = 0
         self.now_ms = 0
         self.next_message_id = 1
+        self.next_logical_message_id = 1
         self.next_context_id = 1
         self.next_candidate_id = 1
+        self.used_w2_message_ids: set[bytes] = set()
 
         self.branches: dict[int, _BranchContext] = {}
         self.live_branch_ids: set[int] = set()
@@ -411,6 +430,11 @@ class _LifecycleSimulator:
         self.candidate_responders: set[int] = set()
         self.replay_seen: set[tuple[str, int, int, int]] = set()
         self.buckets: dict[tuple[int, int], _TokenBucket] = {}
+        self.reassembler = Reassembler(
+            timeout_ms=config.reassembly_timeout_ms,
+            max_messages=config.reassembly_max_messages,
+            max_reserved_bytes=config.reassembly_max_bytes,
+        )
 
         self.current_ring_index = -1
         self.rings_started = 0
@@ -426,6 +450,8 @@ class _LifecycleSimulator:
         self.setup_latency_ms: int | None = None
 
         self.message_counts: Counter[str] = Counter()
+        self.logical_messages_sent = 0
+        self.fragmented_messages_sent = 0
         self.legitimate_transmissions = 0
         self.attack_transmissions = 0
         self.loss_drops = 0
@@ -492,7 +518,9 @@ class _LifecycleSimulator:
             or self.tentatives
             or self.pending_keys
             or self.active_keys
+            or self.reassembler.live_messages
         )
+        reassembly = self.reassembler.stats()
         return EventLifecycleResult(
             node_count=self.graph.node_count,
             edge_count=self.graph.edge_count(),
@@ -528,7 +556,17 @@ class _LifecycleSimulator:
             tag_observations=self.tag_observations,
             wire_bytes=(
                 self.legitimate_transmissions + self.attack_transmissions
-            ) * LINK_RECORD_BYTES if self.config.enable_crypto else 0,
+            ) * CELL_RECORD_BYTES if self.config.enable_crypto else 0,
+            logical_messages_sent=self.logical_messages_sent,
+            fragmented_messages_sent=self.fragmented_messages_sent,
+            reassembly_completed=reassembly.completed,
+            reassembly_duplicate_fragments=reassembly.duplicate_fragments,
+            reassembly_timeouts=reassembly.expired_messages,
+            reassembly_capacity_drops=reassembly.capacity_drops,
+            reassembly_metadata_failures=reassembly.metadata_failures,
+            peak_reassembly_messages=reassembly.peak_messages,
+            peak_reassembly_reserved_bytes=reassembly.peak_reserved_bytes,
+            final_reassembly_messages=self.reassembler.live_messages,
             legitimate_transmissions=self.legitimate_transmissions,
             attack_transmissions=self.attack_transmissions,
             total_transmissions=(
@@ -557,6 +595,8 @@ class _LifecycleSimulator:
         handlers = {
             "START_RING": self._handle_start_ring,
             "RING_CLOSE": self._handle_ring_close,
+            "WIRE_CELL": self._handle_wire_cell,
+            "REASSEMBLY_EXPIRE": self._handle_reassembly_expire,
             "DISCOVER": self._handle_discover,
             "BRANCH_EXPIRE": self._handle_branch_expire,
             "OFFER_READY": self._handle_offer_ready,
@@ -575,16 +615,6 @@ class _LifecycleSimulator:
             handler = handlers[event.kind]
         except KeyError as exc:  # pragma: no cover - internal programming error
             raise AssertionError(f"unknown event kind: {event.kind}") from exc
-        if self.config.enable_crypto and event.kind in {
-            "DISCOVER",
-            "CANDIDATE",
-            "CANCEL",
-            "COMMIT",
-            "READY",
-        }:
-            if not self._validate_wire_event(event.kind, event.data):
-                self._update_peaks()
-                return
         handler(event.data)
         self._update_peaks()
 
@@ -622,6 +652,13 @@ class _LifecycleSimulator:
             if value != bytes(16):
                 return value
 
+    def _message_local_id(self) -> bytes:
+        while True:
+            value = self._token()
+            if value not in self.used_w2_message_ids:
+                self.used_w2_message_ids.add(value)
+                return value
+
     def _scalar(self, label: bytes) -> bytes:
         return r255.scalar_from_label(
             self._randbytes(32),
@@ -646,8 +683,7 @@ class _LifecycleSimulator:
                 options=0,
                 reply_public_key=reply_public_key,
                 eligibility_capsule=eligibility_capsule,
-            ),
-            rng=self.rng,
+            )
         )
 
     def _make_candidate_body(
@@ -665,8 +701,7 @@ class _LifecycleSimulator:
                 expiry_class=1,
                 layer_count=layer_count,
                 candidate_blob=candidate_blob,
-            ),
-            rng=self.rng,
+            )
         )
 
     def _make_control_body(
@@ -695,34 +730,79 @@ class _LifecycleSimulator:
                 generation=generation,
                 expiry_class=1,
                 protected_body=protected,
-            ),
-            rng=self.rng,
+            )
         )
 
-    def _validate_wire_event(
-        self, expected_kind: str, data: dict[str, Any]
-    ) -> bool:
-        if self._is_replay(data):
-            return False
-        data["_replay_checked"] = True
-        encoded = data.get("wire_record")
+    @staticmethod
+    def _decoded_type(
+        decoded: WireDiscoverRecord
+        | WireCandidateRecord
+        | WireControlRecord
+        | MessageType,
+    ) -> MessageType:
+        if isinstance(decoded, WireDiscoverRecord):
+            return MessageType.DISCOVER
+        if isinstance(decoded, WireCandidateRecord):
+            return MessageType.CANDIDATE
+        if isinstance(decoded, WireControlRecord):
+            return decoded.message_type
+        return decoded
+
+    def _handle_wire_cell(self, data: dict[str, Any]) -> None:
+        encoded = data.get("wire_cell")
         if not isinstance(encoded, bytes):
             self.codec_failures += 1
-            return False
+            return
         try:
             key = derive_link_key(
-                self.config.seed, int(data["sender"]), int(data["receiver"])
+                self.config.seed,
+                int(data["sender"]),
+                int(data["receiver"]),
             )
-            _, _, body = open_link_record(
+            _, _, body = open_link_cell(
                 encoded,
                 key=key,
                 expected_epoch=1,
                 expected_sequence=int(data["message_id"]),
             )
-            decoded = decode_body(body)
         except CodecError:
             self.wire_auth_failures += 1
-            return False
+            return
+        # Do not advance the replay window for unauthenticated input. Otherwise
+        # an attacker could inject a forged record with a future public sequence
+        # and cause the valid record carrying that sequence to be discarded.
+        if self._is_replay(data):
+            return
+        try:
+            fragment = decode_cell(body)
+        except CodecError:
+            self.codec_failures += 1
+            return
+
+        scope = (int(data["sender"]), int(data["receiver"]))
+        try:
+            assembled = self.reassembler.accept(
+                scope,
+                fragment,
+                now_ms=self.now_ms,
+            )
+        except CodecError:
+            return
+        self._schedule_local(
+            self.now_ms + self.config.reassembly_timeout_ms,
+            EventPriority.EXPIRY,
+            "REASSEMBLY_EXPIRE",
+            {},
+        )
+        if assembled is None:
+            return
+        try:
+            decoded = decode_message(assembled)
+        except CodecError:
+            self.codec_failures += 1
+            return
+
+        expected_kind = str(data["logical_kind"])
         expected_type = {
             "DISCOVER": MessageType.DISCOVER,
             "CANDIDATE": MessageType.CANDIDATE,
@@ -730,19 +810,22 @@ class _LifecycleSimulator:
             "READY": MessageType.READY,
             "CANCEL": MessageType.CANCEL,
         }[expected_kind]
-        actual_type = (
-            MessageType.DISCOVER
-            if isinstance(decoded, WireDiscoverRecord)
-            else MessageType.CANDIDATE
-            if isinstance(decoded, WireCandidateRecord)
-            else decoded.message_type
-            if isinstance(decoded, WireControlRecord)
-            else decoded
-        )
-        if actual_type is not expected_type:
+        if self._decoded_type(decoded) is not expected_type:
             self.codec_failures += 1
-            return False
-        data["decoded_record"] = decoded
+            return
+
+        logical_data = dict(data["logical_data"])
+        logical_data.update(
+            {
+                "sender": int(data["sender"]),
+                "receiver": int(data["receiver"]),
+                "message_id": int(data["logical_message_serial"]),
+                "legitimate": bool(data["legitimate"]),
+                "message_type": expected_kind,
+                "decoded_record": decoded,
+                "_replay_checked": True,
+            }
+        )
         if (
             expected_kind == "DISCOVER"
             and self.config.active_tagging
@@ -751,7 +834,16 @@ class _LifecycleSimulator:
             and matches_ratio_tag(decoded.eligibility_capsule, self.tag_scalar)
         ):
             self.tag_observations += 1
-        return True
+        self._schedule_local(
+            self.now_ms,
+            EventPriority(int(data["logical_priority"])),
+            expected_kind,
+            logical_data,
+        )
+
+    def _handle_reassembly_expire(self, data: dict[str, Any]) -> None:
+        del data
+        self.reassembler.expire(self.now_ms)
 
     def _send(
         self,
@@ -767,78 +859,128 @@ class _LifecycleSimulator:
             raise AssertionError(
                 f"non-adjacent simulated transmission: {sender} -> {receiver}"
             )
-        if self._total_transmissions() >= self.config.transmission_budget:
-            self.transmission_budget_drops += 1
-            return False
 
-        message_id = self.next_message_id
-        self.next_message_id += 1
+        logical_serial = self.next_logical_message_id
+        self.next_logical_message_id += 1
         payload = dict(data)
-        record_plaintext = payload.pop("record_plaintext", None)
-        payload.update(
-            {
-                "sender": sender,
-                "receiver": receiver,
-                "message_id": message_id,
-                "legitimate": legitimate,
-                "message_type": message_type,
-            }
-        )
-        if self.config.enable_crypto:
-            try:
-                if record_plaintext is None:
-                    if message_type in {"DISCOVER", "CANDIDATE"}:
-                        raise CodecError(
-                            f"missing explicit {message_type} record body"
-                        )
-                    record_plaintext = self._make_control_body(
-                        message_type, payload
-                    )
-                if len(record_plaintext) != BODY_BYTES:
-                    raise CodecError("invalid record body length")
-                key = derive_link_key(self.config.seed, sender, receiver)
-                wire_record = seal_link_record(
-                    record_plaintext,
-                    key=key,
-                    epoch=1,
-                    sequence=message_id,
-                )
-                if self.rng.random() < self.config.wire_tamper_probability:
-                    mutable = bytearray(wire_record)
-                    mutable[20] ^= 0x01
-                    wire_record = bytes(mutable)
-                payload["wire_record"] = wire_record
-            except CodecError:
-                self.codec_failures += 1
+        logical_message = payload.pop("logical_message", None)
+        if not self.config.enable_crypto:
+            if self._total_transmissions() >= self.config.transmission_budget:
+                self.transmission_budget_drops += 1
                 return False
-        self._account_transmission(message_type, legitimate)
-
-        if (
-            message_type in self.config.forced_drop_types
-            or self.rng.random() < self.config.loss_probability
-        ):
-            self.loss_drops += 1
+            self.message_counts[message_type] += 1
+            self.logical_messages_sent += 1
+            self._account_cell(legitimate)
+            if (
+                message_type in self.config.forced_drop_types
+                or self.rng.random() < self.config.loss_probability
+            ):
+                self.loss_drops += 1
+                return True
+            payload.update(
+                {
+                    "sender": sender,
+                    "receiver": receiver,
+                    "message_id": logical_serial,
+                    "legitimate": legitimate,
+                    "message_type": message_type,
+                }
+            )
+            delivery_time = self.now_ms + self._delay(message_type)
+            self._schedule_local(delivery_time, priority, message_type, payload)
+            if self.rng.random() < self.config.duplicate_probability:
+                if self._total_transmissions() < self.config.transmission_budget:
+                    self._account_cell(legitimate)
+                    self._schedule_local(
+                        delivery_time + self._delay(message_type),
+                        priority,
+                        message_type,
+                        dict(payload),
+                    )
+                else:
+                    self.transmission_budget_drops += 1
             return True
 
-        delivery_time = self.now_ms + self._delay(message_type)
-        self._schedule_local(delivery_time, priority, message_type, payload)
-
-        if self.rng.random() < self.config.duplicate_probability:
-            if self._total_transmissions() < self.config.transmission_budget:
-                self._account_transmission(message_type, legitimate)
-                duplicate = dict(payload)
-                self._schedule_local(
-                    delivery_time + self._delay(message_type),
-                    priority,
-                    message_type,
-                    duplicate,
+        try:
+            if logical_message is None:
+                if message_type in {"DISCOVER", "CANDIDATE"}:
+                    raise CodecError(
+                        f"missing explicit {message_type} logical message"
+                    )
+                logical_message = self._make_control_body(message_type, payload)
+            key = derive_link_key(self.config.seed, sender, receiver)
+            first_sequence = self.next_message_id
+            wire_cells = list(
+                encode_to_link_cells(
+                    logical_message,
+                    key=key,
+                    epoch=1,
+                    first_sequence=first_sequence,
+                    message_local_id=self._message_local_id(),
+                    rng=self.rng,
                 )
-            else:
-                self.transmission_budget_drops += 1
+            )
+        except CodecError:
+            self.codec_failures += 1
+            return False
+
+        required_cells = len(wire_cells)
+        if self._total_transmissions() + required_cells > self.config.transmission_budget:
+            self.transmission_budget_drops += 1
+            return False
+        self.next_message_id += required_cells
+        self.message_counts[message_type] += 1
+        self.logical_messages_sent += 1
+        if required_cells > 1:
+            self.fragmented_messages_sent += 1
+
+        for offset, wire_cell in enumerate(wire_cells):
+            cell_sequence = first_sequence + offset
+            if self.rng.random() < self.config.wire_tamper_probability:
+                mutable = bytearray(wire_cell)
+                mutable[20] ^= 0x01
+                wire_cell = bytes(mutable)
+            self._account_cell(legitimate)
+            if (
+                message_type in self.config.forced_drop_types
+                or self.rng.random() < self.config.loss_probability
+            ):
+                self.loss_drops += 1
+                continue
+            cell_data = {
+                "sender": sender,
+                "receiver": receiver,
+                "message_id": cell_sequence,
+                "message_type": "WIRE_CELL",
+                "legitimate": legitimate,
+                "logical_kind": message_type,
+                "logical_priority": int(priority),
+                "logical_message_serial": logical_serial,
+                "logical_data": payload,
+                "wire_cell": wire_cell,
+            }
+            delivery_time = self.now_ms + self._delay(message_type)
+            self._schedule_local(
+                delivery_time,
+                priority,
+                "WIRE_CELL",
+                cell_data,
+            )
+
+            if self.rng.random() < self.config.duplicate_probability:
+                if self._total_transmissions() < self.config.transmission_budget:
+                    self._account_cell(legitimate)
+                    self._schedule_local(
+                        delivery_time + self._delay(message_type),
+                        priority,
+                        "WIRE_CELL",
+                        dict(cell_data),
+                    )
+                else:
+                    self.transmission_budget_drops += 1
         return True
 
-    def _account_transmission(self, message_type: str, legitimate: bool) -> None:
-        self.message_counts[message_type] += 1
+    def _account_cell(self, legitimate: bool) -> None:
         if legitimate:
             self.legitimate_transmissions += 1
         else:
@@ -898,7 +1040,7 @@ class _LifecycleSimulator:
                         r1=self._scalar(b"ure-root-r1"),
                     )
                     message_data["origin_reply_secret"] = root_secret
-                    message_data["record_plaintext"] = self._make_discover_body(
+                    message_data["logical_message"] = self._make_discover_body(
                         hop_remaining=max(ring.hop_limit - 1, 0),
                         fanout_class=ring.relay_fanout,
                         reply_public_key=root_public,
@@ -1135,7 +1277,7 @@ class _LifecycleSimulator:
                         )
                         self.tagged_branches_created += 1
                     child_data["reply_delta"] = delta
-                    child_data["record_plaintext"] = self._make_discover_body(
+                    child_data["logical_message"] = self._make_discover_body(
                         hop_remaining=max(
                             context.hop_limit - (context.hop_count + 1), 0
                         ),
@@ -1277,7 +1419,7 @@ class _LifecycleSimulator:
         if self.config.enable_crypto:
             assert candidate_blob is not None
             message_data["candidate_blob"] = candidate_blob
-            message_data["record_plaintext"] = self._make_candidate_body(
+            message_data["logical_message"] = self._make_candidate_body(
                 candidate_blob=candidate_blob,
                 layer_count=layer_count,
             )
@@ -1391,7 +1533,7 @@ class _LifecycleSimulator:
         if self.config.enable_crypto:
             assert outgoing_blob is not None
             message_data["candidate_blob"] = outgoing_blob
-            message_data["record_plaintext"] = self._make_candidate_body(
+            message_data["logical_message"] = self._make_candidate_body(
                 candidate_blob=outgoing_blob,
                 layer_count=outgoing_layers,
             )
@@ -1433,7 +1575,7 @@ class _LifecycleSimulator:
                 return
             message_data["candidate_blob"] = candidate_blob
             try:
-                message_data["record_plaintext"] = self._make_candidate_body(
+                message_data["logical_message"] = self._make_candidate_body(
                     candidate_blob=candidate_blob,
                     layer_count=layer_count,
                 )
@@ -1852,7 +1994,7 @@ class _LifecycleSimulator:
                             r0=self._scalar(b"attack-ure-r0"),
                             r1=self._scalar(b"attack-ure-r1"),
                         )
-                        message_data["record_plaintext"] = self._make_discover_body(
+                        message_data["logical_message"] = self._make_discover_body(
                             hop_remaining=max(self.config.attack_hop_limit - 1, 0),
                             fanout_class=self.config.attack_fanout,
                             reply_public_key=public,
