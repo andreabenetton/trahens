@@ -14,10 +14,9 @@
 \usepackage{enumitem}
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta,positioning,fit,calc}
-\usepackage{lineno}
+\usepackage[modulo]{lineno}
 \usepackage{xcolor}
 \usepackage{hyperref}
-\usepackage{draftwatermark}
 \usepackage{caption}
 
 \definecolor{accent}{HTML}{4B3F72}
@@ -30,9 +29,6 @@
   pdftitle={Trahens: A Privacy-Enabled Route Discovery Protocol},
   pdfauthor={Andrea Benetton}
 }
-\SetWatermarkText{RESEARCH DRAFT}
-\SetWatermarkScale{1.25}
-\SetWatermarkColor[gray]{0.91}
 
 \newcommand{\ProtoName}{Trah\={e}ns}
 \newcommand{\concat}{\mathbin\Vert}
@@ -57,7 +53,7 @@
 
 \title{\ProtoName:\\A Privacy-Enabled Route Discovery Protocol}
 \author{Andrea Benetton\\BlueTeam O\"U, Tallinn, Estonia\\\texttt{andrea.benetton@blueteam.ee}}
-\date{Core v0.3 research draft -- 30 July 2026}
+\date{Core v0.4 research draft -- 30 July 2026}
 
 \begin{document}
 \maketitle
@@ -65,12 +61,13 @@
 \begin{abstract}
 Route discovery can disclose endpoint relationships, local topology, and stable correlation handles before an anonymous data path is established. The original \ProtoName{} draft proposed a network-layer control plane based on local flooding, ephemeral routing labels, reverse acknowledgements, distributed registration, and traffic-analysis countermeasures. This revision retains the formal objective of privacy-enabled route discovery while reducing the mechanism to a bounded and falsifiable core.
 
-Core v0.3 removes the attempt-wide identifier introduced by an intermediate revision because such an identifier permits direct correlation by non-adjacent colluding relays. Every outgoing discovery branch is instead transformed independently: the relay replaces the branch capability, blinds the reply public key, rerandomizes the responder-eligibility capsule, reconstructs the canonical message, and transmits a fresh fixed-size ciphertext through a mixing boundary. Candidate return uses a nested encrypted key-blinding chain, allowing the initiator to recover responder-authenticated offers without revealing a complete route to relays.
+Core v0.4 retains the branch-local U1 construction: every outgoing discovery branch replaces its capability, blinds the reply public key, rerandomizes the responder-eligibility capsule, reconstructs the canonical message, and transmits a fresh fixed-size ciphertext through a mixing boundary. Candidate return uses a nested encrypted key-blinding chain. The new E1 lifecycle defines half-open state deadlines, deterministic equal-time precedence, candidate windows, delayed candidates across initiator-local rings, cancellation races, tentative reverse mappings, forward COMMIT reservation, reverse READY activation, loss, exact duplication, and local cleanup. The initiator does not expose a route to the data plane until it authenticates the final READY.
 
-The resulting unlinkability statement is deliberately conditional. The protocol specifies wire-image unlinkability and the structure required for batch-local message unlinkability against passive non-adjacent observers. It does not claim resistance to a global timing observer or to active tagging until a concrete universally rerandomizable encryption construction, a tweakable reply KEM, and a traffic-scheduling profile receive independent analysis. A deterministic simulation quantifies the resource cost of removing attempt-wide duplicate suppression. In a 500-node, average-degree-eight model, moderate hop-four/fan-out-three discovery increased mean transmissions by 4.26\% and branch-state allocations by 15.60\%; broad hop-five/fan-out-four discovery approached the configured budget in 91\% of runs and more than doubled state allocation. The principal result is therefore not that unlinkability is free, but that its mechanism, assumptions, and amplification cost can be stated and tested explicitly.
+The unlinkability statement remains conditional on a reviewed universally rerandomizable encryption construction, a tweakable reply KEM, and a traffic-scheduling profile. The event-lifecycle statement is narrower: under the modeled delay, loss, duplication, expiry, and attack events, every state transition has a deterministic bounded outcome. In 100 deterministic 500-node runs, clean route setup succeeded in 89\% of cases; 2\% loss with 5\% exact duplication reduced success to 80\%. A concentrated fresh-branch attack reduced success to 32\%; a one-token ingress-peer bucket raised it to 76\% and reduced attack transmissions by approximately 25\%. Every evaluated scenario reclaimed all branch, responder-offer, initiator-candidate, tentative, pending, and active state. These results establish a reproducible lifecycle and resource baseline, not a production security or performance claim.
 \end{abstract}
 
 \linenumbers
+\modulolinenumbers[5]
 
 \section{Introduction}
 \label{sec:introduction}
@@ -81,14 +78,16 @@ The 2020 \ProtoName{} draft addressed this boundary directly. Its central propos
 
 A subsequent Core v0.2 revision introduced bounded expanding rings, cumulative budgets, explicit route commitment, and fresh identifiers between retries. Those changes improved correctness and denial-of-service analysis, but a single wire-visible identifier remained constant inside each attempt. That identifier contradicted the original non-adjacent message-unlinkability objective.
 
-Core v0.3 corrects this defect. The current contribution is fivefold:
+Core v0.3 corrected the stable-identifier defect. Core v0.4 retains that construction and adds a complete event-driven setup lifecycle. The current contribution is sevenfold:
 
 \begin{enumerate}[leftmargin=*,itemsep=0.35em]
   \item it replaces attempt-wide wire identity with peer-bound branch contexts;
   \item it defines a per-hop reply-key blinding chain that the initiator can reverse during candidate processing;
   \item it requires a rerandomizable eligibility capsule so that the destination selector is not itself a stable ciphertext;
-  \item it formalizes wire-image, batch-local, and traffic-flow unlinkability as distinct properties;
-  \item it quantifies the amplification created when privacy removes attempt-wide duplicate suppression.
+  \item it formalizes wire-image, batch-local, lifecycle, and traffic-flow properties separately;
+  \item it defines candidate windows and delayed-candidate behavior without transmitting a ring identifier;
+  \item it makes route use conditional on forward COMMIT and reverse READY, with deterministic expiry and cancellation;
+  \item it quantifies both branch-local amplification and fresh-token denial-of-service under explicit admission limits.
 \end{enumerate}
 
 The protocol remains a research design. In particular, universally rerandomizable encryption (URE) is treated as a named cryptographic dependency rather than silently approximated by repeated hashing or ordinary HPKE. Recent work has clarified that URE security must include anonymity and composable application-level requirements~\cite{ure2023}; HPKE remains appropriate for ordinary recipient encryption but does not itself specify universal ciphertext rerandomization~\cite{hpke}.
@@ -106,7 +105,7 @@ Sphinx defines a compact mix packet format with path-length hiding, indistinguis
 
 \subsection{Rerandomizable encryption}
 
-A universally rerandomizable encryption scheme permits a party without the decryption key to transform a ciphertext into a fresh ciphertext of the same plaintext under the same public key. This property is directly relevant to a hidden responder selector that must survive multiple forwarding hops without remaining bitwise stable. Security definitions for URE require care: rerandomization alone is not sufficient if encryption anonymity, malformed-ciphertext behavior, or active tagging permit linkage~\cite{ure2023}. Core v0.3 therefore specifies the required interface and proof obligations but does not select a production construction.
+A universally rerandomizable encryption scheme permits a party without the decryption key to transform a ciphertext into a fresh ciphertext of the same plaintext under the same public key. This property is directly relevant to a hidden responder selector that must survive multiple forwarding hops without remaining bitwise stable. Security definitions for URE require care: rerandomization alone is not sufficient if encryption anonymity, malformed-ciphertext behavior, or active tagging permit linkage~\cite{ure2023}. Core v0.4 therefore specifies the required interface and proof obligations but does not select a production construction.
 
 \section{Problem definition}
 \label{sec:problem}
@@ -205,8 +204,8 @@ The protocol consists of four control-plane phases:
 \begin{enumerate}[leftmargin=*]
   \item \textbf{branch discovery}: the initiator propagates independently transformed \textsc{Discover} records;
   \item \textbf{candidate return}: eligible responders return end-to-end protected offers while relays install tentative local mappings;
-  \item \textbf{commit}: the initiator selects one candidate and activates its forward mappings;
-  \item \textbf{ready}: the responder confirms activation through reverse mappings.
+  \item \textbf{commit}: the initiator selects one candidate and reserves pending route mappings;
+  \item \textbf{ready}: the responder confirms the transcript and activates mappings in the reverse direction.
 \end{enumerate}
 
 \begin{figure}[ht]
@@ -355,7 +354,70 @@ The concrete KEM must ensure that public-key tweaking, key privacy, CCA security
 
 \subsection{Commit and readiness}
 
-The initiator chooses at most one authenticated candidate and sends \textsc{Commit} through the first-hop tentative label. Each relay validates the incoming peer and label, atomically activates the corresponding local mapping, and forwards the protected commit body. A global candidate identifier is unnecessary. The responder verifies a commit challenge supplied inside the candidate payload and returns \textsc{Ready} through reverse labels. Application traffic is admitted only after successful end-to-end verification of \textsc{Ready}.
+The initiator chooses at most one authenticated candidate and sends \textsc{Commit} through the first-hop tentative label. Each relay validates the incoming peer, route generation, local label, and protected transcript. It reserves route capacity, changes the mapping from \textsc{Tentative} to \textsc{Pending-Ready}, assigns a finite ready-hold deadline, and forwards the protected commit body. A global candidate identifier is unnecessary.
+
+The responder verifies a commit challenge supplied inside the candidate payload and returns \textsc{Ready} through reverse labels. A relay accepting \textsc{Ready} changes the matching pending mapping to \textsc{Active}. The initiator MUST NOT expose the route to the data plane before authenticating the final \textsc{Ready}. If \textsc{Commit} or \textsc{Ready} is lost, pending or partially active state is reclaimed by local deadlines.
+
+\section{Event lifecycle}
+\label{sec:lifecycle}
+
+\subsection{Time and equal-time precedence}
+
+Let a local state be created at time $t_c$ with expiry $t_e$. Under E1 the state is valid exactly when
+\begin{equation}
+t_c \le t < t_e.
+\label{eq:halflife}
+\end{equation}
+It is invalid at $t=t_e$ and cannot be revived by a delayed message. Synchronised clocks are unnecessary because a received lifetime class is converted into a local deadline. If a valid transition replaces $t_e$, an expiry event bound to the prior state generation is stale and MUST NOT shorten the replacement deadline.
+
+For events assigned the same local timestamp, E1 defines the strict precedence
+\begin{equation}
+\mathsf{Expire} \prec \mathsf{Cancel} \prec \mathsf{Control} \prec
+\mathsf{Candidate} \prec \mathsf{Discover} \prec \mathsf{WindowClose}.
+\label{eq:eventorder}
+\end{equation}
+Consequently, a message at its state deadline fails, whereas a candidate at the exact candidate-window deadline remains eligible.
+
+\subsection{Candidate windows and delayed candidates}
+
+A ring $r$ is local initiator policy
+\[
+\mathcal R_r=(d_r,f_r^{(0)},f_r,\Delta_r),
+\]
+where $d_r$ is the hop bound, $f_r^{(0)}$ and $f_r$ are initial and relay fan-out, and $\Delta_r$ is the candidate-window duration. The tuple and its index are never transmitted. If a ring starts at $a_r$, its decision boundary is $w_r=a_r+\Delta_r$.
+
+A candidate from any started ring is eligible at $w_r$ if no decision has been made, its offer deadline exceeds $w_r$, and every required tentative mapping survived the reverse traversal. Thus a delayed candidate from ring $r-1$ may be selected during ring $r$. Selection freezes the decision, sends \textsc{Commit} on the selected path, and sends \textsc{Cancel} through stored adjacent mappings into maximal off-route live subtrees belonging to that logical discovery.
+
+\begin{algorithm}[ht]
+\caption{Initiator: process one candidate-window boundary}
+\label{alg:window}
+\begin{algorithmic}[1]
+\Require ring index $r$, valid local candidate set $\mathcal C$, ring schedule $\mathcal R$
+\State remove candidates whose authenticated offer has expired
+\If{$|\mathcal C|\ge k_{req}$ or ($r$ is final and $|\mathcal C|>0$)}
+  \State $c^*\gets\mathsf{Select}(\mathcal C)$
+  \State freeze $c^*$; reject later candidates
+  \State send \textsc{Cancel} into every maximal live subtree not on $c^*$
+  \State send \textsc{Commit} through the tentative path of $c^*$
+\ElsIf{another ring exists}
+  \State start ring $r+1$ with independent first-hop branch material
+\Else
+  \State terminate with \textsc{No-Candidate}; cancel live branches
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Cancellation races and cleanup}
+
+\textsc{Candidate} and \textsc{Cancel} may cross. If the candidate traverses a context first, the relay may create tentative state; if cancellation removes the context first, the candidate is discarded. A candidate reaching the initiator after selection is late and cannot change the decision. Correctness does not depend on cancellation delivery because branch, offer, tentative, pending, active, replay, and initiator-transaction states have independent finite deadlines. An initiator cannot cancel unrelated or attacker-created branch contexts; those are reclaimed only by their owners, local admission policy, or expiry.
+
+\begin{proposition}[Bounded cleanup]
+Assume finite state deadlines and finite event delivery or loss decisions. After the initiator terminates and no data-plane renewal occurs, every branch, tentative, pending, and active state created by that logical discovery is eventually removed without peer cooperation.
+\end{proposition}
+
+\begin{proof}
+Every state class has a current local deadline and a generation-bound expiry event. A successful cancellation or abort may remove it earlier. A stale timer cannot shorten a valid replacement deadline, a lost control record cannot extend the current deadline, and a delayed record cannot recreate state after Equation~\eqref{eq:halflife} fails. The finite union of finite-lived entries therefore becomes empty after the maximum remaining deadline.
+\end{proof}
 
 \section{Message format and state}
 \label{sec:messages}
@@ -398,8 +460,8 @@ Table & Fields \\
 \midrule
 \(\BranchT\) & ingress peer and token, link epoch, incoming reply key, expiration, bounded child mappings, accounting owner \\
 Child mapping & child peer and token, blinding scalar, blinded key, rerandomization context, response counters \\
-\(\CandT\) & child and parent candidate tokens, tentative labels, nested capsule transcript hash, expiration \\
-\(\RouteT\) & incoming/outgoing peer-label bindings for both directions, route generation, limits, expiration \\
+\(\CandT\) & child and parent candidate tokens, tentative labels, nested capsule transcript hash, tentative expiration \\
+\(\RouteT\) & incoming/outgoing peer-label bindings, route generation, state (pending or active), ready-hold or active expiration, limits \\
 Replay cache & link-local token or label hash, peer, epoch, short replay deadline \\
 \bottomrule
 \end{tabularx}
@@ -463,23 +525,20 @@ A conforming relay enforces finite limits at the peer, link-epoch, branch, physi
 
 The protocol excludes only immediate backtracking. Longer cycles are not hidden by a stable path vector and are instead bounded by hop count and budgets. This is less efficient than global duplicate suppression but consistent with the privacy objective.
 
+A fresh-token adversary is not an exact replay. Before expensive processing, E1 therefore admits a fresh branch through an ingress-peer token bucket. For capacity $b$, refill amount $a$, and refill interval $r$, the token count is capped by $b$ and one admitted branch consumes one token. The bucket is scoped at least to the link epoch, ingress peer, and receiving node. Per-peer admission is combined with per-node and node-global capacities because a distributed adversary can aggregate many buckets.
+
+Cumulative allocation is insufficient as a safety measure. E1 separately records the peak concurrent counts
+\[
+S_{peak}=\max_t(S_B(t),S_T(t),S_P(t),S_A(t)),
+\]
+where $S_B,S_T,S_P,S_A$ are live branch, tentative, pending-ready, and active state. Final state counts and cleanup completion are mandatory evaluation outputs.
+
 \section{Deterministic simulation}
 \label{sec:evaluation}
 
-\subsection{Model}
+\subsection{U1 branch-local resource cost}
 
-The repository contains two models:
-
-\begin{enumerate}[leftmargin=*]
-  \item an identifier-based first-parent model corresponding to Core v0.2;
-  \item a branch-local \Uone{} model in which every distinct ingress token creates independent state.
-\end{enumerate}
-
-The simulator excludes cryptographic execution time, batching delay, packet loss, and active adversaries. It uses the full analytical path only to measure loop re-entry; that path is not available to protocol participants.
-
-The comparison uses 100 deterministic connected random graphs with 500 nodes, average degree eight, a two-percent responder fraction, candidate limit eight, candidate-response limit 24, transmission and state budgets of 1,200, and a per-node branch-context limit of eight.
-
-\subsection{Results}
+The first model compares identifier-based first-parent discovery with U1 branch-local discovery. It uses 100 deterministic connected random graphs with 500 nodes, average degree eight, a two-percent responder fraction, candidate limit eight, candidate-response limit 24, transmission and state budgets of 1,200, and a per-node branch-context limit of eight.
 
 \begin{table}[ht]
 \centering
@@ -487,7 +546,7 @@ The comparison uses 100 deterministic connected random graphs with 500 nodes, av
 \label{tab:results}
 \begin{tabular}{@{}rrrrrrrr@{}}
 \toprule
-\(d_{\max}\) & \(f\) & \multicolumn{2}{c}{Success} & \multicolumn{2}{c}{Mean transmissions} & \(A_c\) & U1 budget hit \\
+$d_{\max}$ & $f$ & \multicolumn{2}{c}{Success} & \multicolumn{2}{c}{Mean transmissions} & $A_c$ & U1 budget hit \\
 \cmidrule(lr){3-4}\cmidrule(lr){5-6}
  & & ID & U1 & ID & U1 & U1 & \\
 \midrule
@@ -498,11 +557,35 @@ The comparison uses 100 deterministic connected random graphs with 500 nodes, av
 \end{tabular}
 \end{table}
 
-At hop three and fan-out two, removing attempt-wide suppression has negligible mean cost because the explored subgraph is small. At hop four and fan-out three, mean transmissions increase by 4.26\%, while mean branch-state allocation increases from 102.37 to 118.34, or 15.60\%. At hop five and fan-out four, mean transmissions increase by 31.90\%, mean branch-state allocation increases from 421.91 to 1185.06, and 91\% of runs encounter a configured transmission or state limit. The mean context amplification reaches 2.702.
+At hop four and fan-out three, mean transmissions increase by 4.26\%, while mean branch-state allocation increases by 15.60\%. At hop five and fan-out four, mean transmissions increase by 31.90\%, mean branch-state allocation increases from 421.91 to 1185.06, and 91\% of runs encounter a configured limit. Privacy removes a convenient equality domain; broad flooding consequently becomes an unsuitable default policy.
 
-The result is consistent with the protocol design: privacy removes a convenient equality domain and therefore permits convergence and loop re-entry to consume repeated state. The broad configuration remains successful because it reaches the budget after covering many responders, but it is operationally unsuitable as a default policy.
+\subsection{E1 event model}
 
-The moderate \(d_{\max}=4,f=3\) configuration exhibits a six-percentage-point lower success rate in the branch-local runs. The simulator selects children independently in the two models; repeated contexts can consume budget and forwarding opportunities that first-parent suppression would redirect toward new physical nodes. This difference motivates adaptive fan-out and local context-pressure policies rather than a claim that one fixed policy is universally optimal.
+The second model executes an event queue with bounded random link delay, natural reordering, optional loss and exact duplication, candidate windows, delayed candidates, branch and route deadlines, cancellation, COMMIT/READY, and malicious fresh DISCOVER generation. The tracked experiment uses 100 deterministic 500-node graphs with average degree eight and two-percent responders. The local ring schedule is $(2,2,18\,\mathrm{ms})$, $(3,2,24\,\mathrm{ms})$, and $(4,3,32\,\mathrm{ms})$, where each tuple is maximum depth, fan-out, and window duration. Branch capacity is 1,200 and the total transmission budget is 2,000.
+
+The attack scenarios use approximately one percent malicious nodes. Each malicious node generates six bursts of six fresh branches, and attack branches may propagate to depth three with fan-out three. The defended scenario applies a one-token ingress-peer bucket refilling one token every 10 ms. Every simulated transmission is constrained to an actual graph edge. Initiator cancellation applies only to its own discovery branches; attack-created contexts persist until local rejection or expiry.
+
+\begin{table}[ht]
+\centering
+\caption{Core v0.4 event-lifecycle comparison}
+\label{tab:lifecycle}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}Xrrrrrr@{}}
+\toprule
+Scenario & Success & Setup ms & Total tx & Attack tx & Peak branch & Cleanup \\
+\midrule
+Clean & 0.89 & 72.60 & 212.77 & 0.00 & 103.92 & 1.00 \\
+2\% loss, 5\% duplicate & 0.80 & 72.89 & 207.68 & 0.00 & 96.92 & 1.00 \\
+Fresh-branch attack, open & 0.32 & 55.13 & 1440.33 & 1389.94 & 1140.38 & 1.00 \\
+Fresh-branch attack, bucket & 0.76 & 66.93 & 1176.56 & 1037.09 & 904.67 & 1.00 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Loss and exact duplication reduce success by nine percentage points. The impaired runs record a mean of 3.72 lost transmissions and 10.14 exact replay drops. Exact duplicates do not allocate additional branch contexts; failures arise from lost discovery, candidate, COMMIT, or READY records and from the absence of a valid candidate before the final boundary.
+
+The open fresh-branch attack dominates transmitted traffic and raises mean peak branch state above 1,100 entries. The token bucket increases success from 32\% to 76\%, reduces attack transmissions by 25.4\%, reduces attack branch allocations by 24.8\%, and reduces peak branch state by 20.7\%. It remains incomplete protection: distributed peers retain separate buckets, and success remains below the clean scenario.
+
+The lower conditional setup latency under attack is survivor bias, not an improvement: only the easier successful routes contribute to the latency mean. Every scenario reaches zero final branch, responder-offer, initiator-candidate, tentative, pending, and active state in all runs. Targeted conformance tests additionally cover a candidate arriving exactly at a window boundary, a delayed prior-ring candidate, cancellation overtaking a candidate, tentative expiry before COMMIT, pending-deadline extension, adjacent-only subtree cancellation, lost READY, exact duplication, and hard transmission budgets.
 
 \section{Limitations and open problems}
 \label{sec:limitations}
@@ -521,25 +604,25 @@ Fixed-size records and cryptographic transformation do not remove timing. TARANE
 
 \subsection{Long-range resolution}
 
-The legacy beacon and authority design is not part of Core v0.3. Deterministic repeated hashes of endpoint addresses can become stable query handles and enumeration targets. A future resolution protocol requires independent ownership, freshness, replication, poisoning, selective-denial, and private-query analysis.
+The legacy beacon and authority design is not part of Core v0.4. Deterministic repeated hashes of endpoint addresses can become stable query handles and enumeration targets. A future resolution protocol requires independent ownership, freshness, replication, poisoning, selective-denial, and private-query analysis.
 
-\subsection{Event-driven protocol behavior}
+\subsection{Distributed denial of service and fairness}
 
-The next simulator increment should add candidate windows, delayed candidate return, loss, churn, cancellation races, COMMIT/READY state, malicious branch generation, and active tagging. These changes follow the current unlinkability correction rather than preceding it.
+Ingress-peer buckets mitigate a concentrated fresh-token source but do not provide Sybil resistance or distributed-denial resistance. Bucket parameters can also reject legitimate converging branches. Future experiments must vary attacker distribution, peer churn, adaptive refill, responder spam, and candidate spam, and must report fairness by ingress peer rather than only aggregate success.
 
 \section{Conclusion}
 \label{sec:conclusion}
 
-\ProtoName{} is best understood as a research protocol for privacy-enabled route discovery, not as an immediate replacement for IP or BGP. Core v0.3 restores the formal non-adjacent message-unlinkability objective by removing attempt-wide identifiers and transforming every forwarding representation. The design now states what must change at each hop, how the initiator recovers nested candidate encryption, which adversary is covered, and which cryptographic primitives remain unresolved.
+\ProtoName{} is best understood as a research protocol for privacy-enabled route discovery, not as an immediate replacement for IP or BGP. Core v0.4 combines two separate advances. U1 removes attempt-wide identifiers and transforms every forwarding representation, restoring the structure required for non-adjacent message unlinkability. E1 defines event time, candidate windows, delayed reverse messages, cancellation races, tentative and pending state, final readiness, loss, duplication, fresh-token admission, and deterministic cleanup.
 
-The simulation demonstrates the associated systems cost. Unlinkability is inexpensive for narrow exploration but can make broad flooding approach global resource budgets. Consequently, future work must jointly optimize discovery success, branch-context amplification, batching delay, and adversarial matching advantage. The protocol should advance only when each stronger privacy claim is accompanied by a concrete suite, a formal game, reproducible test vectors, and measured resource bounds.
+The simulations expose the corresponding systems costs. Unlinkability is inexpensive for narrow exploration but broad U1 flooding can approach global resource limits. Event-driven setup behaves deterministically under the modeled faults, but fresh-token attacks can dominate capacity even when exact replay is solved. Per-peer buckets materially improve availability without eliminating the attack. The next release gate is therefore cryptographic and adversarial: select concrete URE and reply-KEM constructions, publish canonical vectors, test active tagging, and extend abuse analysis to distributed identities before implementing network I/O.
 
 \appendix
 \section{Normative requirement summary}
 
 The keywords ``MUST'', ``MUST NOT'', ``REQUIRED'', ``SHOULD'', ``SHOULD NOT'', and ``MAY'' are interpreted according to BCP~14~\cite{rfc2119,rfc8174}.
 
-A Core v0.3 \Uone{} implementation MUST:
+A Core v0.4 implementation using U1 and E1 MUST:
 
 \begin{enumerate}[leftmargin=*]
   \item omit logical-discovery and attempt identifiers from the wire;
@@ -551,12 +634,18 @@ A Core v0.3 \Uone{} implementation MUST:
   \item use fresh adjacent-link nonces and replay domains;
   \item enforce finite branch, transmission, cryptographic-work, queue, and route limits;
   \item make batch-local unlinkability claims only when an honest mixing boundary contains at least two indistinguishable records;
+  \item treat every state deadline as a half-open validity boundary and define equal-time precedence;
+  \item keep ring and window identifiers local to the initiator;
+  \item create tentative state on CANDIDATE, reserve pending state on COMMIT, and authorize data only after final READY;
+  \item reclaim all setup state by local expiry without peer cooperation;
+  \item admit fresh branches through per-peer and node-global limits before expensive cryptography;
+  \item report peak and final state, not only cumulative allocation;
   \item refrain from active or timing-resistance claims until the corresponding profiles are specified and tested.
 \end{enumerate}
 
 \section{VarUInt note}
 
-The legacy document defined a one-to-one MSB base-128 variable-length integer. Core v0.3 does not yet select a canonical binary encoding because variable-length public fields can reveal value classes and complicate fixed-size records. The future codec may retain VarUInt inside encrypted and padded bodies, but all encodings must be canonical and rejected on alternate representations.
+The legacy document defined a one-to-one MSB base-128 variable-length integer. Core v0.4 does not yet select a canonical binary encoding because variable-length public fields can reveal value classes and complicate fixed-size records. The future codec may retain VarUInt inside encrypted and padded bodies, but all encodings must be canonical and rejected on alternate representations.
 
 \begin{thebibliography}{99}
 
