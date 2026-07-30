@@ -46,6 +46,16 @@ The receiver MAY perform a non-mutating replay-window precheck from the public e
 
 ## 4. Encrypted fragment header
 
+Under transport profile T1 — the only P1 transport — this header is
+*realized by* the T1 DATA frame header defined in
+`transport-profile-t1.md` §4: the T1 frame carries the same profile
+bytes, suite, transmission identifier (serving as `message_local_id`),
+fragment index/count/length, and total length inside the encrypted cell
+body, and every frozen vector and the conformance corpus encode that
+form. The layout below is the profile-independent W2 form for a future
+transport that runs W2 without T1 framing; implementations of the P1
+mandatory path MUST emit the T1 realization and MUST NOT emit both.
+
 The first 32 plaintext bytes are:
 
 ```text
