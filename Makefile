@@ -108,7 +108,7 @@ clean:
 
 .PHONY: registry p1-vectors rust-test p1-harness
 registry:
-	python tools/generate_protocol_registry.py
+	python tools/generate_protocol_registry.py --python-output simulator/trahens_spec/generated.py --rust-output implementation/rust/crates/protocol-registry/src/generated.rs --markdown-output spec/protocol-registry-v1.5.md
 
 p1-vectors:
 	python tools/generate_p1_conformance.py
