@@ -1,18 +1,21 @@
 # Simulator
 
-The simulator is the first executable artifact. It models the Core v0.1 outward discovery only:
+The simulator is the first executable artifact. It models outward Core discovery and policy selection:
 
 - connected undirected graph generation;
 - bounded hop count;
 - separate origin and relay fan-out limits;
 - first-parent duplicate suppression;
-- responder sampling and candidate limits;
-- discovery-state and replay-cache growth;
-- deterministic seeds and JSON output.
+- deterministic responder sets;
+- candidate limits and cross-attempt candidate deduplication;
+- hard transmission and state-allocation budgets;
+- expanding-ring schedules with fresh attempt contexts;
+- cumulative cost and cross-attempt relay-overlap metrics;
+- deterministic seeds and JSON/CSV output.
 
-It does not yet model message sizes, timers, cryptography, candidate reverse propagation, commitment, route expiration, churn, or malicious behavior.
+It does not yet model message sizes, event time, candidate reverse propagation, commitment, route expiration, churn, cryptography, or malicious behavior.
 
-## Run
+## Fixed attempt
 
 ```bash
 PYTHONPATH=simulator python -m trahens_sim.cli \
@@ -23,33 +26,41 @@ PYTHONPATH=simulator python -m trahens_sim.cli \
   --seed 1
 ```
 
-Or run a stored experiment:
+## Expanding rings
 
 ```bash
-PYTHONPATH=simulator python -m trahens_sim.cli \
-  --config simulator/experiments/baseline.json \
-  --output reports/baseline.json
+PYTHONPATH=simulator python -m trahens_sim.expanding_cli \
+  --nodes 500 \
+  --average-degree 8 \
+  --rings 2:2,3:2,4:3,5:4 \
+  --responder-fraction 0.02 \
+  --seed 1
 ```
+
+A two-field ring is `hop_limit:fanout`. A three-field ring is `hop_limit:initial_fanout:relay_fanout`.
 
 ## Test
 
 ```bash
-PYTHONPATH=simulator python -m unittest discover -s simulator/tests -v
+make test
 ```
+
+## Experiments
+
+```bash
+make experiments
+make sweep
+make policy-compare
+```
+
+The policy comparison writes `reports/iteration-0003-policy-comparison.csv` and compares success, transmissions, duplicates, state allocations, attempts, and relay overlap.
 
 ## Next simulator increments
 
-1. Candidate reverse propagation and tentative state.
-2. Commit/ready bidirectional state installation.
-3. Event time, expiration, packet loss, duplication, and reordering.
-4. Churn and route teardown.
-5. Malicious fan-out, replay, selective forwarding, and state exhaustion.
-6. Padding and correlation experiments for named privacy profiles.
-
-## Parameter sweep
-
-```bash
-make sweep
-```
-
-The default sweep writes `reports/iteration-0002-sweep.csv`. It compares candidate success, graph coverage, transmissions, duplicates, amplification, and candidate count over multiple deterministic seeds.
+1. Event time and candidate windows.
+2. Candidate reverse propagation and tentative state.
+3. Commit/ready bidirectional state installation.
+4. Expiration, packet loss, duplication, and reordering.
+5. Churn and route teardown.
+6. Malicious fresh-attempt floods, candidate spam, replay, selective forwarding, and state exhaustion.
+7. Padding and correlation experiments for named privacy profiles.

@@ -4,13 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trahens-sim"
-version = "0.1.0"
+version = "0.2.0"
 description = "Deterministic simulator for Trahens bounded route discovery"
 requires-python = ">=3.11"
 authors = [{name = "Andrea Benetton", email = "andrea.benetton@blueteam.ee"}]
 
 [project.scripts]
 trahens-sim = "trahens_sim.cli:main"
+trahens-expanding = "trahens_sim.expanding_cli:main"
+trahens-policy-compare = "trahens_sim.policy_compare:main"
 
 [tool.setuptools]
 package-dir = {"" = "simulator"}

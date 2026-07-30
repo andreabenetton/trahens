@@ -23,6 +23,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidate-limit", type=int, default=4)
     parser.add_argument("--responder-fraction", type=float, default=0.05)
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--transmission-budget", type=int)
+    parser.add_argument("--state-budget", type=int)
     parser.add_argument("--config", type=Path)
     parser.add_argument("--output", type=Path)
     return parser
@@ -48,6 +50,8 @@ def main() -> None:
         "candidate_limit": args.candidate_limit,
         "responder_fraction": args.responder_fraction,
         "seed": args.seed,
+        "transmission_budget": args.transmission_budget,
+        "state_budget": args.state_budget,
     }
     if args.config is not None:
         values.update(_load_config(args.config))
@@ -65,6 +69,16 @@ def main() -> None:
         candidate_limit=int(values["candidate_limit"]),
         responder_fraction=float(values["responder_fraction"]),
         seed=int(values["seed"]),
+        transmission_budget=(
+            None
+            if values.get("transmission_budget") is None
+            else int(values["transmission_budget"])
+        ),
+        state_budget=(
+            None
+            if values.get("state_budget") is None
+            else int(values["state_budget"])
+        ),
     )
     result = simulate_discovery(graph, config)
     payload = {
