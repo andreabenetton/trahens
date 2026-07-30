@@ -20,3 +20,10 @@ dist/
 .idea/
 .vscode/
 *~
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Raw generated experiment output
+reports/*.json
