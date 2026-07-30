@@ -19,32 +19,43 @@ docs/adr/0017-active-tagging-claim-boundary.md
 docs/adr/0018-integrate-crypto-codec-lifecycle.md
 docs/adr/0019-variable-m1-messages-fixed-w2-cells.md
 docs/adr/0020-bounded-w2-reassembly.md
-spec/core-v0.7.md
+docs/adr/0021-c2-anonymous-rerandomizable-rcca-eligibility.md
+docs/adr/0022-suite-agile-m2-envelope.md
+spec/core-v0.8.md
 spec/unlinkability-profile-u1.md
 spec/event-lifecycle-profile-e1.md
 spec/crypto-profile-c1.md
+spec/crypto-profile-c2.md
+spec/active-unlinkability-games-c2.md
 spec/crypto-transcript-v0.2.md
 spec/crypto-test-vectors-c1.json
-spec/message-codec-m1.md
+spec/crypto-test-vectors-c2-symbolic.json
+spec/message-codec-m2.md
 spec/wire-cell-w2.md
 spec/active-tagging-analysis.md
-spec/messages-v0.7.md
-spec/state-machines-v0.7.md
-spec/invariants-v0.7.md
-spec/resource-accounting-v0.7.md
+spec/messages-v0.8.md
+spec/state-machines-v0.8.md
+spec/invariants-v0.8.md
+spec/resource-accounting-v0.8.md
 simulator/trahens_crypto/ristretto.py
 simulator/trahens_crypto/c1.py
+simulator/trahens_crypto/c2_ideal.py
 simulator/trahens_crypto/candidate.py
 simulator/trahens_crypto/tagging.py
-simulator/trahens_codec/m1w2.py
+simulator/trahens_codec/m2w2.py
 simulator/tests/test_crypto_c1.py
-simulator/tests/test_message_cell_codec.py
+simulator/tests/test_crypto_c2_ideal.py
+simulator/tests/test_crypto_c2_vectors.py
+simulator/tests/test_message_cell_codec_m2.py
 simulator/tests/test_candidate_chain.py
 simulator/tests/test_active_tagging.py
 simulator/tests/test_event_model.py
 simulator/trahens_sim/fragmentation_compare.py
+simulator/trahens_sim/c2_compare.py
 tools/generate_crypto_vectors.py
+tools/generate_c2_symbolic_vectors.py
 tools/run_fragmentation_comparison.sh
+tools/run_c2_comparison.sh
 paper/legacy/trahens-2020.tex
 paper/legacy/trahens-2020.pdf
 paper/rewrite/main.tex
@@ -54,9 +65,11 @@ reports/iteration-0006-crypto-conformance.json
 reports/iteration-0007-wire-tagging-comparison.csv
 reports/iteration-0008-message-cell-capacity.csv
 reports/iteration-0008-lifecycle-fragmentation.csv
+reports/iteration-0009-c2-active-security.csv
 docs/review-log/iteration-0006.md
 docs/review-log/iteration-0007.md
 docs/review-log/iteration-0008.md
+docs/review-log/iteration-0009.md
 "
 
 for path in $required_files; do
@@ -70,9 +83,12 @@ python -m compileall -q simulator
 PYTHONPATH=simulator python -m unittest discover -s simulator/tests -v
 
 vectors_tmp=$(mktemp)
-trap 'rm -f "$vectors_tmp" /tmp/trahens-expanding-smoke.json /tmp/trahens-u1-smoke.csv /tmp/trahens-e1-smoke.csv /tmp/trahens-tag-smoke.csv /tmp/trahens-m1w2-capacity.csv /tmp/trahens-m1w2-life.csv' EXIT
+c2_vectors_tmp=$(mktemp)
+trap 'rm -f "$vectors_tmp" "$c2_vectors_tmp" /tmp/trahens-expanding-smoke.json /tmp/trahens-u1-smoke.csv /tmp/trahens-e1-smoke.csv /tmp/trahens-tag-smoke.csv /tmp/trahens-m1w2-capacity.csv /tmp/trahens-m1w2-life.csv /tmp/trahens-c2-smoke.csv' EXIT
 PYTHONPATH=simulator python tools/generate_crypto_vectors.py --output "$vectors_tmp"
 cmp spec/crypto-test-vectors-c1.json "$vectors_tmp"
+PYTHONPATH=simulator python tools/generate_c2_symbolic_vectors.py --output "$c2_vectors_tmp"
+cmp spec/crypto-test-vectors-c2-symbolic.json "$c2_vectors_tmp"
 
 ./tools/run_experiments.sh
 
@@ -127,8 +143,14 @@ PYTHONPATH=simulator python -m trahens_sim.fragmentation_compare \
 test -s /tmp/trahens-m1w2-capacity.csv
 test -s /tmp/trahens-m1w2-life.csv
 
+PYTHONPATH=simulator python -m trahens_sim.c2_compare \
+    --runs 2 \
+    --output /tmp/trahens-c2-smoke.csv
+
+test -s /tmp/trahens-c2-smoke.csv
+
 # The standalone current paper must not contain historical architecture or iteration narration.
-if rg -n -i 'Nexus|original paper|2020|draft iteration|Core v0\.|W1' paper/rewrite/main.tex >/tmp/trahens-paper-forbidden.txt; then
+if rg -n -i 'Nexus|original paper|2020|draft iteration|Core v0\.|W1|M1' paper/rewrite/main.tex >/tmp/trahens-paper-forbidden.txt; then
     cat /tmp/trahens-paper-forbidden.txt >&2
     rm -f /tmp/trahens-paper-forbidden.txt
     echo "forbidden historical term found in current paper" >&2

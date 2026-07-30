@@ -1,50 +1,38 @@
 # Trahens simulator
 
-The simulator is deterministic. It is a protocol-research model, not a packet-level performance benchmark.
+The simulator is deterministic. It is a protocol-research and conformance model, not a packet-level performance benchmark or a cryptographic proof environment.
 
-## Models
+## Models and components
 
-- `model.py` - identifier-based bounded discovery, expanding-ring policy, and U1 branch-local discovery.
-- `event_model.py` - integrated E1 lifecycle with C1 transformations, M1 messages, W2 fragmentation and reassembly, nested CANDIDATE, COMMIT/READY authentication, expiry, cancellation, loss, duplication, tampering, and active tagging.
-- `fragmentation_compare.py` - M1 logical-size, W2 cell-count, route-depth, and cell-loss comparison.
-- `unlinkability_compare.py` - resource comparison between identifier-based and U1 branch-local discovery.
-- `lifecycle_compare.py` - clean, impaired-transport, and fresh-branch-attack lifecycle comparison.
-- `tagging_compare.py` - deterministic link tampering and persistent-ratio-tag comparison.
-- `trahens_codec/m1w2.py` - canonical M1 messages, exact W2 cells, link protection, and bounded reassembly.
-- `trahens_codec/c1.py` - superseded W1 reference retained for historical regression tests.
-- `trahens_crypto/candidate.py` - nested authenticated candidate construction and opening.
-- `trahens_crypto/tagging.py` - research-only active-tag fault injection and observation.
+- `model.py` - bounded discovery, expanding rings, and U1 branch-local exploration.
+- `event_model.py` - integrated E1 lifecycle with C1 or symbolic C2 eligibility, M2 messages, W2 cells, nested CANDIDATE, COMMIT/READY, expiry, cancellation, loss, duplication, tampering, and attacks.
+- `trahens_crypto/c2_ideal.py` - executable C2 ideal functionality; simulation only.
+- `trahens_crypto/c1.py` - C1 negative-control eligibility and retained reply/signature components.
+- `trahens_codec/m2w2.py` - suite-agile M2 messages, fixed W2 cells, link protection, and bounded reassembly.
+- `c2_compare.py` - C1 ratio-tag and symbolic C2 mutation comparison.
+- `fragmentation_compare.py` - logical size, cell count, route depth, and cell-loss comparison.
+- `unlinkability_compare.py`, `lifecycle_compare.py`, and `tagging_compare.py` - structural, lifecycle, and negative-control experiments.
 
-The event model retains full paths and legitimate/malicious classification only for measurement. Those values are not protocol-visible fields.
+The event model retains full paths and legitimate/malicious classifications only for measurement. They are not protocol-visible fields.
 
 ## Commands
 
 ```bash
 make test
+make c2-symbolic-vectors
+make c2-compare
 make fragmentation-compare
 make unlinkability-compare
 make lifecycle-compare
 make tagging-compare
 ```
 
-A direct fragmentation comparison can be run with:
-
-```bash
-PYTHONPATH=simulator python -m trahens_sim.fragmentation_compare \
-  --capacity-output reports/message-cell-capacity.csv \
-  --lifecycle-output reports/lifecycle-fragmentation.csv
-```
-
-Timed rings use `hop:fanout:window_ms` or `hop:initial_fanout:relay_fanout:window_ms`.
-
-## E1 event semantics
-
-State is valid on `[created, expiry)`. At the same timestamp, expiry precedes cancellation, route control, candidate, discovery, and candidate-window closure. Thus a candidate at the exact window deadline is eligible, while a message at the exact state expiry is rejected.
-
 ## Integrated behavior
 
-The event model performs actual URE rerandomization, reply-key tweaks, nested candidate encryption, responder signature verification, COMMIT and READY proof checks, canonical M1 encoding, fixed-size W2 encryption, out-of-order reassembly, and adjacent-link authentication. It records logical messages, cells, complete wire bytes, reassembly pressure, and cryptographic failure classes.
+For C2, the model creates opaque 640-byte symbolic eligibility ciphertexts, permits only replay-equivalent public rerandomization through the ideal interface, and rejects arbitrary mutation before an honest relay emits a child branch. Candidate return, responder signatures, COMMIT, READY, adjacent-link AEAD, M2, W2, and reassembly continue to use executable concrete code.
+
+The M2 suite identifier is repeated in every encrypted W2 fragment. Reassembly binds the first suite, rejects inconsistent fragments, and requires the complete M2 envelope to match before route semantics execute.
 
 ## Limitations
 
-The model uses abstract event delays rather than a real transport or mixing scheduler. It is not a throughput benchmark. W2 equalizes cell length but does not hide fragment count or cell timing. The active ratio-tag experiment is a counterexample demonstrating a missing security property; it is not a protocol feature.
+The C2 ideal functionality stores semantic ciphertext state in a process-local registry. It is not cryptography and cannot support a deployment or security claim. The model uses abstract event delays and does not implement a real transport, mixing scheduler, or side-channel-resistant runtime. W2 equalizes cell length but does not hide fragment count or timing.

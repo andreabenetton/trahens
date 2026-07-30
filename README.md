@@ -1,61 +1,57 @@
 # Trahens
 
-Trahens is a research project for privacy-enabled route discovery in decentralized and path-aware networks.
-
-The repository develops a bounded, testable protocol core before attempting a complete network-layer architecture. Historical source material is retained separately for traceability.
+Trahens is a research protocol for privacy-enabled route discovery in decentralized and path-aware networks. The repository develops a bounded, executable protocol core before attempting a complete routing architecture. Historical material is preserved separately for traceability and is not the current specification.
 
 ## Status
 
-Research design. The active specification is **Trahens Core v0.7**, composed of:
+The active specification is **Trahens Core v0.8**, composed of:
 
-- the **U1** conditional non-adjacent message-unlinkability profile;
-- the **E1** deterministic event-lifecycle profile;
-- the **C1** concrete classical cryptographic research profile;
-- the **M1** canonical variable-length logical-message profile;
-- the **W2** constant-size authenticated adjacent-link cell profile.
+- **U1** - conditional branch-local passive unlinkability;
+- **E1** - deterministic event and route-state lifecycle;
+- **C2** - receiver-anonymous rerandomizable RCCA eligibility contract;
+- **M2** - suite-agile canonical variable-length logical messages;
+- **W2** - fixed-size authenticated adjacent-link cells with bounded reassembly.
 
-M1 and W2 separate logical encoding from observable transport framing. Logical messages contain only their canonical fields and do not carry semantic padding. Each message is then fragmented into one or more 992-byte payload fragments, padded inside fixed 1,024-byte W2 plaintext cells, and protected as 1,052-byte adjacent-link records. The profiles have not received independent cryptographic review and are not suitable for production deployment.
+C2 is currently integrated through an executable ideal functionality. It validates protocol composition, suite binding, replay-equivalent rerandomization semantics, arbitrary-mutation rejection, and active-tagging instrumentation. It is not a concrete cryptographic implementation and must not be deployed. C1 remains executable as a negative-control eligibility suite and supplies the current reply-key, candidate-encryption, signature, transcript, KDF, and AEAD components.
 
 ## Current result
 
-Core v0.7 uses independently transformed branch-local contexts. Every forwarded DISCOVER replaces its adjacent capability, additively tweaks the reply key, rerandomizes the eligibility capsule, reconstructs a canonical M1 message, assigns a fresh link-local W2 message identifier, and emits one or more independently authenticated fixed-size cells. CANDIDATE returns through nested authenticated C1 layers. COMMIT reserves the selected tentative route, READY activates it, and every state has a finite local deadline.
+Every forwarded DISCOVER branch receives a fresh adjacent capability, a tweaked reply public key, a suite-selected rerandomized eligibility capsule, a new canonical M2 message, a fresh link-local W2 message identifier, new padding, and fresh adjacent-link ciphertexts. CANDIDATE returns through nested authenticated reply layers. COMMIT reserves the selected tentative route, READY activates it, and all state has a finite local deadline.
 
-The integrated simulator performs actual `ristretto255` transformations, ChaCha20-Poly1305 link and candidate protection, Ed25519 responder authentication, COMMIT and READY proof checks, M1 encoding, W2 fragmentation and bounded reassembly, and deterministic cleanup. The tracked suite contains 61 tests.
+M2 separates semantic encoding from transport framing. Logical messages contain canonical fields and no semantic padding. W2 fragments a message into 992-byte payload fragments, pads each 1,024-byte cell plaintext, and emits 1,052-byte adjacent-link records. The number and timing of cells remain observable unless a separate scheduling profile conceals them.
 
-The active-tagging analysis found a persistent ratio tag in the C1 URE consistency pair. A compromised relay can create a relation that survives honest rerandomization and can be recognized by a colluding downstream relay. Active-adversary message unlinkability is therefore explicitly not claimed. Passive wire-image and conditional batch-local properties remain separate research claims. W2 equalizes individual cell length, but the number and timing of cells remain observable unless a traffic-scheduling profile hides them.
+The C1 negative-control experiment reproduces a persistent ratio tag across an honest rerandomizing relay. In the symbolic C2 experiment, an attacker-controlled marker mutation is rejected by the first honest transformation and no transformed tag reaches the separated colluder. This establishes that the C2-TAG game is correctly embedded in the lifecycle; it does not prove a concrete construction secure.
 
 ## Repository map
 
-- `paper/legacy/` - original source material, preserved without semantic edits.
-- `paper/rewrite/` - standalone current protocol paper with five-line numbering and no watermark.
-- `docs/` - assessment, strategy, threat model, research questions, ADRs, and review logs.
-- `spec/` - active and historical protocol specifications, transcripts, invariants, and C1 vectors.
-- `simulator/` - deterministic integrated lifecycle model, M1/W2 codec, C1 reference code, and attack experiments.
+- `paper/legacy/` - preserved historical source material.
+- `paper/rewrite/` - standalone current protocol paper with line numbers every five lines and no watermark.
+- `docs/` - strategy, threat model, ADRs, research questions, and review logs.
+- `spec/` - active and historical specifications, security games, transcripts, invariants, and vectors.
+- `simulator/` - deterministic discovery and lifecycle models, M2/W2 codec, C1 code, C2 ideal functionality, and adversarial experiments.
 - `implementation/` - requirements for a future user-space overlay prototype.
 - `reports/` - reproducible experiment and conformance outputs.
-- `tools/` - repository checks, vector generation, and experiment runners.
+- `tools/` - repository checks, vector generators, and experiment runners.
 
 ## Working method
 
-1. Preserve legacy material as evidence, not as the current specification.
-2. Record architecture changes as ADRs.
-3. Separate wire-image, batch-local, lifecycle, active-adversary, and traffic-flow claims.
-4. Define exact encodings, transcripts, limits, state transitions, and failure behavior before network implementation.
-5. Require executable vectors and negative tests for every cryptographic profile.
-6. Quantify privacy and abuse costs rather than infer privacy from encryption alone.
-7. Block production claims on independent review, implementation audit, and measured traffic analysis.
+1. Separate protocol claims by adversary and layer.
+2. Define canonical encodings, state transitions, limits, and failure behavior before network implementation.
+3. Keep negative constructions and attacks as mandatory regression tests.
+4. Require executable vectors and malformed-input cases for every profile.
+5. Quantify privacy, reliability, and abuse costs.
+6. Block production claims on concrete cryptographic review, independent implementation, fuzzing, and measured traffic analysis.
 
 ## Quick start
 
 ```bash
 make test
 make crypto-vectors
+make c2-symbolic-vectors
+make c2-compare
 make fragmentation-compare
-make unlinkability-compare
-make lifecycle-compare
-make tagging-compare
 make paper
 make check
 ```
 
-Start with [`spec/core-v0.7.md`](spec/core-v0.7.md), [`spec/message-codec-m1.md`](spec/message-codec-m1.md), [`spec/wire-cell-w2.md`](spec/wire-cell-w2.md), [`spec/active-tagging-analysis.md`](spec/active-tagging-analysis.md), [`spec/crypto-profile-c1.md`](spec/crypto-profile-c1.md), [`spec/crypto-transcript-v0.2.md`](spec/crypto-transcript-v0.2.md), [`spec/unlinkability-profile-u1.md`](spec/unlinkability-profile-u1.md), [`spec/event-lifecycle-profile-e1.md`](spec/event-lifecycle-profile-e1.md), and [`docs/strategy.md`](docs/strategy.md).
+Start with [`spec/core-v0.8.md`](spec/core-v0.8.md), [`spec/crypto-profile-c2.md`](spec/crypto-profile-c2.md), [`spec/active-unlinkability-games-c2.md`](spec/active-unlinkability-games-c2.md), [`spec/message-codec-m2.md`](spec/message-codec-m2.md), [`spec/wire-cell-w2.md`](spec/wire-cell-w2.md), [`spec/unlinkability-profile-u1.md`](spec/unlinkability-profile-u1.md), [`spec/event-lifecycle-profile-e1.md`](spec/event-lifecycle-profile-e1.md), and [`docs/strategy.md`](docs/strategy.md).

@@ -1,5 +1,17 @@
 # Changelog
 
+## Core v0.8 - 2026-07-30
+
+- Selected C2, a receiver-anonymous rerandomizable RCCA eligibility contract, as the active-security target.
+- Added formal C2-IND, C2-RA, C2-RR, C2-RCCA, C2-TAG, and C2-COMP games.
+- Added an executable C2 ideal functionality for protocol composition and negative-path testing; explicitly prohibited production use.
+- Retained C1 as the persistent-ratio-tag negative control and as the current reply/signature component set.
+- Added M2 suite-agile logical messages with a canonical length-delimited eligibility capsule.
+- Bound the cryptographic suite in every encrypted W2 fragment and rejected cross-suite reassembly or M2/W2 mismatch before semantic state allocation.
+- Added deterministic symbolic C2 vectors and integrated active-security comparison scenarios.
+- Expanded the conformance suite and repository checks for C2, M2, and suite mismatch.
+- Revised the standalone formal paper to present one current protocol draft, including the C2 security contract, symbolic boundary, active games, and measured negative-control results.
+
 ## Core v0.7 - 2026-07-30
 
 - Added M1 canonical variable-length logical messages with minimal varints and no semantic padding.
