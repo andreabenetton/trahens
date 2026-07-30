@@ -68,7 +68,7 @@ Current values:
 - U1: `0x01`;
 - E1: `0x01`;
 - R1 active suite: `0x0101`;
-- C1 negative-control suite: `0x0001` (research only);
+- C1 v2 negative-control/reply suite: `0x0003` (research only); retired C1 v1 `0x0001` MUST be rejected;
 - C2 symbolic suite: `0x0002` (research only);
 - C2 k=2 audit suite: `0x7f02` (rejected on the network);
 - flags and reserved: zero.

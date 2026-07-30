@@ -25,7 +25,7 @@ from trahens_crypto.c1 import (
     ure_rerandomize,
     verify_candidate_signature,
 )
-from trahens_crypto.test_support import reply_seal_deterministic
+from tools.vector_crypto_support import reply_seal_deterministic
 
 
 class C1CryptoTests(unittest.TestCase):
@@ -104,6 +104,19 @@ class C1CryptoTests(unittest.TestCase):
         ]:
             with self.assertRaisesRegex(CryptoError, "reply decryption failed"):
                 reply_open(secret, candidate, aad=aad, info=info)
+
+    def test_reply_commitment_rejects_cross_recipient_ciphertext(self) -> None:
+        first = r255.scalar_from_label(b"recipient-first")
+        second = r255.scalar_from_label(b"recipient-second")
+        sealed = reply_seal_deterministic(
+            r255.scalarmult_base(first),
+            b"payload",
+            aad=b"aad",
+            info=b"info",
+            ephemeral_secret=r255.scalar_from_label(b"recipient-ephemeral"),
+        )
+        with self.assertRaisesRegex(CryptoError, "reply decryption failed"):
+            reply_open(second, sealed, aad=b"aad", info=b"info")
 
     def test_production_reply_api_rejects_caller_chosen_ephemeral(self) -> None:
         secret = r255.scalar_from_label(b"api-secret")

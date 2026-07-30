@@ -1,0 +1,34 @@
+[workspace]
+resolver = "2"
+exclude = ["fuzz"]
+members = [
+  "crates/protocol-registry",
+  "crates/crypto",
+  "crates/codec-m2",
+  "crates/wire-w2",
+  "crates/transport-t1",
+  "crates/scheduling-t2",
+  "crates/state-machine",
+  "crates/rendezvous-r1",
+  "crates/node-runtime",
+  "crates/conformance",
+  "bins/trahens-endpoint",
+  "bins/trahens-relay",
+  "bins/trahens-rendezvous",
+]
+
+[workspace.package]
+version = "1.5.0"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.82"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+unwrap_used = "deny"
+expect_used = "deny"

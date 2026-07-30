@@ -1,0 +1,16 @@
+[package]
+name = "node-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+codec-m2 = { path = "../codec-m2" }
+protocol-registry = { path = "../protocol-registry" }
+scheduling-t2 = { path = "../scheduling-t2" }
+transport-t1 = { path = "../transport-t1" }
+trahens-crypto = { path = "../crypto" }
+wire-w2 = { path = "../wire-w2" }
+
+[lints]
+workspace = true

@@ -30,7 +30,7 @@ from trahens_crypto.c1 import (
     ure_encrypt,
 )
 from trahens_crypto.candidate import build_responder_payload
-from trahens_crypto.candidate_test_support import (
+from tools.vector_candidate_support import (
     seal_responder_candidate_deterministic,
     wrap_relay_candidate_deterministic,
 )

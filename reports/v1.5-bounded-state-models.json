@@ -1,0 +1,18 @@
+{
+  "claim_boundary": "finite exhaustive safety check; not an unbounded symbolic proof",
+  "e1": {
+    "cleanup_reachability_checked": 36,
+    "illegal_transitions_rejected": 312,
+    "states": 36,
+    "transitions": 120
+  },
+  "profile": "Trahens v1.5 bounded state models",
+  "r1": {
+    "expiry_rejections_observed": 344,
+    "replay_rejections_checked": 224,
+    "states": 63,
+    "successful_redemptions": 224,
+    "transitions": 1304,
+    "wrong_gateway_rejections_observed": 240
+  }
+}

@@ -25,7 +25,7 @@ from trahens_crypto.c1 import (
     ure_rerandomize,
     verify_candidate_signature,
 )
-from trahens_crypto.test_support import reply_seal_deterministic
+from vector_crypto_support import reply_seal_deterministic
 
 
 def hx(value: bytes) -> str:

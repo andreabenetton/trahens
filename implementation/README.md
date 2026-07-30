@@ -1,34 +1,50 @@
-# Overlay implementation
+# Trahens v1.5 P1 user-space implementation
 
-Core v1.2 provides enough precision to begin independent codec, recovery, scheduler, and conformance work. It does not provide enough assurance for production deployment.
+`implementation/rust/` is the first interoperable implementation of the frozen P1 profile. It runs over UDP and keeps M2, W2, T1, fixed T2, R1, and route lifecycle responsibilities in separate crates.
 
-The first implementation should:
+## Executables
 
-- run in user space over an existing authenticated adjacent-link transport;
-- implement active U1, E1, R1, M2, W2, T1, and T2 profiles as separate modules;
-- keep logical discoveries, expanding-ring policy, recovery identifiers, and schedule negotiations strictly local;
-- replace branch, candidate, route, message, transmission, and negotiation capabilities at every relay boundary;
-- use canonical M2 encoding and W2 fragmentation rather than handwritten ad hoc layouts;
-- emit exact 1,052-byte encrypted DATA, ACK, SCHEDULE, and CHAFF records;
-- bound reassembly contexts, aggregate logical bytes, sender state, completion caches, ACKs, retries, RTO timers, queues, deficits, negotiations, rate transitions, and CHAFF;
-- reserve a complete first-send fragment set before admitting a new transmission;
-- implement T2 fixed, adaptive, and work-conserving modes behind explicit configuration;
-- enforce one-class boundary transitions, matched OFFER/ACCEPT state, peer maximums, hold time, hysteresis, and fail-closed overload;
-- expose deterministic clocks and randomness in tests;
-- support fault injection for cell loss, burst loss, delay, duplication, reordering, corruption, ACK suppression, negotiation loss, congestion, and disconnect;
-- normalize externally visible cryptographic, codec, reassembly, route, capability, recovery, and negotiation failures;
-- emit replayable structured traces without logging secret route mappings, raw capabilities, or private descriptors;
-- keep C1, symbolic C2, and C2-k2 providers disabled outside research tests.
+- `trahens-endpoint` — originates R1 discovery, validates the nested candidate chain, commits, redeems a capability, exchanges data, and closes.
+- `trahens-relay` — replaces hop-local tokens/nonces/labels, blinds reply keys, forwards fixed-size cells, and holds bounded adjacent route state.
+- `trahens-rendezvous` — creates signed gateway offers, verifies COMMIT, issues READY, atomically redeems capabilities, and echoes P1 test data.
 
-Before network deployment, the project should implement a second independent M2/W2/T1/T2 stack, exchange vectors, differential-fuzz canonical and malformed inputs, verify cleanup under adversarial streams, and compare scheduler output under identical workloads. The implementation MUST NOT claim adaptive activity hiding or global traffic-flow unlinkability.
+## Workspace
 
-No implementation language has been selected. Selection should prioritize memory safety, constant-time library support, generated-codec support, fuzzing quality, bounded-allocation control, deterministic simulation hooks, and observability sufficient to verify queue and schedule invariants without exposing secrets.
+```text
+implementation/rust/
+  crates/
+    protocol-registry/
+    codec-m2/
+    wire-w2/
+    crypto/
+    state-machine/
+    transport-t1/
+    scheduling-t2/
+    rendezvous-r1/
+    node-runtime/
+    conformance/
+  bins/
+    trahens-endpoint/
+    trahens-relay/
+    trahens-rendezvous/
+  fuzz/
+```
 
-## Independent review gates
+All protocol state transitions use typed events. The runtime uses bounded synchronous channels and registry-defined state limits. W2 replay state is committed only after authentication. Every retransmission receives fresh padding, sequence, tag, and ciphertext. Secret wrappers zeroize on drop.
 
-- cryptographic review of the additive reply-key chain, custom KEM, nested candidate transcript, and failure timing;
-- concurrency review of atomic capability redemption and queue reservation;
-- transport review of selective ACK, RTO, retry exhaustion, and replay handling;
-- scheduler review of weighted DRR, control reserves, negotiation races, and fixed-profile breaks;
-- traffic-analysis evaluation with realistic multi-link traces;
-- operational review of directory, gateway, relay admission, abuse, and logging policy.
+## Build and test
+
+Requirements: Rust 1.82 or newer, Linux for the namespace harness, and libsodium development files.
+
+```bash
+cargo test --manifest-path implementation/rust/Cargo.toml --all-targets
+cargo build --release --manifest-path implementation/rust/Cargo.toml
+sudo implementation/harness/netns-p1.sh --relays 2 --loss 5
+sudo implementation/harness/netns-p1.sh --relays 12 --loss 0
+```
+
+The harness also requires `ip`, `tc`, `tcpdump`, and Python 3. It creates one namespace per process, captures each link, validates 1,052-byte UDP payloads, and writes aggregate metrics under `build/p1-harness/`.
+
+## Claim boundary
+
+This is an experimental interoperability prototype, not production software. C1 v2 reply ciphertext anonymity and the nested composition remain review obligations. D1 private directory behavior and adaptive T2/T3/T4 are outside the mandatory P1 path. See `spec/p1-prototype-profile-v1.5.md`.

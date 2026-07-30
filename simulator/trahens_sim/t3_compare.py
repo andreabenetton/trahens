@@ -213,8 +213,18 @@ def run_equal_budget_experiment(
     return rows
 
 
+def _parse_windows(value: str) -> tuple[int, ...]:
+    windows = tuple(int(item) for item in value.split(",") if item)
+    if not windows or any(item < 16 for item in windows):
+        raise argparse.ArgumentTypeError("classification windows must be comma-separated integers >= 16")
+    return windows
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--classification-windows", type=_parse_windows, default=(32, 64, 128, 256))
+    parser.add_argument("--probe-epochs", type=int, default=128)
+    parser.add_argument("--budget-epochs", type=int, default=128)
     parser.add_argument("--training-per-class", type=int, default=32)
     parser.add_argument("--testing-per-class", type=int, default=24)
     parser.add_argument("--probe-training", type=int, default=40)
@@ -241,14 +251,19 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     classification = run_route_classification_experiment(
+        windows=args.classification_windows,
         training_per_class=args.training_per_class,
         testing_per_class=args.testing_per_class,
     )
     probing = run_active_probe_experiment(
+        epochs=args.probe_epochs,
         training_per_class=args.probe_training,
         testing_per_class=args.probe_testing,
     )
-    budget = run_equal_budget_experiment(samples_per_route=args.budget_samples)
+    budget = run_equal_budget_experiment(
+        epochs=args.budget_epochs,
+        samples_per_route=args.budget_samples,
+    )
     _write_csv(args.classification_output, classification)
     _write_csv(args.probe_output, probing)
     _write_csv(args.budget_output, budget)

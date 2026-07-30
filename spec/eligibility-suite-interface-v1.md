@@ -34,7 +34,7 @@ failure_policy
 | Provider | Suite ID | Network status | Endpoint-specific | Purpose |
 |---|---:|---|---|---|
 | R1 rendezvous capability | `0x0101` | Active experimental | No | Generic gateway discovery; endpoint token used after READY |
-| C1 negative control | `0x0001` | Research only | Yes | Reproduce persistent algebraic tagging |
+| C1 v2 negative control | `0x0003` | Research only | Yes | Reproduce persistent algebraic tagging; `0x0001` retired |
 | C2 symbolic oracle | `0x0002` | Research only | Yes | Test ideal active-security composition |
 | C2 k=2 audit | `0x7f02` | Disabled | Yes | Equation and encoding audit; fail closed |
 

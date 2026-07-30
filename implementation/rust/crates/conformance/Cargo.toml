@@ -1,0 +1,13 @@
+[package]
+name = "conformance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+codec-m2 = { path = "../codec-m2" }
+protocol-registry = { path = "../protocol-registry" }
+wire-w2 = { path = "../wire-w2" }
+
+[lints]
+workspace = true

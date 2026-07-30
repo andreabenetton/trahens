@@ -1,0 +1,28 @@
+[package]
+name = "trahens-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+codec-m2 = { path = "../crates/codec-m2" }
+protocol-registry = { path = "../crates/protocol-registry" }
+wire-w2 = { path = "../crates/wire-w2" }
+
+[[bin]]
+name = "m2"
+path = "fuzz_targets/m2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "w2"
+path = "fuzz_targets/w2.rs"
+test = false
+doc = false
+bench = false

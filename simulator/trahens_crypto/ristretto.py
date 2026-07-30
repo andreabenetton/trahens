@@ -11,6 +11,8 @@ import ctypes.util
 import hashlib
 from dataclasses import dataclass
 
+from trahens_spec.generated import DOMAIN_C1_ELEMENT, DOMAIN_C1_SCALAR
+
 SCALAR_BYTES = 32
 POINT_BYTES = 32
 HASH_BYTES = 64
@@ -91,7 +93,7 @@ def scalar_reduce(uniform: bytes) -> bytes:
     return bytes(result)
 
 
-def scalar_from_label(label: bytes, *, dst: bytes = b"Trahens-C1-scalar-v1") -> bytes:
+def scalar_from_label(label: bytes, *, dst: bytes = DOMAIN_C1_SCALAR) -> bytes:
     for counter in range(256):
         uniform = hashlib.sha512(dst + bytes([counter]) + label).digest()
         scalar = scalar_reduce(uniform)
@@ -100,7 +102,7 @@ def scalar_from_label(label: bytes, *, dst: bytes = b"Trahens-C1-scalar-v1") -> 
     raise RuntimeError("failed to derive a non-zero scalar")
 
 
-def point_from_label(label: bytes, *, dst: bytes = b"Trahens-C1-element-v1") -> bytes:
+def point_from_label(label: bytes, *, dst: bytes = DOMAIN_C1_ELEMENT) -> bytes:
     uniform = hashlib.sha512(dst + label).digest()
     result = _out(POINT_BYTES)
     if _lib.crypto_core_ristretto255_from_hash(result, _arr(uniform)) != 0:

@@ -45,7 +45,7 @@ discovery_field      field_length bytes
 The suite determines the field parser:
 
 - R1 (`0x0101`, active): exactly 32 non-zero bytes representing a non-semantic service-query nonce;
-- C1 (`0x0001`, research only): exactly 128 bytes and four canonical non-identity `ristretto255` encodings;
+- C1 v2 (`0x0003`, research only; `0x0001` is retired): exactly 128 bytes and four canonical non-identity `ristretto255` encodings;
 - symbolic C2 (`0x0002`, research only): exactly 640 non-zero bytes; semantic validity is checked by the symbolic operation.
 
 Reserved audit suite `0x7f02` is rejected. The R1 field MUST NOT contain an endpoint capability, capability commitment, endpoint key, endpoint address, gateway pseudonym, or endpoint handle.

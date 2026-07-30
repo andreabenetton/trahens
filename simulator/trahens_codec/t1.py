@@ -22,6 +22,13 @@ from enum import IntEnum
 from math import ceil
 from random import Random
 
+from trahens_spec.generated import (
+    T1_FRAME_ACK,
+    T1_FRAME_CHAFF,
+    T1_FRAME_DATA,
+    TRANSPORT_PROFILE_T1,
+)
+
 from .m2w2 import (
     CELL_BODY_BYTES,
     CELL_HEADER_BYTES,
@@ -40,15 +47,15 @@ from .m2w2 import (
     seal_link_cell,
 )
 
-T1_WIRE_PROFILE = 3
+T1_WIRE_PROFILE = TRANSPORT_PROFILE_T1
 T1_ACK_BITMAP_BITS = 32
 T1_ACK_BITMAP_BYTES = 4
 
 
 class T1FrameType(IntEnum):
-    DATA = 0x00
-    ACK = 0x01
-    CHAFF = 0x02
+    DATA = T1_FRAME_DATA
+    ACK = T1_FRAME_ACK
+    CHAFF = T1_FRAME_CHAFF
 
 
 @dataclass(frozen=True)

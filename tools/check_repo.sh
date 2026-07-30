@@ -33,6 +33,56 @@ docs/adr/0030-multilink-classifier-and-active-probe.md
 docs/adr/0031-packet-level-emulation-and-clock-model.md
 docs/adr/0032-open-world-churn-and-selective-delay.md
 docs/adr/0033-independent-review-remediation.md
+docs/adr/0034-machine-readable-protocol-registry.md
+docs/adr/0035-reply-key-commitment.md
+docs/adr/0036-reply-path-post-quantum-redesign.md
+docs/adr/0037-p1-user-space-prototype.md
+docs/review-remediation-v1.5.md
+docs/crypto-review/reply-key-privacy-v1.5.md
+formal/R1Capability.tla
+formal/E1Lifecycle.tla
+spec/core-v1.5.md
+spec/messages-v1.5.md
+spec/state-machines-v1.5.md
+spec/invariants-v1.5.md
+spec/resource-accounting-v1.5.md
+spec/p1-prototype-profile-v1.5.md
+spec/protocol-registry-v1.5.json
+spec/protocol-registry-v1.5.md
+spec/p1-conformance-vectors-v1.5.json
+spec/p1-conformance-corpus-v1.5.bin
+reports/v1.5-bounded-state-models.json
+reports/v1.5-t3-anonymity-metrics.json
+simulator/trahens_spec/generated.py
+simulator/trahens_sim/anonymity_metrics.py
+simulator/tests/test_protocol_registry.py
+simulator/tests/test_p1_conformance_vectors.py
+simulator/tests/test_state_models.py
+simulator/tests/test_anonymity_metrics.py
+tools/generate_protocol_registry.py
+tools/generate_p1_conformance.py
+tools/check_state_models.py
+tools/generate_anonymity_metrics.py
+tools/check_pcap_cells.py
+tools/summarize_p1_run.py
+implementation/rust/Cargo.toml
+implementation/rust/crates/protocol-registry/src/generated.rs
+implementation/rust/crates/codec-m2/src/lib.rs
+implementation/rust/crates/wire-w2/src/lib.rs
+implementation/rust/crates/transport-t1/src/lib.rs
+implementation/rust/crates/scheduling-t2/src/lib.rs
+implementation/rust/crates/state-machine/src/lib.rs
+implementation/rust/crates/rendezvous-r1/src/lib.rs
+implementation/rust/crates/node-runtime/src/lib.rs
+implementation/rust/crates/node-runtime/src/p1.rs
+implementation/rust/crates/conformance/src/lib.rs
+implementation/rust/bins/trahens-endpoint/src/main.rs
+implementation/rust/bins/trahens-relay/src/main.rs
+implementation/rust/bins/trahens-rendezvous/src/main.rs
+implementation/rust/fuzz/Cargo.toml
+implementation/rust/fuzz/fuzz_targets/m2.rs
+implementation/rust/fuzz/fuzz_targets/w2.rs
+implementation/harness/netns-p1.sh
 docs/external-review-2026-07-30.md
 docs/review-remediation-v1.4.1.md
 docs/development-record.md
@@ -71,8 +121,8 @@ simulator/trahens_crypto/c1.py
 simulator/trahens_crypto/c2_ideal.py
 simulator/trahens_crypto/c2_klinear.py
 simulator/trahens_crypto/candidate.py
-simulator/trahens_crypto/test_support.py
-simulator/trahens_crypto/candidate_test_support.py
+tools/vector_crypto_support.py
+tools/vector_candidate_support.py
 simulator/trahens_crypto/tagging.py
 simulator/trahens_crypto/eligibility.py
 simulator/trahens_codec/m2w2.py
@@ -112,6 +162,7 @@ tools/generate_t2_vectors.py
 tools/generate_t3_vectors.py
 tools/generate_t4_vectors.py
 tools/c2_k2_exhaustive_check.py
+tools/verify_c2_k2_exhaustive_report.py
 tools/run_r1_comparison.sh
 tools/run_fragmentation_comparison.sh
 tools/run_c2_comparison.sh
@@ -176,14 +227,36 @@ vectors_tmp=$(mktemp)
 r1_vectors_tmp=$(mktemp)
 c2_vectors_tmp=$(mktemp)
 c2_k2_tmp=$(mktemp)
-c2_k2_exhaustive_tmp=$(mktemp)
 t1_vectors_tmp=$(mktemp)
 t2_vectors_tmp=$(mktemp)
 t3_vectors_tmp=$(mktemp)
 t4_vectors_tmp=$(mktemp)
-trap 'rm -f "$vectors_tmp" "$r1_vectors_tmp" "$c2_vectors_tmp" "$c2_k2_tmp" "$c2_k2_exhaustive_tmp" "$t1_vectors_tmp" "$t2_vectors_tmp" "$t3_vectors_tmp" "$t4_vectors_tmp" /tmp/trahens-r1-smoke.csv /tmp/trahens-expanding-smoke.json /tmp/trahens-u1-smoke.csv /tmp/trahens-e1-smoke.csv /tmp/trahens-tag-smoke.csv /tmp/trahens-m1w2-capacity.csv /tmp/trahens-m1w2-life.csv /tmp/trahens-c2-smoke.csv /tmp/trahens-t1-smoke.csv /tmp/trahens-t1-trace-smoke.csv /tmp/trahens-t2-congestion-smoke.csv /tmp/trahens-t2-leak-smoke.csv /tmp/trahens-t2-burst-smoke.csv /tmp/trahens-t2-correlation-smoke.csv /tmp/trahens-t3-class-smoke.csv /tmp/trahens-t3-probe-smoke.csv /tmp/trahens-t3-budget-smoke.csv /tmp/trahens-t4-open-smoke.csv /tmp/trahens-t4-packet-smoke.csv /tmp/trahens-t4-probe-smoke.csv' EXIT
+registry_py_tmp=$(mktemp)
+registry_rs_tmp=$(mktemp)
+registry_md_tmp=$(mktemp)
+p1_vectors_tmp=$(mktemp)
+p1_corpus_tmp=$(mktemp)
+state_models_tmp=$(mktemp)
+anonymity_tmp=$(mktemp)
+trap 'rm -f "$vectors_tmp" "$r1_vectors_tmp" "$c2_vectors_tmp" "$c2_k2_tmp" "$t1_vectors_tmp" "$t2_vectors_tmp" "$t3_vectors_tmp" "$t4_vectors_tmp" "$registry_py_tmp" "$registry_rs_tmp" "$registry_md_tmp" "$p1_vectors_tmp" "$p1_corpus_tmp" "$state_models_tmp" "$anonymity_tmp" /tmp/trahens-r1-smoke.csv /tmp/trahens-expanding-smoke.json /tmp/trahens-u1-smoke.csv /tmp/trahens-e1-smoke.csv /tmp/trahens-tag-smoke.csv /tmp/trahens-m1w2-capacity.csv /tmp/trahens-m1w2-life.csv /tmp/trahens-c2-smoke.csv /tmp/trahens-t1-smoke.csv /tmp/trahens-t1-trace-smoke.csv /tmp/trahens-t2-congestion-smoke.csv /tmp/trahens-t2-leak-smoke.csv /tmp/trahens-t2-burst-smoke.csv /tmp/trahens-t2-correlation-smoke.csv /tmp/trahens-t3-class-smoke.csv /tmp/trahens-t3-probe-smoke.csv /tmp/trahens-t3-budget-smoke.csv /tmp/trahens-t4-open-smoke.csv /tmp/trahens-t4-packet-smoke.csv /tmp/trahens-t4-probe-smoke.csv' EXIT
 PYTHONPATH=simulator python tools/generate_crypto_vectors.py --output "$vectors_tmp"
 cmp spec/crypto-test-vectors-c1.json "$vectors_tmp"
+python tools/generate_protocol_registry.py \
+    --python-output "$registry_py_tmp" \
+    --rust-output "$registry_rs_tmp" \
+    --markdown-output "$registry_md_tmp"
+cmp simulator/trahens_spec/generated.py "$registry_py_tmp"
+cmp implementation/rust/crates/protocol-registry/src/generated.rs "$registry_rs_tmp"
+cmp spec/protocol-registry-v1.5.md "$registry_md_tmp"
+python tools/generate_p1_conformance.py \
+    --json-output "$p1_vectors_tmp" \
+    --corpus-output "$p1_corpus_tmp"
+cmp spec/p1-conformance-vectors-v1.5.json "$p1_vectors_tmp"
+cmp spec/p1-conformance-corpus-v1.5.bin "$p1_corpus_tmp"
+python tools/check_state_models.py --output "$state_models_tmp"
+cmp reports/v1.5-bounded-state-models.json "$state_models_tmp"
+PYTHONPATH=simulator python tools/generate_anonymity_metrics.py --output "$anonymity_tmp"
+cmp reports/v1.5-t3-anonymity-metrics.json "$anonymity_tmp"
 PYTHONPATH=simulator python tools/generate_r1_vectors.py --output "$r1_vectors_tmp"
 cmp spec/r1-test-vectors.json "$r1_vectors_tmp"
 PYTHONPATH=simulator python tools/generate_t1_vectors.py --output "$t1_vectors_tmp"
@@ -198,13 +271,19 @@ PYTHONPATH=simulator python tools/generate_c2_symbolic_vectors.py --output "$c2_
 cmp spec/crypto-test-vectors-c2-symbolic.json "$c2_vectors_tmp"
 PYTHONPATH=simulator python tools/generate_c2_k2_audit.py --output "$c2_k2_tmp"
 cmp reports/c2-k2-transcription-audit.json "$c2_k2_tmp"
-PYTHONPATH=simulator python tools/c2_k2_exhaustive_check.py --output "$c2_k2_exhaustive_tmp"
-cmp reports/c2-k2-small-chain-exhaustive.json "$c2_k2_exhaustive_tmp"
+# The complete historical sweep exceeds 115 million pair checks. Keep it in
+# `make reproduce`; routine CI independently verifies its chain search, all
+# first counterexamples, exact small-chain counts, and bounded large-chain samples.
+PYTHONPATH=tools python tools/verify_c2_k2_exhaustive_report.py \
+    reports/c2-k2-small-chain-exhaustive.json
 
 # Full experiment sweeps belong to `make reproduce`. Unit tests and
 # deterministic vector regeneration exercise the historical models. CI adds
 # bounded T3 and T4 CLI smoke runs to verify the current report interfaces.
 PYTHONPATH=simulator python -m trahens_sim.t3_compare \
+    --classification-windows 16 \
+    --probe-epochs 16 \
+    --budget-epochs 16 \
     --training-per-class 1 \
     --testing-per-class 1 \
     --probe-training 1 \
@@ -235,12 +314,26 @@ test -s /tmp/trahens-t4-packet-smoke.csv
 test -s /tmp/trahens-t4-probe-smoke.csv
 
 # The standalone current paper must not contain historical architecture or iteration narration.
-if rg -n -i 'Nexus|original paper|2020|draft iteration|Core v0\.|W1|M1' paper/rewrite/main.tex >/tmp/trahens-paper-forbidden.txt; then
+if command -v rg >/dev/null 2>&1; then
+    paper_search="rg -n -i"
+else
+    paper_search="grep -Eni"
+fi
+if $paper_search 'Nexus|original paper|2020|draft iteration|Core v0\.|W1|M1' paper/rewrite/main.tex >/tmp/trahens-paper-forbidden.txt; then
     cat /tmp/trahens-paper-forbidden.txt >&2
     rm -f /tmp/trahens-paper-forbidden.txt
     echo "forbidden historical term found in current paper" >&2
     exit 1
 fi
 rm -f /tmp/trahens-paper-forbidden.txt
+
+bash -n implementation/harness/netns-p1.sh
+python -m compileall -q tools
+
+if command -v cargo >/dev/null 2>&1; then
+    cargo test --manifest-path implementation/rust/Cargo.toml --all-targets
+else
+    echo "cargo not available: Rust tests deferred to the mandatory CI Rust job" >&2
+fi
 
 echo "repository checks passed"

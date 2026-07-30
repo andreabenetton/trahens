@@ -39,6 +39,7 @@ from trahens_codec.m2w2 import (
 os.environ.setdefault("TRAHENS_TEST_CRYPTO", "1")
 
 from trahens_crypto import ristretto as r255
+from trahens_spec.generated import DOMAIN_C1_ACTIVE_TAG_SCALAR
 from trahens_crypto.c1 import (
     CryptoError,
     build_endpoint_keys,
@@ -55,7 +56,7 @@ from trahens_crypto.candidate import (
     open_candidate_chain,
     ready_proof,
 )
-from trahens_crypto.candidate_test_support import (
+from tools.vector_candidate_support import (
     seal_responder_candidate_deterministic,
     wrap_relay_candidate_deterministic,
 )
@@ -418,7 +419,7 @@ class _LifecycleSimulator:
         )
         self.tag_scalar = r255.scalar_from_label(
             config.tag_scalar_seed.to_bytes(8, "big"),
-            dst=b"Trahens-C1-active-tag-scalar-v1",
+            dst=DOMAIN_C1_ACTIVE_TAG_SCALAR,
         )
         self.c2_tag = hashlib.sha256(
             b"Trahens-C2-active-tag-v1"

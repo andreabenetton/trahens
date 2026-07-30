@@ -1,5 +1,15 @@
 # Changelog
 
+## Core v1.5 P1 prototype - 2026-07-30
+
+- Froze M2, W2, R1, T1, and the fixed T2 P1 profile in one machine-readable registry, including stable message, suite, error, width, limit, byte-order, and protection-class assignments.
+- Corrected the C1 v2 versioning mismatch, retired suite `0x0001`, assigned C1 v2 suite `0x0003`, and generated matching Python, Rust, and normative Markdown constants.
+- Added recipient-bound reply-ciphertext commitment, construction-wide v2 domain separation, generic crypto failures, zeroization, replay windows, bounded reassembly, and pre-authentication allocation controls.
+- Moved deterministic crypto helpers outside the installable package and added independent positive and negative M2 conformance vectors plus a binary mutation corpus.
+- Added a Rust user-space workspace with endpoint, relay, and rendezvous executables over UDP, typed event-driven state machines, fixed-size W2 cells, T1 reliability, fixed T2 scheduling, and one-time R1 redemption.
+- Added Linux namespace interoperability, impairment, capture, fixed-cell, metric, cleanup, direct two-process, two-relay loss, and twelve-relay CI gates.
+- Added R1/E1 TLA+ specifications, bounded executable state exploration, entropy-based anonymity metrics, fuzz targets, cryptographic claim boundaries, post-quantum and deployment-scope ADRs, and review-remediation traceability.
+
 ## Core v1.4 - 2026-07-30
 
 - Added T4 as a packet-level adversarial evaluation profile layered over T2/T3 without changing the wire format.

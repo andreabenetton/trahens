@@ -1,0 +1,133 @@
+{
+  "claim_boundary": "conditional on this dataset, topology, feature set, and observer",
+  "observer": "nearest-centroid route classifier over equal-budget public traces",
+  "profile": "Trahens v1.5 T3 entropy metrics",
+  "profiles": {
+    "adaptive": {
+      "accuracy": 0.8541666666666666,
+      "anonymity": {
+        "bayes_vulnerability": 0.8541666666666666,
+        "classes": 4,
+        "conditional_entropy_bits": 0.6921213087070226,
+        "effective_anonymity_set": 1.6156574017183323,
+        "effective_min_anonymity_set": 1.1707317073170733,
+        "information_leakage_bits": 1.3078786912929774,
+        "min_entropy_bits": 0.22741049610307254,
+        "normalized_anonymity": 0.3460606543535113,
+        "prior_entropy_bits": 2.0,
+        "samples": 48
+      },
+      "confusion": [
+        [
+          12,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          10,
+          0,
+          1
+        ],
+        [
+          1,
+          2,
+          8,
+          1
+        ],
+        [
+          0,
+          1,
+          0,
+          11
+        ]
+      ],
+      "macro_f1": 0.8507692307692307
+    },
+    "fixed": {
+      "accuracy": 0.25,
+      "anonymity": {
+        "bayes_vulnerability": 0.25,
+        "classes": 4,
+        "conditional_entropy_bits": 2.0,
+        "effective_anonymity_set": 4.0,
+        "effective_min_anonymity_set": 4.0,
+        "information_leakage_bits": 0.0,
+        "min_entropy_bits": 2.0,
+        "normalized_anonymity": 1.0,
+        "prior_entropy_bits": 2.0,
+        "samples": 48
+      },
+      "confusion": [
+        [
+          12,
+          0,
+          0,
+          0
+        ],
+        [
+          12,
+          0,
+          0,
+          0
+        ],
+        [
+          12,
+          0,
+          0,
+          0
+        ],
+        [
+          12,
+          0,
+          0,
+          0
+        ]
+      ],
+      "macro_f1": 0.1
+    },
+    "hybrid": {
+      "accuracy": 0.375,
+      "anonymity": {
+        "bayes_vulnerability": 0.39583333333333326,
+        "classes": 4,
+        "conditional_entropy_bits": 1.7959540488173795,
+        "effective_anonymity_set": 3.4724503078618043,
+        "effective_min_anonymity_set": 2.5263157894736845,
+        "information_leakage_bits": 0.20404595118262048,
+        "min_entropy_bits": 1.3370349872775709,
+        "normalized_anonymity": 0.8979770244086898,
+        "prior_entropy_bits": 2.0,
+        "samples": 48
+      },
+      "confusion": [
+        [
+          5,
+          3,
+          4,
+          0
+        ],
+        [
+          1,
+          5,
+          3,
+          3
+        ],
+        [
+          4,
+          2,
+          3,
+          3
+        ],
+        [
+          1,
+          3,
+          3,
+          5
+        ]
+      ],
+      "macro_f1": 0.3773913043478261
+    }
+  }
+}

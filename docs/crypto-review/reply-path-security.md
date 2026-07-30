@@ -72,13 +72,18 @@ Therefore the current claim is conditional:
 
 ## Key schedule
 
-The reply seal now performs one HKDF-Extract followed by one HKDF-Expand. The 44-byte output is split into a 32-byte ChaCha20-Poly1305 key and a 12-byte nonce. No HKDF output is reused as a new pseudorandom key. Domain-separated context includes the suite, encapsulated group element, recipient public key, and application `info` value.
+The reply seal now performs one HKDF-Extract followed by one HKDF-Expand. The 76-byte output is split into a 32-byte ChaCha20-Poly1305 key, a 12-byte nonce, and an independent 32-byte commitment key. No HKDF output is reused as a new pseudorandom key. Domain-separated context includes the suite, encapsulated group element, recipient public key, and application `info` value.
 
 This follows the Extract-then-Expand structure of RFC 5869. It is not represented as RFC 9180 HPKE because the profile defines a custom `ristretto255` KEM and does not inherit HPKE's registered suite or proof.
 
+
+## Recipient-bound commitment
+
+C1 v2 appends a 32-byte HMAC commitment over the encapsulation, recipient public key, AAD, info, and AEAD ciphertext using an independently expanded key. Opening derives the commitment and AEAD material and exposes one authentication-failure class. This supplies a concrete robustness/key-commitment mechanism for the P1 construction. It does not by itself establish recipient anonymity or the complete multi-user chosen-ciphertext composition.
+
 ## Ephemeral-key safety
 
-The production-facing `reply_seal` API always obtains fresh operating-system entropy and has no argument through which a caller can provide an ephemeral secret. Deterministic encryption is isolated in `trahens_crypto.test_support`, is not exported by the package, and requires the explicit `TRAHENS_TEST_CRYPTO=1` gate. It exists only for vectors and deterministic simulator runs.
+The production-facing `reply_seal` API always obtains fresh operating-system entropy and has no argument through which a caller can provide an ephemeral secret. Deterministic encryption is isolated in `tools/vector_crypto_support.py` and `tools/vector_candidate_support.py`, outside the installable package. It exists only for vector generation and deterministic reference tests.
 
 Reusing the same ephemeral secret for the same reply public key would repeat the encapsulated point and the derived AEAD key and nonce. Such reuse is forbidden.
 

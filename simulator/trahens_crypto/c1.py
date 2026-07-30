@@ -12,6 +12,20 @@ import os
 from dataclasses import dataclass
 from typing import Iterable
 
+from trahens_spec.generated import (
+    BYTES_REPLY_AEAD_TAG,
+    BYTES_REPLY_ENCAPSULATION,
+    BYTES_REPLY_KEY_COMMITMENT,
+    DOMAIN_C1_LABEL_PREFIX,
+    DOMAIN_C1_REPLY_COMMIT,
+    DOMAIN_C1_REPLY_EPHEMERAL,
+    DOMAIN_C1_URE_R0,
+    DOMAIN_C1_URE_R1,
+    DOMAIN_C1_URE_S0,
+    DOMAIN_C1_URE_S1,
+    SUITE_C1_V2,
+)
+
 from cryptography.exceptions import InvalidSignature, InvalidTag
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
@@ -19,13 +33,14 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 from . import ristretto as r255
 
-C1_SUITE_ID = b"\x00\x01"
+C1_SUITE_ID = SUITE_C1_V2
 C1_VERSION = b"\x02"
 URE_BYTES = 4 * r255.POINT_BYTES
-REPLY_ENC_BYTES = r255.POINT_BYTES
-AEAD_TAG_BYTES = 16
+REPLY_ENC_BYTES = BYTES_REPLY_ENCAPSULATION
+AEAD_TAG_BYTES = BYTES_REPLY_AEAD_TAG
+REPLY_COMMIT_BYTES = BYTES_REPLY_KEY_COMMITMENT
 
-_LABEL_PREFIX = b"Trahens-C1-v2"
+_LABEL_PREFIX = DOMAIN_C1_LABEL_PREFIX
 _MARKER = r255.point_from_label(b"eligibility-marker")
 
 
@@ -65,16 +80,17 @@ def _hkdf_expand(prk: bytes, info: bytes, length: int) -> bytes:
     return output[:length]
 
 
-def _derive_reply_context(dh_point: bytes, encapsulated: bytes, recipient_public: bytes, info: bytes) -> tuple[bytes, bytes]:
+def _derive_reply_context(dh_point: bytes, encapsulated: bytes, recipient_public: bytes, info: bytes) -> tuple[bytes, bytes, bytes]:
     """Derive one AEAD key and nonce with one RFC 5869 Extract/Expand schedule.
 
-    The 44-byte output is split into a 32-byte ChaCha20-Poly1305 key and a
-    12-byte nonce.  No HKDF output is reused as a new PRK.
+    The 76-byte output is split into a 32-byte ChaCha20-Poly1305 key, a
+    12-byte nonce, and a 32-byte explicit key-commitment key. No HKDF output
+    is reused as a new PRK.
     """
     context = _encode_fields(b"reply-kem-context", [C1_SUITE_ID, encapsulated, recipient_public, info])
     prk = _hkdf_extract(b"", _encode_fields(b"reply-kem-dh", [dh_point]))
-    okm = _hkdf_expand(prk, _encode_fields(b"reply-kem-key-schedule", [context]), 44)
-    return okm[:32], okm[32:]
+    okm = _hkdf_expand(prk, _encode_fields(b"reply-kem-key-schedule", [context]), 76)
+    return okm[:32], okm[32:44], okm[44:]
 
 
 @dataclass(frozen=True)
@@ -154,8 +170,8 @@ def ure_encrypt(
     try:
         r255.require_point(recipient_public, allow_identity=False)
         message = _MARKER if plaintext is None else r255.require_point(plaintext)
-        r0 = r255.scalar_from_label(os.urandom(32), dst=b"Trahens-C1-ure-r0") if r0 is None else r255.require_scalar(r0)
-        r1 = r255.scalar_from_label(os.urandom(32), dst=b"Trahens-C1-ure-r1") if r1 is None else r255.require_scalar(r1)
+        r0 = r255.scalar_from_label(os.urandom(32), dst=DOMAIN_C1_URE_R0) if r0 is None else r255.require_scalar(r0)
+        r1 = r255.scalar_from_label(os.urandom(32), dst=DOMAIN_C1_URE_R1) if r1 is None else r255.require_scalar(r1)
         u0 = r255.point_add(message, r255.scalarmult(r0, recipient_public))
         v0 = r255.scalarmult_base(r0)
         u1 = r255.scalarmult(r1, recipient_public)
@@ -174,10 +190,10 @@ def ure_rerandomize(
     try:
         encoded = ciphertext.encode()
         ciphertext = URECiphertext.decode(encoded)
-        s0 = r255.scalar_from_label(os.urandom(32), dst=b"Trahens-C1-ure-s0") if s0 is None else r255.require_scalar(s0)
+        s0 = r255.scalar_from_label(os.urandom(32), dst=DOMAIN_C1_URE_S0) if s0 is None else r255.require_scalar(s0)
         if s1 is None:
             while True:
-                s1 = r255.scalar_from_label(os.urandom(32), dst=b"Trahens-C1-ure-s1")
+                s1 = r255.scalar_from_label(os.urandom(32), dst=DOMAIN_C1_URE_S1)
                 if s1 != r255.SCALAR_ONE:
                     break
         else:
@@ -238,25 +254,20 @@ def reply_blind_secret(secret: bytes, factor: bytes) -> bytes:
         raise CryptoError("reply secret-key blinding failed") from exc
 
 
-def _reply_seal_with_secret(
-    recipient_public: bytes,
-    plaintext: bytes,
+def _reply_commitment(
+    commitment_key: bytes,
     *,
+    encapsulated: bytes,
+    recipient_public: bytes,
     aad: bytes,
     info: bytes,
-    ephemeral_secret: bytes,
+    ciphertext: bytes,
 ) -> bytes:
-    """Internal deterministic primitive used only by the test-support module."""
-    try:
-        recipient_public = r255.require_point(recipient_public, allow_identity=False)
-        ephemeral_secret = r255.require_scalar(ephemeral_secret)
-        encapsulated = r255.scalarmult_base(ephemeral_secret)
-        dh_point = r255.scalarmult(ephemeral_secret, recipient_public)
-        key, nonce = _derive_reply_context(dh_point, encapsulated, recipient_public, info)
-        ciphertext = ChaCha20Poly1305(key).encrypt(nonce, plaintext, aad)
-        return encapsulated + ciphertext
-    except (r255.RistrettoError, ValueError) as exc:
-        raise CryptoError("reply encryption failed") from exc
+    transcript = _encode_fields(
+        b"reply-key-commitment",
+        [DOMAIN_C1_REPLY_COMMIT, encapsulated, recipient_public, aad, info, ciphertext],
+    )
+    return hmac.new(commitment_key, transcript, hashlib.sha256).digest()
 
 
 def reply_seal(
@@ -268,20 +279,34 @@ def reply_seal(
 ) -> bytes:
     """Seal one reply layer with fresh operating-system entropy.
 
-    The production-facing API intentionally has no deterministic-ephemeral
-    argument.  Deterministic vectors use the separately gated test-support
-    helper.
+    The returned object is ``encapsulation || AEAD ciphertext || commitment``.
+    The explicit commitment makes accidental or adversarial cross-key
+    acceptance negligible even though ChaCha20-Poly1305 is not itself a
+    committing AEAD. The production-facing API has no deterministic-ephemeral
+    argument; deterministic vectors live outside the installed package.
     """
-    ephemeral_secret = r255.scalar_from_label(
-        os.urandom(32), dst=b"Trahens-C1-v2-reply-ephemeral"
-    )
-    return _reply_seal_with_secret(
-        recipient_public,
-        plaintext,
-        aad=aad,
-        info=info,
-        ephemeral_secret=ephemeral_secret,
-    )
+    try:
+        recipient_public = r255.require_point(recipient_public, allow_identity=False)
+        ephemeral_secret = r255.scalar_from_label(
+            os.urandom(32), dst=DOMAIN_C1_REPLY_EPHEMERAL
+        )
+        encapsulated = r255.scalarmult_base(ephemeral_secret)
+        dh_point = r255.scalarmult(ephemeral_secret, recipient_public)
+        key, nonce, commitment_key = _derive_reply_context(
+            dh_point, encapsulated, recipient_public, info
+        )
+        ciphertext = ChaCha20Poly1305(key).encrypt(nonce, plaintext, aad)
+        commitment = _reply_commitment(
+            commitment_key,
+            encapsulated=encapsulated,
+            recipient_public=recipient_public,
+            aad=aad,
+            info=info,
+            ciphertext=ciphertext,
+        )
+        return encapsulated + ciphertext + commitment
+    except (r255.RistrettoError, ValueError) as exc:
+        raise CryptoError("reply encryption failed") from exc
 
 
 def reply_open(
@@ -293,18 +318,38 @@ def reply_open(
 ) -> bytes:
     try:
         recipient_secret = r255.require_scalar(recipient_secret)
-        if len(sealed) < REPLY_ENC_BYTES + AEAD_TAG_BYTES:
+        if len(sealed) < REPLY_ENC_BYTES + AEAD_TAG_BYTES + REPLY_COMMIT_BYTES:
             raise CryptoError("reply decryption failed")
         encapsulated = sealed[:REPLY_ENC_BYTES]
-        ciphertext = sealed[REPLY_ENC_BYTES:]
+        ciphertext = sealed[REPLY_ENC_BYTES:-REPLY_COMMIT_BYTES]
+        commitment = sealed[-REPLY_COMMIT_BYTES:]
         r255.require_point(encapsulated, allow_identity=False)
         recipient_public = r255.scalarmult_base(recipient_secret)
         dh_point = r255.scalarmult(recipient_secret, encapsulated)
-        key, nonce = _derive_reply_context(dh_point, encapsulated, recipient_public, info)
-        return ChaCha20Poly1305(key).decrypt(nonce, ciphertext, aad)
-    except (r255.RistrettoError, InvalidTag, ValueError, CryptoError) as exc:
+        key, nonce, commitment_key = _derive_reply_context(
+            dh_point, encapsulated, recipient_public, info
+        )
+        expected_commitment = _reply_commitment(
+            commitment_key,
+            encapsulated=encapsulated,
+            recipient_public=recipient_public,
+            aad=aad,
+            info=info,
+            ciphertext=ciphertext,
+        )
+        commitment_ok = hmac.compare_digest(commitment, expected_commitment)
+        plaintext: bytes | None = None
+        aead_ok = False
+        try:
+            plaintext = ChaCha20Poly1305(key).decrypt(nonce, ciphertext, aad)
+            aead_ok = True
+        except InvalidTag:
+            pass
+        if not commitment_ok or not aead_ok or plaintext is None:
+            raise CryptoError("reply decryption failed")
+        return plaintext
+    except (r255.RistrettoError, ValueError, CryptoError) as exc:
         raise CryptoError("reply decryption failed") from exc
-
 
 def candidate_transcript_hash(fields: Iterable[bytes]) -> bytes:
     return hashlib.sha256(_encode_fields(b"candidate-transcript", fields)).digest()

@@ -16,6 +16,14 @@ from dataclasses import dataclass
 from enum import IntEnum
 from random import Random
 
+from trahens_spec.generated import (
+    SCHEDULE_PROFILE_T2,
+    T2_ACTION_ACCEPT,
+    T2_ACTION_OFFER,
+    T2_ACTION_REJECT,
+    T2_FRAME_SCHEDULE,
+)
+
 from .m2w2 import (
     CELL_BODY_BYTES,
     CELL_HEADER_BYTES,
@@ -29,18 +37,18 @@ from .m2w2 import (
     _validate_message_local_id,
 )
 
-T2_WIRE_PROFILE = 4
+T2_WIRE_PROFILE = SCHEDULE_PROFILE_T2
 T2_MAX_RATE_CLASSES = 8
 
 
 class T2FrameType(IntEnum):
-    SCHEDULE = 0x03
+    SCHEDULE = T2_FRAME_SCHEDULE
 
 
 class T2ScheduleAction(IntEnum):
-    OFFER = 0x00
-    ACCEPT = 0x01
-    REJECT = 0x02
+    OFFER = T2_ACTION_OFFER
+    ACCEPT = T2_ACTION_ACCEPT
+    REJECT = T2_ACTION_REJECT
 
 
 @dataclass(frozen=True)

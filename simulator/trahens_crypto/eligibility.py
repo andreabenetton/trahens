@@ -17,6 +17,14 @@ import hashlib
 import hmac
 from typing import Callable, Final, Protocol, runtime_checkable
 
+from trahens_spec.generated import (
+    BYTES_R1_CAPABILITY,
+    BYTES_R1_DISCOVERY_NONCE,
+    DOMAIN_R1_CAPABILITY,
+    SUITE_C2_K2_DISABLED,
+    SUITE_R1,
+)
+
 from . import ristretto as r255
 from .c1 import (
     C1_SUITE_ID,
@@ -35,11 +43,11 @@ from .c2_ideal import (
     contains_literal_tag,
 )
 
-R1_SUITE_ID: Final[bytes] = b"\x01\x01"
-R1_DISCOVERY_NONCE_BYTES: Final[int] = 32
-R1_CAPABILITY_BYTES: Final[int] = 32
+R1_SUITE_ID: Final[bytes] = SUITE_R1
+R1_DISCOVERY_NONCE_BYTES: Final[int] = BYTES_R1_DISCOVERY_NONCE
+R1_CAPABILITY_BYTES: Final[int] = BYTES_R1_CAPABILITY
 R1_SERVICE_CLASS: Final[bytes] = b"Trahens/R1/rendezvous-gateway"
-C2_K2_DISABLED_SUITE_ID: Final[bytes] = b"\x7f\x02"
+C2_K2_DISABLED_SUITE_ID: Final[bytes] = SUITE_C2_K2_DISABLED
 
 
 class EligibilityError(ValueError):
@@ -89,7 +97,7 @@ class RendezvousRegistry:
     the record before returning the endpoint handle.
     """
 
-    def __init__(self, *, domain: bytes = b"Trahens-R1-capability-v1") -> None:
+    def __init__(self, *, domain: bytes = DOMAIN_R1_CAPABILITY) -> None:
         if not domain:
             raise ValueError("domain must not be empty")
         self._domain = bytes(domain)

@@ -1,0 +1,15 @@
+[package]
+name = "trahens-relay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+codec-m2 = { path = "../../crates/codec-m2" }
+node-runtime = { path = "../../crates/node-runtime" }
+protocol-registry = { path = "../../crates/protocol-registry" }
+state-machine = { path = "../../crates/state-machine" }
+trahens-crypto = { path = "../../crates/crypto" }
+
+[lints]
+workspace = true

@@ -12,6 +12,14 @@ import hashlib
 import hmac
 from dataclasses import dataclass
 
+from trahens_spec.generated import (
+    DOMAIN_C1_CANDIDATE_AAD,
+    DOMAIN_C1_CANDIDATE_INFO,
+    DOMAIN_C1_COMMIT,
+    DOMAIN_C1_LABEL_PREFIX,
+    DOMAIN_C1_READY,
+)
+
 from . import ristretto as r255
 from .c1 import (
     CryptoError,
@@ -26,8 +34,8 @@ from .c1 import (
 RESPONDER_LAYER = 0x01
 RELAY_LAYER = 0x02
 RESPONDER_PAYLOAD_BYTES = 256
-CANDIDATE_AAD = b"Trahens-C1-candidate-layer-aad-v1"
-CANDIDATE_INFO = b"Trahens-C1-candidate-layer-info-v1"
+CANDIDATE_AAD = DOMAIN_C1_CANDIDATE_AAD
+CANDIDATE_INFO = DOMAIN_C1_CANDIDATE_INFO
 
 
 @dataclass(frozen=True)
@@ -50,7 +58,7 @@ class CandidateOpenResult:
 
 
 def _endpoint_address(descriptor: bytes) -> bytes:
-    prefix = b"Trahens-C1-v2"
+    prefix = DOMAIN_C1_LABEL_PREFIX
     label = b"endpoint-address"
     encoded = prefix + len(label).to_bytes(2, "big") + label
     encoded += len(descriptor).to_bytes(2, "big") + descriptor
@@ -190,14 +198,11 @@ def parse_responder_payload(
     )
 
 
-def _seal_responder_candidate_with(
-    sealer,
-    reply_public: bytes,
-    payload: bytes,
-) -> bytes:
+def seal_responder_candidate(reply_public: bytes, payload: bytes) -> bytes:
+    """Seal a responder layer using the production-facing random sealer."""
     if len(payload) != RESPONDER_PAYLOAD_BYTES:
         raise CryptoError("invalid responder payload")
-    return sealer(
+    return reply_seal(
         reply_public,
         payload,
         aad=CANDIDATE_AAD,
@@ -205,13 +210,7 @@ def _seal_responder_candidate_with(
     )
 
 
-def seal_responder_candidate(reply_public: bytes, payload: bytes) -> bytes:
-    """Seal a responder layer using the production-facing random sealer."""
-    return _seal_responder_candidate_with(reply_seal, reply_public, payload)
-
-
-def _wrap_relay_candidate_with(
-    sealer,
+def wrap_relay_candidate(
     parent_reply_public: bytes,
     *,
     blinding_factor: bytes,
@@ -219,6 +218,7 @@ def _wrap_relay_candidate_with(
     forward_label: bytes,
     child_blob: bytes,
 ) -> bytes:
+    """Wrap one relay layer using a multiplicative reply-key factor."""
     try:
         blinding_factor = r255.require_scalar(blinding_factor)
     except r255.RistrettoError as exc:
@@ -235,32 +235,12 @@ def _wrap_relay_candidate_with(
         + len(child_blob).to_bytes(2, "big")
         + child_blob
     )
-    return sealer(
+    return reply_seal(
         parent_reply_public,
         plaintext,
         aad=CANDIDATE_AAD,
         info=CANDIDATE_INFO,
     )
-
-
-def wrap_relay_candidate(
-    parent_reply_public: bytes,
-    *,
-    blinding_factor: bytes,
-    child_candidate_token: bytes,
-    forward_label: bytes,
-    child_blob: bytes,
-) -> bytes:
-    """Wrap one relay layer using a multiplicative reply-key factor."""
-    return _wrap_relay_candidate_with(
-        reply_seal,
-        parent_reply_public,
-        blinding_factor=blinding_factor,
-        child_candidate_token=child_candidate_token,
-        forward_label=forward_label,
-        child_blob=child_blob,
-    )
-
 
 def open_candidate_chain(
     root_reply_secret: bytes,
@@ -309,7 +289,7 @@ def commit_proof(commit_challenge: bytes, endpoint_address: bytes) -> bytes:
         raise CryptoError("invalid commit proof input")
     return hmac.new(
         commit_challenge,
-        b"Trahens-C1-COMMIT-v1" + endpoint_address,
+        DOMAIN_C1_COMMIT + endpoint_address,
         hashlib.sha256,
     ).digest()
 
@@ -319,6 +299,6 @@ def ready_proof(commit_challenge: bytes, endpoint_address: bytes) -> bytes:
         raise CryptoError("invalid ready proof input")
     return hmac.new(
         commit_challenge,
-        b"Trahens-C1-READY-v1" + endpoint_address,
+        DOMAIN_C1_READY + endpoint_address,
         hashlib.sha256,
     ).digest()

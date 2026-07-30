@@ -105,3 +105,16 @@ reproduce:
 clean:
 	rm -rf build dist
 	find simulator -type d -name __pycache__ -prune -exec rm -rf {} +
+
+.PHONY: registry p1-vectors rust-test p1-harness
+registry:
+	python tools/generate_protocol_registry.py
+
+p1-vectors:
+	python tools/generate_p1_conformance.py
+
+rust-test:
+	cargo test --manifest-path implementation/rust/Cargo.toml --all-targets
+
+p1-harness:
+	implementation/harness/netns-p1.sh --relays 2 --loss 5

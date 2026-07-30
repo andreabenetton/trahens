@@ -1,6 +1,6 @@
 # ADR-0014: Define a concrete C1 cryptographic profile
 
-- Status: Accepted for research and interoperability testing; amended for C1 encoding v2
+- Status: Superseded for network interoperability by ADR-0034 and C1 v2 suite `0x0003`
 - Date: 2026-07-30
 
 ## Context
@@ -19,7 +19,7 @@ C1 encoding version `0x02` uses:
 - Ed25519 for responder transcript signatures;
 - a production API that generates reply ephemerals internally and a separately gated test-support API for deterministic vectors.
 
-C1 retains suite identifier `0x0001`; its descriptor/profile encoding byte is `0x02`. Canonical encodings, domain separation, generic failure behavior, executable reference code, and deterministic vectors are normative for research interoperability.
+This historical ADR originally retained suite `0x0001`. v1.5 retires that incompatible identifier and assigns C1 v2 suite `0x0003`; `protocol-registry-v1.5.json` is normative. C1 v2 also expands 76 bytes of key material and appends a recipient-bound commitment.
 
 ## Consequences
 

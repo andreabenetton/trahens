@@ -29,7 +29,7 @@ core_version      = ASCII("1.4.1")
 privacy_profile   = ASCII("U1")
 lifecycle_profile = ASCII("E1")
 rendezvous_profile = ASCII("R1")
-crypto_suite      = 0x0001
+crypto_suite      = 0x0003
 c1_encoding       = 0x02
 ```
 

@@ -13,7 +13,7 @@ from trahens_crypto.candidate import (
     open_candidate_chain,
     ready_proof,
 )
-from trahens_crypto.candidate_test_support import (
+from tools.vector_candidate_support import (
     seal_responder_candidate_deterministic,
     wrap_relay_candidate_deterministic,
 )

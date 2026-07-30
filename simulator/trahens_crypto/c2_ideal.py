@@ -20,7 +20,9 @@ import hashlib
 import hmac
 from typing import Final
 
-C2_SUITE_ID: Final[bytes] = b"\x00\x02"
+from trahens_spec.generated import SUITE_C2_SYMBOLIC
+
+C2_SUITE_ID: Final[bytes] = SUITE_C2_SYMBOLIC
 C2_VERSION: Final[bytes] = b"\x01"
 # The k=1 sizing budget models twenty 32-byte group encodings.  It is a
 # conservative protocol budget, not a normative encoding of the CRYPTO 2021

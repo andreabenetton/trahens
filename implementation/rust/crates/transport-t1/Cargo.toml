@@ -1,0 +1,12 @@
+[package]
+name = "transport-t1"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+protocol-registry = { path = "../protocol-registry" }
+trahens-crypto = { path = "../crypto" }
+
+[lints]
+workspace = true

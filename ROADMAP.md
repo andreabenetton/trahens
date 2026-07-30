@@ -1,47 +1,29 @@
 # Roadmap
 
-| Milestone | Purpose | Gate | State |
+| Revision | Purpose | Gate | State |
 |---|---|---|---|
-| M0 Baseline | Preserve and classify the concept | current and historical material are separated | Complete |
-| M1 Core semantics | Make bounded discovery unambiguous | independent implementation is possible in principle | Complete baseline |
-| M2 Resource safety | Bound abuse and amplification | work, state, bytes, queues, and time are finite | Active |
-| M3 Structural unlinkability | Remove stable cross-hop handles | reply-key distribution is explicit; full layer unlinkability remains conditional | Active review |
-| M4 Event lifecycle | Complete setup and cleanup | races have deterministic bounded outcomes | Complete model |
-| M5 Retained crypto baseline | Make reply and authentication operations executable | multiplicative blinding, standard KDF, and independent key-privacy review | Review open |
-| M6 Message/cell separation | Preserve variable semantics and equal cells | canonical parsing and bounded reassembly | Complete research baseline |
-| M7 Active-eligibility audit | Test endpoint-specific cryptographic candidates | failing constructions remain reproducible and disabled | Complete research audit |
-| M8 R1 rendezvous profile | Remove unresolved eligibility primitive from active discovery | endpoint capability is absent from DISCOVER and redeemable once after READY | Active baseline complete |
-| M9 Private descriptor profile | Hide and authenticate descriptor distribution | D1 strawman exists; concrete PIR/oblivious lookup and collusion evaluation required | Strawman only |
-| M10 T1 reliability | Bound multi-cell loss recovery | delivery improves without stable cross-hop handles | Baseline complete |
-| M11 T2 congestion and schedules | Define overload, fair service, and adaptive leakage | schedule changes are bounded, negotiated, measured, and claim-scoped | Baseline complete |
-| M12 Overlay interoperability | Prove independent agreement | two implementations agree under faults and churn | Planned |
-| M13 Traffic privacy | Evaluate multi-link metadata resistance | every claim is scheduler- and adversary-specific | Research active |
+| v1.4.1 | independent review remediation | cryptographic construction and evidence boundaries corrected | Complete |
+| v1.5 | P1 interoperable user-space prototype | Rust nodes, frozen registry/vectors, namespace faults, cleanup | Implemented; execution gates depend on Linux CI |
+| v1.6 | external cryptographic and protocol review | reply key privacy, commitment, state machines, wire and resource model reviewed independently | Planned |
+| v1.7 | multi-host deployment | independently operated nodes interoperate across real networks | Planned |
+| v1.8 | captured-traffic evaluation | performance and traffic-analysis experiments use real packet traces | Planned |
+| v2.0 | reviewed stable protocol | wire protocol and security model survive implementation and independent review | Blocked on v1.6–v1.8 |
 
-## Current milestone
+## v1.5 focus
 
-Core v1.4.1 binds T1 recovery to T2 scheduling and T3 equal-budget and T4 packet-event adversarial trace evaluation on each authenticated directed link. T2 publishes a finite rate-class menu, changes class only at epoch boundaries, requires encrypted adjacent-link OFFER/ACCEPT negotiation, applies asymmetric hysteresis, and uses weighted deficit round robin for admitted new DATA. Persistent overload at the maximum class cannot silently accelerate the cadence; admission, retry, queue residence, and failure behavior are bounded.
+The protocol is no longer extended primarily through simulator profiles. v1.5 freezes M2, W2, R1, T1, and fixed T2/P1 in one machine-readable registry, provides independent canonical and malformed vectors, and implements three separately started UDP processes in Rust. Linux namespaces replace simulated queues with kernel sockets, scheduling, MTU, loss, delay, jitter, duplication, and reordering.
 
-The measurements deliberately expose the privacy/efficiency trade-off. Fixed-high scheduling hides activity from the evaluated class-presence distinguisher but spends substantial CHAFF. Adaptive scheduling reduces CHAFF and queueing while making its public rate sequence activity-dependent. Work-conserving release is efficient but highly correlatable across the evaluated two-link model.
+The P1 acceptance checklist is normative in `spec/p1-prototype-profile-v1.5.md`. Source presence is not equivalent to passing the runtime gate: Rust compilation, 5% loss recovery, burst-loss failure, 12-relay establishment, packet-size capture, and state cleanup must execute successfully in CI or an equivalent Linux host.
 
-## Next increment
+## Security work retained for v1.6
 
-1. Convert D1 from a strawman into a concrete private-directory profile, including authentication, exact PIR or oblivious-query construction, replication, enumeration resistance, rotation, revocation, and collusion tests.
-2. Replace the abstract T2 peer agreement with a complete loss, timeout, conflict, and restart state machine for schedule negotiation.
-3. Evaluate randomized or differentially private rate transitions against deterministic hysteresis, including utility and privacy budgets.
-4. Add queue-aware route deadlines, authenticated receiver feedback, and adversarial ACK/schedule-control tests.
-5. Evaluate limited redundancy or erasure coding against retransmission under correlated burst loss.
-6. Build an independent M2/W2/T1/T2 implementation and differential-fuzz codecs, reassembly, recovery, and schedule state.
-7. Run multi-link timing classifiers over realistic topologies, variable propagation delay, clock noise, congestion, and route churn.
-8. Obtain independent review of the multiplicatively blinded reply-key chain, key-private reply KEM/PKE assumption, capability store, T1 recovery, and T2 claim boundary.
+1. obtain an independent multi-user IK-CCA/key-privacy review of C1 v2 reply sealing and nested blinding composition;
+2. review the recipient-bound commitment and failure/resource uniformity;
+3. translate or extend the bounded R1/E1 models into an adversarial symbolic proof where appropriate;
+4. review capability atomicity, replay/expiry, T1 recovery, and fixed-T2 claim boundaries;
+5. decide whether C1 should be replaced with a standard anonymous public-key encryption construction;
+6. keep post-quantum migration classified as a reply-path redesign, not a primitive substitution.
 
-## Core v1.4 traffic-analysis gate
+## Strategic scope
 
-T3 now supplies the baseline multi-link falsification harness required by milestone M13. It compares fixed, adaptive, and hybrid schedules under the same exact cell budget, measures route classification over 32--256 epochs, includes correlated background traffic, records transition-boundary alignment, and evaluates a bounded active bandwidth probe.
-
-The baseline remains incomplete for a traffic-flow privacy claim. The next work must replace synthetic count traces with packet-level or event-level timing, heterogeneous clock noise, partial observation, route churn, open-world class imbalance, stronger learned classifiers, and deployment-derived cross traffic. The hybrid policy is an offline evaluation envelope until its online negotiation and overload behavior are specified.
-
-## T4 packet-level gate
-
-T4 supplies the next M13 falsification layer. It converts public fixed-size cells into deterministic packet events with access serialization, shared bottlenecks, propagation jitter, independent observer clocks, timestamp quantisation, route churn, partial observation, disjoint open-world unknown classes, and bounded selective delay. It preserves the exact per-link public budget and reports service, queue, cleanup, monitored-recall, unknown-false-positive, and detector metrics separately.
-
-T4 remains a transparent model. The next gate is independent implementation and higher-fidelity emulation using calibrated network parameters, larger topologies, adaptive/open-set attacks, and deployment-derived traces.
+Trahens is evaluated as privacy-preserving route discovery for decentralized and path-aware networks such as mesh, delay-tolerant, and policy-aware fabrics. It is not positioned as a replacement for mature anonymity overlays that already assume an IP substrate and public relay directory.
