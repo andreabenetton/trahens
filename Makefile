@@ -1,4 +1,4 @@
-.PHONY: test experiments sweep policy-compare paper check reproduce clean
+.PHONY: test experiments sweep policy-compare unlinkability-compare paper check reproduce clean
 
 test:
 	PYTHONPATH=simulator python -m unittest discover -s simulator/tests -v
@@ -12,6 +12,9 @@ sweep:
 policy-compare:
 	./tools/run_policy_comparison.sh
 
+unlinkability-compare:
+	./tools/run_unlinkability_comparison.sh
+
 paper:
 	mkdir -p build/paper
 	latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir=build/paper paper/rewrite/main.tex
@@ -24,6 +27,7 @@ reproduce:
 	$(MAKE) experiments
 	$(MAKE) sweep
 	$(MAKE) policy-compare
+	$(MAKE) unlinkability-compare
 	$(MAKE) paper
 
 clean:
