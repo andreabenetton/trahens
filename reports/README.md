@@ -1,5 +1,15 @@
 # Reports
 
-Tracked reports contain reproducible experiment summaries that support design decisions. Raw JSON outputs from individual runs are generated locally and ignored by Git.
+Generated experiment outputs are kept when they support a recorded design decision.
 
-- `iteration-0002-sweep.csv` - 20-seed sweep of hop limit and relay fan-out for the initial first-parent discovery model.
+- `iteration-0002-sweep.csv` - fixed discovery hop/fan-out sweep.
+- `iteration-0003-policy-comparison.csv` - fixed broad flood versus expanding-ring policy across responder densities.
+- `baseline.json`, `conservative.json`, `dense.json` - deterministic single-run examples.
+
+Reproduce with:
+
+```bash
+make experiments
+make sweep
+make policy-compare
+```

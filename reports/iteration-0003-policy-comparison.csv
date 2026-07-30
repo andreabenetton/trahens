@@ -1,0 +1,4 @@
+responder_fraction,runs,fixed_success_rate,fixed_mean_transmissions,fixed_mean_duplicates,fixed_mean_state_allocations,expanding_success_rate,expanding_mean_transmissions,expanding_mean_duplicates,expanding_mean_state_allocations,expanding_mean_attempts,expanding_mean_multi_attempt_observer_fraction,transmission_savings_fraction,state_allocation_savings_fraction
+0.0100,100,1.0000,895.12,473.98,421.14,0.9900,293.63,106.84,186.79,2.90,0.0952,0.6720,0.5565
+0.0200,100,1.0000,895.12,473.98,421.14,1.0000,157.65,40.93,116.72,2.61,0.0681,0.8239,0.7228
+0.0500,100,1.0000,895.12,473.98,421.14,1.0000,67.52,9.03,58.49,2.08,0.0441,0.9246,0.8611

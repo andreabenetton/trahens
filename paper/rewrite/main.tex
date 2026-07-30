@@ -6,6 +6,8 @@
 \usepackage{lmodern}
 \usepackage{microtype}
 \usepackage{booktabs}
+\usepackage{titlesec}
+\titlespacing*{\section}{0pt}{1.8ex plus .2ex minus .2ex}{0.8ex}
 \usepackage{hyperref}
 \usepackage{xcolor}
 
@@ -20,7 +22,7 @@
 \maketitle
 
 \begin{abstract}
-Route discovery can expose endpoint relationships and topology before an anonymous or encrypted data path is established. Trahens explores a control plane in which relays install short-lived, hop-local forwarding labels instead of learning or carrying a complete source route. This revision reduces the original 2020 concept to a bounded discovery core with duplicate suppression, candidate return, explicit route commitment, bidirectional label state, expiration, and resource limits. Global directory resolution and traffic-analysis-resistant link scheduling are treated as separate protocols or deployment profiles. The current version is a research specification and deterministic simulation baseline, not a production anonymity system. Its purpose is to make the design falsifiable: privacy claims are tied to explicit adversaries, and scalability claims are tied to reproducible experiments.
+Route discovery can expose endpoint relationships and topology before an anonymous or encrypted data path is established. Trahens explores a control plane in which relays install short-lived, hop-local forwarding labels instead of learning or carrying a complete source route. This revision reduces the original 2020 concept to a bounded expanding-ring discovery core with attempt-local duplicate suppression, candidate return, explicit route commitment, bidirectional label state, expiration, and cumulative resource limits. Global directory resolution and traffic-analysis-resistant link scheduling are treated as separate protocols or deployment profiles. The current version is a research specification and deterministic simulation baseline, not a production anonymity system. Its purpose is to make the design falsifiable: privacy claims are tied to explicit adversaries, and scalability claims are tied to reproducible experiments.
 \end{abstract}
 
 \section{Motivation}
@@ -39,7 +41,8 @@ This revision contributes the following research artifacts:
   \item A three-step candidate, commit, and ready process that separates route offers from active routes.
   \item Mandatory limits for hop count, fan-out, candidate count, relay state, retries, lifetimes, and cryptographic work.
   \item An adversary taxonomy that distinguishes active relays, colluding relays, partial link observers, global observers, and resource attackers.
-  \item A deterministic simulator for discovery reachability, duplicate delivery, candidate collection, and state growth.
+  \item A deterministic simulator for discovery reachability, duplicate delivery, candidate collection, state growth, and expanding-ring policy comparison.
+  \item A separation between a local logical discovery and fresh wire-visible attempt identifiers, with explicit cross-attempt overlap metrics.
 \end{enumerate}
 
 \section{Scope}
@@ -52,11 +55,11 @@ The baseline underlay protects confidentiality and integrity on one adjacent lin
 
 One relay may be honest-but-curious or actively malicious. Multiple relays may collude. A link observer may see timing and size without decrypting adjacent-link payloads. A global observer may correlate all links. A resource adversary may create many discoveries, duplicates, malformed messages, or candidate responses.
 
-The current Core uses a stable random discovery identifier for loop suppression and accounting. This permits correlation by colluding relays. Consequently, Core v0.1 aims only to prevent one relay from learning the complete route; it does not satisfy the stronger unlinkability statement in the legacy draft.
+Core v0.2 uses a stable random identifier only within one attempt. A logical discovery that retries with a wider ring generates a fresh attempt identifier, while its logical identifier remains local to the initiator. This removes direct identifier linkage across retries but does not prevent correlation through timing, origin adjacency, service metadata, or overlapping relay sets. The design therefore aims only to prevent one relay from learning the complete route; it does not satisfy the stronger unlinkability statement in the legacy draft.
 
 \section{Protocol overview}
 
-An initiator sends a bounded \textsc{Discover} request to selected adjacent peers. A relay accepts only the first copy for a discovery, records the previous peer, and forwards to a limited number of children while the hop budget remains. Eligible responders may return a \textsc{Candidate} through the recorded reverse state.
+An initiator executes a bounded schedule of discovery rings. Each ring uses a fresh attempt identifier and progressively non-decreasing hop and fan-out limits. The initiator stops when its candidate policy is satisfied or when the cumulative transmission, state-allocation, attempt, or time budget is exhausted. A relay accepts only the first copy for one attempt, records the previous peer, and forwards to a limited number of children while the hop budget remains. Eligible responders may return a \textsc{Candidate} through the recorded reverse state.
 
 As a candidate travels toward the initiator, every relay replaces the child-facing forwarding label with a newly generated parent-facing label and stores a tentative mapping. The initiator therefore receives only a first-hop label rather than the complete path.
 
@@ -64,7 +67,7 @@ The initiator selects at most one candidate and sends \textsc{Commit} through it
 
 \section{State and resource safety}
 
-Every discovery, replay marker, tentative mapping, and active route has a finite local expiration. A node does not depend on a remote close message to recover resources. Each peer and each node has hard limits on concurrent discoveries, forwarding fan-out, candidates, tentative routes, active routes, public-key operations, retries, and retained bytes.
+Every attempt, replay marker, tentative mapping, and active route has a finite local expiration. A node does not depend on a remote close message to recover resources. Each peer and each node has hard limits on concurrent discoveries, forwarding fan-out, candidates, tentative routes, active routes, public-key operations, retries, and retained bytes.
 
 The first-parent rule bounds full discovery state to at most one record per accepted discovery and relay. It also suppresses cycles without disclosing a route vector. The cost is reduced path diversity, which must be quantified in simulation rather than assumed acceptable.
 
@@ -76,16 +79,16 @@ The global resolver is deferred because deterministic hash-based lookup tokens c
 
 \section{Evaluation plan}
 
-The first experiments measure discovery coverage, candidate probability, transmissions, duplicate deliveries, and relay state as functions of graph size, degree distribution, hop limit, and fan-out. Subsequent simulations add candidate reverse propagation, commitment, expiration, packet loss, churn, malicious fan-out, candidate spam, replay, and selective forwarding.
+The first experiments measure discovery coverage, candidate probability, transmissions, duplicate deliveries, relay state, and cross-attempt relay overlap as functions of graph size, degree distribution, hop limit, and fan-out. In a 500-node average-degree-8 model with 2 percent responders, the tested expanding-ring policy preserved 100 percent observed success over 100 deterministic runs while reducing mean discovery transmissions from 895.12 to 157.65 relative to a fixed hop-5/fan-out-4 attempt. This is a model result rather than a network benchmark. Subsequent simulations add event time, candidate reverse propagation, commitment, expiration, packet loss, churn, malicious fresh-attempt floods, candidate spam, replay, and selective forwarding.
 
 A network prototype follows only after state semantics and a concrete cryptographic profile have test vectors. Privacy profiles will then be compared by bandwidth, setup latency, and adversarial correlation success.
 
 \section{Open research problem}
 
-The immediate privacy problem is loop and duplicate suppression without a stable identifier visible to colluding relays. Alternatives include per-hop transformed identifiers, private set-membership mechanisms, or accepting bounded duplicate propagation under strict hop and fan-out limits. The project will compare these alternatives by both amplification cost and collusion leakage.
+The immediate privacy problem is correlation across expanding-ring attempts. Fresh identifiers remove direct equality tests, but the same origin-adjacent link, regular candidate windows, and overlapping relay sets remain strong signals. The project must compare scheduling jitter, repeated equal rings, per-hop transformed identifiers, and strict bounded propagation by both amplification cost and adversarial correlation success.
 
 \section{Conclusion}
 
-Trahens remains a plausible research direction when treated as a small, measurable route-discovery mechanism rather than an immediate replacement for the Internet stack. The project now prioritizes unambiguous state machines, bounded resource use, explicit threat models, and reproducible simulation. Stronger anonymity and global resolution are future layers whose costs and failure modes must be demonstrated rather than assumed.
+Trahens remains plausible as a measurable route-discovery mechanism rather than an Internet-stack replacement. Current work prioritizes unambiguous state machines, cumulative resource bounds, cross-attempt leakage, and reproducible simulation. Stronger anonymity and global resolution remain future layers requiring demonstrated costs and failure modes.
 
 \end{document}
