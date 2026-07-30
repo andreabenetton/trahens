@@ -50,7 +50,7 @@
   citecolor=accent,
   pdftitle={Trahens: A Privacy-Enabled Route Discovery Protocol},
   pdfauthor={Andrea Benetton},
-  pdfsubject={Current Trahens protocol draft with U1, E1, R1, M2, W2, T1, and T2 profiles}
+  pdfsubject={Current Trahens protocol draft with U1, E1, R1, M2, W2, T1, T2, and T3 profiles}
 }
 
 \setstretch{1.045}
@@ -100,6 +100,7 @@
 \newcommand{\Wtwo}{\ensuremath{\mathsf{W2}}}
 \newcommand{\Tone}{\ensuremath{\mathsf{T1}}}
 \newcommand{\Ttwo}{\ensuremath{\mathsf{T2}}}
+\newcommand{\Tthree}{\ensuremath{\mathsf{T3}}}
 \newcommand{\bytes}[1]{\langle #1\rangle}
 \newcommand{\code}[1]{\texttt{#1}}
 
@@ -133,7 +134,7 @@
 \vspace{-1.0em}
 
 \begin{statusbox}
-\textbf{Document status.} This document specifies one current experimental protocol. Its active profiles are \Uone{} branch-local representation replacement, \Eone{} deterministic route-state lifecycle, \Rone{} rendezvous-capability discovery, \Mtwo{} canonical variable-length logical messages, \Wtwo{} canonical fragmentation over fixed-size encrypted adjacent-link cells, \Tone{} bounded hop-local recovery, and \Ttwo{} fixed or quantized-adaptive adjacent-link scheduling. Endpoint-specific material is absent from forward discovery. A short-lived, single-use rendezvous capability is presented only after an authenticated route to an acceptable gateway has reached \textsc{Ready}. The adaptive schedule is an efficiency and overload mechanism whose public rate class is explicitly treated as leakage. Universal-rerandomization constructions are retained solely as research controls: one demonstrates a persistent algebraic tag, one is an ideal functionality, and one concrete transcription remains disabled after a reproducible algebraic inconsistency. The protocol is a research specification, not a production anonymity system.
+\textbf{Document status.} This document specifies one current experimental protocol. Its active profiles are \Uone{} branch-local representation replacement, \Eone{} deterministic route-state lifecycle, \Rone{} rendezvous-capability discovery, \Mtwo{} canonical variable-length logical messages, \Wtwo{} canonical fragmentation over fixed-size encrypted adjacent-link cells, \Tone{} bounded hop-local recovery, and \Ttwo{} fixed or quantized-adaptive adjacent-link scheduling. \Tthree{} binds equal-budget multi-link observation, route classification, correlated cross traffic, boundary analysis, and bounded active-probe experiments to those transport traces. Endpoint-specific material is absent from forward discovery. A short-lived, single-use rendezvous capability is presented only after an authenticated route to an acceptable gateway has reached \textsc{Ready}. The adaptive schedule is an efficiency and overload mechanism whose public rate class is explicitly treated as leakage. Universal-rerandomization constructions are retained solely as research controls: one demonstrates a persistent algebraic tag, one is an ideal functionality, and one concrete transcription remains disabled after a reproducible algebraic inconsistency. The protocol is a research specification, not a production anonymity system.
 \end{statusbox}
 
 \begin{abstract}
@@ -141,11 +142,13 @@ Route discovery can reveal endpoint relationships, local topology, and stable co
 
 The active design separates endpoint rendezvous from route discovery. A destination creates random, short-lived, single-use capabilities and registers their commitments at selected rendezvous gateways. An initiator privately obtains a descriptor containing the capability and acceptable short-lived gateway pseudonyms. Forward \textsc{Discover} messages contain only a non-semantic service-query nonce. Every honest relay replaces that nonce, the adjacent branch token, the reply public key, the logical-message representation, the link-local transmission identifier, the padding, and the link ciphertext. A gateway returns its pseudonym inside an authenticated end-to-end candidate. The initiator selects a candidate, completes \textsc{Commit} and \textsc{Ready}, and only then sends the rendezvous capability through the active route. Atomic redemption prevents a second successful use.
 
-The protocol binds seven profiles. \Uone{} defines per-hop replacement and conditional batch-local unlinkability. \Eone{} defines half-open deadlines, equal-time precedence, candidate windows, delayed responses, cancellation races, tentative state, \textsc{Commit}, \textsc{Ready}, and local expiry. \Rone{} specifies descriptor distribution assumptions, generic gateway discovery, post-activation redemption, and explicit trust boundaries. \Mtwo{} gives each logical control operation one canonical variable-length encoding without semantic padding. \Wtwo{} defines canonical fragmentation into payloads of at most 992 bytes and bounded out-of-order reassembly. \Tone{} places those fragments in fixed 1,052-byte authenticated \textsc{Data}, \textsc{Ack}, or \textsc{Chaff} cells, applies cumulative selective acknowledgements, estimates a bounded hop-local retransmission timer, and retransmits only missing fragments with fresh link ciphertexts. \Ttwo{} defines fixed, quantized-adaptive, and work-conserving release modes, encrypted schedule negotiation, finite rate menus, hysteresis, weighted deficit-round-robin service, and fail-closed overload behavior.
+The protocol binds eight profiles. \Uone{} defines per-hop replacement and conditional batch-local unlinkability. \Eone{} defines half-open deadlines, equal-time precedence, candidate windows, delayed responses, cancellation races, tentative state, \textsc{Commit}, \textsc{Ready}, and local expiry. \Rone{} specifies descriptor distribution assumptions, generic gateway discovery, post-activation redemption, and explicit trust boundaries. \Mtwo{} gives each logical control operation one canonical variable-length encoding without semantic padding. \Wtwo{} defines canonical fragmentation into payloads of at most 992 bytes and bounded out-of-order reassembly. \Tone{} places those fragments in fixed 1,052-byte authenticated \textsc{Data}, \textsc{Ack}, or \textsc{Chaff} cells, applies cumulative selective acknowledgements, estimates a bounded hop-local retransmission timer, and retransmits only missing fragments with fresh link ciphertexts. \Ttwo{} defines fixed, quantized-adaptive, and work-conserving release modes, encrypted schedule negotiation, finite rate menus, hysteresis, weighted deficit-round-robin service, and fail-closed overload behavior. \Tthree{} defines an equal-bandwidth traffic-analysis experiment over multiple observable links, including correlated background traffic, observation-window scaling, a transparent route classifier, transition-boundary measurements, and bounded active demand probes.
 
 The retained reply path uses independent first-hop reply keys, additive relay tweaks over the Ristretto255 group, nested ChaCha20-Poly1305 encryption, Ed25519 candidate authentication, and domain-separated HKDF-SHA-256. Deterministic experiments show that bounded selective recovery materially improves route activation under independent cell loss. Across 30 runs per configuration, both evaluated \Tone{} modes activated every route up to twelve hops at loss rates of two and five percent; at twelve hops and ten percent loss, selective recovery activated 96.7 percent and fixed scheduling 93.3 percent, while unrecovered delivery activated none.
 
 The \Ttwo{} model makes the scheduling trade-off explicit. Under equal overload, a low fixed class dropped 15 percent of offered work; a high fixed class delivered all work but emitted 1,600 chaff cells; and hysteretic adaptation delivered all work with a peak queue of 98 cells and 370 chaff cells. A simple observer distinguishing traces by public rate class had zero advantage against the evaluated fixed-high active/idle pair and perfect advantage against both evaluated adaptive policies. Fixed scheduling therefore retains only a conditional link-local slot-shape property; adaptive scheduling makes no activity-presence claim.
+
+The \Tthree{} evaluation compares fixed, adaptive, and hybrid schedules under the same exact per-link bandwidth budget. For 128 correlated-background epochs and four balanced route classes, the reference nearest-centroid classifier achieved 25.0 percent accuracy against fixed traces, 99.0 percent against adaptive traces, and 36.5 percent against hybrid traces. A bounded demand probe was undetectable from fixed count traces in the modeled experiment, but was detected with 90.0 percent true-positive and 7.5 percent false-positive rates under adaptive scheduling. These deterministic results show that equal total bandwidth and fixed cell length do not imply equal multi-link trace shape; they are not a proof against stronger learned, open-world, or packet-level attacks.
 
 The paper also audits receiver-anonymous rerandomizable RCCA encryption and an updatable/randomizable public-key encryption proposal, with citations at the points where their results are used. Neither supplies an enabled endpoint-specific discovery primitive. The resulting protocol does not claim private directory lookup, protection from a colluding directory and gateway, global traffic-flow unlinkability, end-to-end congestion control, post-quantum security, or production readiness. Its purpose is to provide a coherent, testable baseline whose security claims, failures, recovery limits, queue behavior, bandwidth costs, and external dependencies are explicit.
 \end{abstract}
@@ -179,6 +182,7 @@ The protocol makes the following contributions.
   \item It separates tentative route creation from explicit \textsc{Commit} and \textsc{Ready} authorization.
   \item It separates canonical variable-length messages, canonical fragmentation, and fixed-size encrypted transport cells.
   \item It defines cumulative selective acknowledgements, bounded hop-local retransmission, fresh retry ciphertexts, fragment interleaving, and optional fixed-rate chaff scheduling.
+  \item It defines equal-budget multi-link evaluation, transparent route classification, correlated-congestion traces, transition-boundary analysis, and bounded active demand probing.
   \item It specifies finite reassembly, recovery, route-state, work, time, queue, registration, and redemption limits.
   \item It distinguishes structural per-hop unlinkability, conditional batch-local unlinkability, active tagging, and traffic-flow privacy.
   \item It preserves failed cryptographic candidates as explicit negative controls instead of silently relying upon them.
@@ -194,6 +198,11 @@ The remainder of this paper first places the design in relation to anonymity sys
 HORNET demonstrates high-speed anonymous forwarding with symmetric cryptography on the data-plane fast path and no per-flow forwarding state in intermediate routers~\cite{hornet}. TARANET combines setup mixing with coordinated constant-rate transmission to resist traffic analysis at the network layer~\cite{taranet}. Sphinx defines a compact mix packet with per-hop transformation, path-length hiding, reply support, and formal security goals~\cite{sphinx}. Loopix combines Sphinx packets with stochastic mixing and cover traffic~\cite{loopix}. These works motivate the separation between fixed record shape, release scheduling, mixing, and cover traffic; they do not imply that a constant-rate adjacent link alone defeats end-to-end correlation.
 
 Those systems assume that a path or layered packet structure has already been selected. \ProtoName{} considers the earlier stage in which the initiator knows a destination descriptor but does not yet know a usable gateway path. Consequently, source-routed onion construction cannot be applied directly: exploration branches, converges, expires, and returns candidates before one path is selected.
+
+
+Traffic-analysis research also shows why per-cell protection and one-link constant-rate statements are insufficient. DeepCorr learns end-to-end flow correlations from timing traces and reports robustness to network noise~\cite{deepcorr}. RAPTOR shows that routing-level and network-position observations can expand the attack surface beyond one compromised relay~\cite{raptor}. Dropmark and DUSTER demonstrate that an active adversary can create or detect distinctive traffic patterns by manipulating flow timing or downstream observations~\cite{dropmark,duster}; more recent flow-marking work continues to study robust active modulation against encrypted traffic~\cite{activeflowmark2026}. These attacks are not implemented as cryptographic forgeries: they exploit observable traffic shape.
+
+Defenses based on deterministic shaping, padding, or adversarial perturbation can reduce particular classifiers but must be evaluated under an explicit workload and adversary. Wang et al. evaluate deterministic website-fingerprinting defenses and quantify their bandwidth--latency trade-offs~\cite{wang2014wf}. Nasr et al. show that blind adversarial perturbations can be generated without direct access to a target classifier, reinforcing that evaluation against one classifier is only a lower bound~\cite{blindperturb}. Online and realistic website-fingerprinting studies further emphasize temporal drift, realistic background conditions, and the gap between closed-world laboratory data and deployed observations~\cite{onlinewf,gtt23,realitycheck2026}. \Tthree{} therefore uses a transparent nearest-centroid classifier as a mandatory rejection test, not as evidence that stronger correlation attacks fail.
 
 \subsection{Universal re-encryption and active relations}
 
@@ -248,7 +257,7 @@ Roles are logical rather than necessarily distinct machines. The directory distr
 
 \subsection{Adversary}
 
-The adversary may observe links outside the declared adjacent-link protection profile; compromise a bounded set of nodes; inspect their keys, state, queues, and local timing; inject, drop, delay, duplicate, reorder, redirect, or replace messages at compromised nodes; generate fresh branches; collude across separated relays; steal capabilities from compromised initiators; and attempt state, queue, registration, or cryptographic-work exhaustion.
+The adversary may observe links outside the declared adjacent-link protection profile; compromise a bounded set of nodes; inspect their keys, state, queues, and local timing; inject, drop, delay, duplicate, reorder, redirect, or replace messages at compromised nodes; generate fresh branches; collude across separated relays; steal capabilities from compromised initiators; and attempt state, queue, registration, or cryptographic-work exhaustion. For \Tthree{}, it may additionally observe timestamp, direction, and fixed record counts on several links over a declared window; train on labeled traces from the declared model; exploit correlated cross traffic; and inject a bounded positive-demand pattern at one ingress without modifying authenticated records.
 
 The adversary cannot forge uncompromised adjacent-link authentication or break the assumptions assigned to the retained standard primitives. No cryptographic assumption is assigned to the symbolic C2 oracle or the disabled C2 transcription. A malicious directory and a malicious gateway may correlate descriptor delivery with redemption; the active profile does not claim to prevent this.
 
@@ -282,6 +291,19 @@ During a pre-existing schedule epoch with origin $T_0$, slot interval $\Delta$, 
 An observer cannot correlate endpoints from direction, timing, volume, cell count, fragment bursts, retries, queue behavior, topology, or long-lived observation.
 \end{definition}
 
+
+\begin{definition}[Equal-budget comparison]
+For a super-epoch of $W$ transport epochs and public budget $B$ cells per link per epoch, every compared profile emits exactly $WB$ fixed-size records on each observed directed link. Equality of this total removes aggregate byte count as a trivial feature but does not equalize trace shape, latency, transitions, or correlation.
+\end{definition}
+
+\begin{definition}[Route-classification advantage]
+For $k$ balanced route classes and classifier accuracy $a$, the reported advantage is $a-1/k$. It measures one declared classifier and feature set under disjoint deterministic training and test samples; it is not an anonymity theorem.
+\end{definition}
+
+\begin{definition}[Active-probe detectability]
+A bounded probe is detectable in a declared experiment when a classifier using only the known probe and downstream public traces separates probe-present from probe-absent samples above the balanced random baseline. Availability disruption and endpoint identification remain separate properties.
+\end{definition}
+
 \begin{table}[ht]
 \centering
 \caption{Claim matrix for the active protocol}
@@ -297,6 +319,8 @@ Passive structural unlinkability & Structural claim & Per-hop replacement of bra
 Hop-local loss recovery & Model-supported claim & Cumulative selective ACKs, bounded retries, finite cleanup, and fresh ciphertext for every emission. \\
 Fixed-schedule trace shape & Conditional model-supported claim & Same slot times, cell lengths, and per-direction counts during a pre-existing non-overloaded schedule epoch. \\
 Adaptive-rate activity hiding & Not claimed & Public rate classes and transition times are traffic-dependent in the evaluated adaptive profiles. \\
+Equal-budget route privacy & Not claimed & \Tthree{} shows that exact total-cell equality can coexist with route-classifiable multi-link trace shape. \\
+Active-probe resistance & Not claimed & Traffic-responsive schedules remain modulated by bounded injected demand in the evaluated model. \\
 Batch-local unlinkability & Conditional claim & Requires an honest transform and a declared mixing/scheduling and anonymity-set treatment. \\
 Lifecycle correctness & Model-supported claim & \Eone{} transitions, deadlines, and zero residual state in evaluated runs. \\
 Capability replay resistance & Model-supported claim & Atomic, single-use redemption with finite expiry. \\
@@ -323,10 +347,11 @@ The protocol binds the following profiles:
   \item \Mtwo{}: canonical variable-length logical messages without semantic padding;
   \item \Wtwo{}: canonical fragmentation, fixed payload bounds, and bounded reassembly;
   \item \Tone{}: fixed-size encrypted \textsc{Data}, \textsc{Ack}, and \textsc{Chaff} cells with hop-local selective recovery;
-  \item \Ttwo{}: fixed or quantized-adaptive epochs, encrypted \textsc{Schedule} control, weighted service, and bounded overload behavior.
+  \item \Ttwo{}: fixed or quantized-adaptive epochs, encrypted \textsc{Schedule} control, weighted service, and bounded overload behavior;
+  \item \Tthree{}: equal-budget multi-link observation, route-level classification, boundary-phase measurement, correlated cross traffic, and bounded active-demand probing.
 \end{itemize}
 
-The profiles are composed rather than substituted for one another. \Rone{} removes endpoint-specific material from forward discovery; \Uone{} replaces branch-local representations; \Mtwo{} defines semantic encoding; \Wtwo{} defines fragmentation and reassembly; \Tone{} defines link-local recovery; \Ttwo{} defines service and public cadence; and \Eone{} defines route-state evolution.
+The profiles are composed rather than substituted for one another. \Rone{} removes endpoint-specific material from forward discovery; \Uone{} replaces branch-local representations; \Mtwo{} defines semantic encoding; \Wtwo{} defines fragmentation and reassembly; \Tone{} defines link-local recovery; \Ttwo{} defines service and public cadence; \Tthree{} defines the mandatory adversarial traffic-analysis experiment over resulting traces; and \Eone{} defines route-state evolution.
 
 \subsection{Principal notation}
 
@@ -369,6 +394,10 @@ $\Delta$ & schedule & Duration or slot interval of a directed schedule epoch. \\
 $\mathcal{R},c_e$ & T2 schedule & Finite public rate menu and class active in epoch $e$. \\
 $Q_e,\rho_e$ & T2 pressure & Queued DATA work and bounded local queue-pressure signal. \\
 $w_f,d_f$ & T2 service & Local weight and deficit for a backlogged transmission class. \\
+$W,B$ & T3 budget & Super-epoch length and exact cells-per-link-per-epoch budget. \\
+$y_{\ell,e}$ & T3 observation & Public cell count on observed link $\ell$ during epoch $e$. \\
+$\phi_{\ell,e}$ & T3 boundary & Public micro-slot phase of a schedule transition, or $-1$ when none occurs. \\
+$\mathcal{C}$ & T3 classifier & Standardized nearest-centroid classifier over declared public trace features. \\
 $\widehat R,V_R$ & timer estimate & Smoothed round-trip time and round-trip variation. \\
 $RTO$ & timer & Bounded hop-local retransmission timeout. \\
 $[t_c,t_e)$ & lifetime & Half-open local validity interval. \\
@@ -392,6 +421,7 @@ Signing key $(sk_G,vk_G)$ & Descriptor epoch or shorter & Gateway; descriptor au
 Reply key $(x_i,X_i)$ & One branch setup & Initiator eventually; public value on one hop & Another first-hop branch or logical discovery. \\
 T1 identifier $z$ & One M2 transmission on one directed link epoch & Adjacent peers only & Another link, forwarded message, or unrelated transmission. \\
 T2 negotiation ID & One proposed adjacent-link class transition & Adjacent peers only & Another link, later unrelated proposal, or routed message. \\
+T3 analysis trace & One declared experiment & Evaluator only; never encoded on the wire & Protocol forwarding state, route label, or peer-visible control. \\
 Link traffic key & One directional link epoch & Adjacent peers & End-to-end responder authentication. \\
 \bottomrule
 \end{tabularx}
@@ -1069,6 +1099,108 @@ Adaptive mode has a different claim. Its class sequence $(c_0,c_1,\ldots)$ and t
 A conforming deployment publishes finite values for the rate menu, epoch duration, negotiation guard time, hold and hysteresis counters, queue thresholds, weights, deficits, control reserves, retry work, residence deadlines, CHAFF budget, schedule lifetime, and malformed negotiation work.
 
 
+
+\section{T3 multi-link adversarial traffic analysis}
+\label{sec:t3}
+
+\subsection{Purpose and scope}
+
+\Tthree{} is an evaluation profile over \Ttwo{} traces. It introduces no new wire frame, cipher suite, route message, or congestion controller. Its purpose is to determine whether fixed record length and one-link schedule statements survive a multi-link observer with longer windows, correlated background traffic, route-level classification, and a bounded active demand probe. Learned flow correlation, routing-level observation, and active traffic manipulation have all been shown to expose relationships that are absent from ciphertext contents~\cite{deepcorr,raptor,dropmark,duster}. \Tthree{} therefore treats traffic analysis as a separate security gate rather than inferring it from encryption.
+
+\subsection{Equal super-epoch budget}
+
+Let $\mathcal{L}$ be the finite set of observed directed links. A comparison covers a super-epoch of $W$ \Ttwo{} epochs and assigns a public budget $B$ records per link per epoch. Every compared profile MUST satisfy
+\begin{equation}
+\sum_{e=0}^{W-1} y_{\ell,e}=WB,
+\qquad \forall \ell\in\mathcal{L},
+\label{eq:t3budget}
+\end{equation}
+where $y_{\ell,e}$ is the complete fixed-size record count. The experiment also reports
+\begin{equation}
+\sum_{\ell\in\mathcal{L}}\sum_{e=0}^{W-1} y_{\ell,e}=|\mathcal{L}|WB.
+\label{eq:t3totalbudget}
+\end{equation}
+The equalizer changes only chaff allocation and MUST NOT delete authenticated DATA required by admitted work. Equal budget removes total bytes as a trivial feature; it does not equalize queueing, transition placement, inter-link delay, or count distribution inside the window.
+
+\subsection{Compared release profiles}
+
+The reference experiment uses three schedules:
+\begin{itemize}
+  \item \emph{fixed}: $y_{\ell,e}=B$ for every link and epoch;
+  \item \emph{adaptive}: traffic-responsive quantized service with transitions aligned to public \Ttwo{} epoch boundaries, followed by deterministic chaff equalization over the complete super-epoch;
+  \item \emph{hybrid}: a non-zero baseline, smoothed pressure response, route-independent decoy uplifts, non-boundary transition phases, and exact super-epoch chaff equalization.
+\end{itemize}
+The hybrid schedule is an analysis candidate, not a deployed protocol. A deployable sub-epoch transition mechanism would require precommitted envelopes, clock-skew limits, and a proof that phase selection preserves replay and service ordering. Deterministic shaping has known bandwidth and latency costs, while classifier resistance remains workload dependent~\cite{wang2014wf,wtfpad}.
+
+\subsection{Boundary and correlation observables}
+
+For each public schedule transition, let $\phi_{\ell,e}\in\{-1,0,\ldots,S-1\}$ denote its micro-slot phase; $-1$ means no transition and $0$ means an epoch-boundary transition. The boundary-alignment statistic is
+\begin{equation}
+A_{\partial}=\frac{\#\{(\ell,e):\phi_{\ell,e}=0\}}
+{\#\{(\ell,e):\phi_{\ell,e}\ge0\}},
+\label{eq:t3boundary}
+\end{equation}
+with value zero when no transition occurs. The evaluator also reports pairwise lagged Pearson correlation between observed count series. Correlation is descriptive evidence, not a proof of a causal route relation.
+
+\subsection{Route workload and classifier}
+
+The mandatory model exposes four directed links and four balanced labels:
+\begin{equation}
+0:\varnothing,\quad 1:(0,1,2),\quad 2:(0,1,3),\quad 3:(0,2,3).
+\label{eq:t3routes}
+\end{equation}
+Each non-empty route receives a delayed target-demand signal. Background demand is either independently sampled per link or derived from a shared latent burst process. The final four epochs contain low demand so that queue cleanup remains inside the measured window.
+
+The reference classifier $\mathcal{C}$ is intentionally transparent. For every trace, it concatenates binned per-link counts, binned first differences, transition count, boundary fraction, and pairwise lagged correlations. Columns are standardized with training statistics only. Each class centroid is the mean standardized training vector, and a test vector is assigned to the nearest centroid with deterministic numeric tie-breaking.
+
+\begin{algorithm}[ht]
+\caption{Reference \Tthree{} route classifier}
+\label{alg:t3classifier}
+\begin{algorithmic}[1]
+\Require disjoint balanced training set $\mathcal{D}_{tr}$ and test set $\mathcal{D}_{te}$
+\State extract declared public features from every trace
+\State compute column means and scales from $\mathcal{D}_{tr}$ only
+\State standardize training and test vectors with those values
+\For{each route label $j$}
+  \State $\mu_j\gets$ mean standardized training vector for label $j$
+\EndFor
+\For{each test vector $x$}
+  \State output $\arg\min_j\lVert x-\mu_j\rVert_2$, breaking ties by smallest $j$
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+For $k$ balanced classes and measured accuracy $a$, the reported advantage is
+\begin{equation}
+\operatorname{Adv}_{route}=a-\frac{1}{k}.
+\label{eq:t3advantage}
+\end{equation}
+A low result against this classifier is only a minimum gate. Strong learned attacks can exploit representations and temporal structures that a centroid classifier ignores~\cite{deepcorr,blindperturb,gtt23,onlinewf,realitycheck2026}.
+
+\subsection{Bounded active demand probe}
+
+The active experiment injects a known positive-demand pulse sequence $p_e$ at one ingress. At downstream hop $h$, the evaluator compares $p_e$ against both public count $y_{\ell,e+h}$ and positive schedule differences. The score is the maximum absolute lagged correlation over the declared lag range. A threshold is learned halfway between the mean probe-absent and probe-present training scores.
+
+The probe changes offered load only; it does not alter authenticated cells, route state, or cryptographic material. It is therefore a schedule-modulation attack rather than a forgery. Active flow-marking research motivates treating such modulation separately from passive classification~\cite{dropmark,duster,activeflowmark2026}. A positive detection demonstrates responsive scheduling, not destination identification by itself.
+
+\begin{proposition}[Fixed count-trace independence in the reference model]
+Conditioned on $W$, $B$, $|\mathcal{L}|$, and the declared fixed profile, the public count matrix $(y_{\ell,e})$ is independent of the route label.
+\end{proposition}
+
+\begin{proof}[Argument]
+By definition, $y_{\ell,e}=B$ for every observed link and epoch. The route signal changes only the encrypted choice between real and chaff cells, not the public count matrix. The statement excludes epoch start and end, direction, loss-induced profile breaks, other packet metadata, and observations outside the modeled matrix.
+\end{proof}
+
+\begin{proposition}[Equal total bandwidth is insufficient]
+Equation~\eqref{eq:t3budget} does not imply that two schedule profiles have equal multi-link trace distributions.
+\end{proposition}
+
+\begin{proof}[Argument]
+The constraint fixes one sum per link. It permits different within-window count vectors, transition phases, queue delays, and cross-link correlations. A classifier may therefore distinguish traces while every link transmits the same total number of equal-size records.
+\end{proof}
+
+A conforming \Tthree{} experiment MUST report class balance, random baseline, observation window, cross-traffic condition, probe amplitude, total per-link budget, classifier definition, budget mismatches, queue overflow, delivery failure, cleanup failure, and all stated limitations. It MUST NOT describe one classifier result as a global-observer anonymity proof.
+
 \section{Retained cryptographic components}
 \label{sec:crypto}
 
@@ -1177,6 +1309,11 @@ A gateway learns the registration commitment and observes successful redemption.
 
 Fixed cell length prevents exact per-cell length classification. Multi-cell messages still reveal a fragment burst unless scheduling hides it. A candidate's cell count can correlate with reverse-layer depth. \Wtwo{} therefore supports but does not itself provide message-count or timing privacy.
 
+
+\subsection{Multi-link schedule leakage}
+
+\Tthree{} demonstrates that exact per-link bandwidth equality does not remove route information from adaptive trace shape. In the reference model, boundary-aligned rate changes, cross-link count correlation, and response to an injected demand pulse remain observable. The hybrid candidate reduces those simple signals by smoothing, independent decoy uplifts, and non-boundary phases, but it does not establish indistinguishability. The result is consistent with prior flow-correlation and traffic-manipulation literature, which treats timing and volume as first-class attack surfaces even when payloads are encrypted~\cite{deepcorr,dropmark,duster,raptor}.
+
 \subsection{Failure normalization}
 
 Malformed capability, wrong gateway, expiry, replay, signature failure, nested decryption failure, disabled suite, cross-suite fragment, non-canonical message, and invalid route label all map to a generic protocol rejection at their observation boundary. Implementations must also normalize timing and logging sufficiently to avoid turning internal diagnostics into an oracle.
@@ -1204,6 +1341,10 @@ An implementation MUST define finite limits for:
   \item gateway registration records, failed redemptions, and endpoint-handle lifetime;
   \item logical discovery time and all state deadlines.
 \end{itemize}
+
+\subsection{T3 analysis bounds}
+
+\Tthree{} analysis state is not forwarding state and MUST NOT appear in network messages. An implementation or evaluator nevertheless bounds the super-epoch duration, number of observed links, retained trace history, feature dimension, training and test samples, lag range, probe amplitude and duty cycle, hybrid decoy budget, transition metadata, raw-report size, and queue state used during budget compensation. A report that silently omits failed cleanup, queue overflow, or budget mismatch is non-conforming.
 
 \subsection{Admission order}
 
@@ -1386,6 +1527,91 @@ Work-conserving & 1.000 & 14.500 & 14.443 \\
 The fixed traces are constant and therefore have zero variance; the implementation records correlation as zero by convention rather than treating it as a statistical independence proof. The synchronized work-conserving baseline is perfectly correlated. Adaptive service reduces but does not eliminate public-count correlation. Realistic inference requires propagation delay, clock noise, heterogeneous cross traffic, route churn, shared bottlenecks, and stronger classifiers, none of which are represented here.
 
 
+
+\subsection{T3 equal-budget multi-link comparison}
+
+The \Tthree{} model uses four observed directed links, exact 1,052-byte cells, $B=40$ records per link per epoch, and balanced labels from \eqref{eq:t3routes}. Every 128-epoch trace therefore emits 5,120 cells per link and 20,480 cells in total. Twenty deterministic traces were generated per route label for the budget audit.
+
+\begin{table}[ht]
+\centering
+\caption{Equal-budget trace properties over 128 epochs}
+\label{tab:t3budgetresults}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Profile & Total cells & Budget match & Boundary align. & Pairwise lag corr. \\
+\midrule
+Fixed & 20,480 & 1.00 & 0.000 & 0.000 \\
+Adaptive & 20,480 & 1.00 & 1.000 & 0.717 \\
+Hybrid & 20,480 & 1.00 & 0.000 & 0.231 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Every evaluated trace delivered its admitted work and reclaimed its modeled state. The fixed count matrix is constant. Adaptive traces preserve exact total bandwidth but expose boundary-aligned transitions and substantial cross-link correlation. The hybrid candidate removes boundary alignment and lowers the measured correlation at the cost of a baseline, smoothing delay, and route-independent decoy uplifts.
+
+\subsection{Route classification across observation windows}
+
+For every profile, window, and cross-traffic condition, the experiment uses 32 training and 24 disjoint test traces per class. The random baseline is 25 percent. \Cref{tab:t3routeclass} reports correlated-background results; independent-background results show the same qualitative separation.
+
+\begin{table}[ht]
+\centering
+\caption{Route-classifier accuracy under correlated background traffic}
+\label{tab:t3routeclass}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+Window & Random & Fixed & Adaptive & Hybrid \\
+\midrule
+32 & 0.250 & 0.250 & 0.781 & 0.292 \\
+64 & 0.250 & 0.250 & 0.917 & 0.406 \\
+128 & 0.250 & 0.250 & 0.990 & 0.365 \\
+256 & 0.250 & 0.250 & 0.969 & 0.385 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+At 128 epochs, adaptive macro-F1 is 0.990 and route advantage is 0.740. Hybrid macro-F1 is 0.361 and advantage 0.115. Fixed macro-F1 is 0.100 because deterministic tie-breaking assigns identical count features to one class; its accuracy remains exactly the balanced random baseline. The result supports only the narrow model claim. A learned classifier, unbalanced open-world workload, packet-level timestamps, routing churn, or deployment traces may produce materially different performance~\cite{deepcorr,onlinewf,gtt23,realitycheck2026}.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.88\textwidth,height=6.2cm,
+  xlabel={Observation window (epochs)},ylabel={Classifier accuracy},
+  xmin=28,xmax=260,ymin=0.2,ymax=1.02,
+  xtick={32,64,128,256},ytick={0.25,0.5,0.75,1.0},
+  legend style={at={(0.5,-0.22)},anchor=north,legend columns=3},
+  grid=major]
+\addplot+[mark=o] coordinates {(32,0.250) (64,0.250) (128,0.250) (256,0.250)};
+\addplot+[mark=square] coordinates {(32,0.781) (64,0.917) (128,0.990) (256,0.969)};
+\addplot+[mark=triangle] coordinates {(32,0.292) (64,0.406) (128,0.365) (256,0.385)};
+\legend{Fixed,Adaptive,Hybrid}
+\end{axis}
+\end{tikzpicture}
+\caption{Reference route-classifier accuracy with correlated cross traffic. Equal total bandwidth does not equalize trace shape.}
+\label{fig:t3routeaccuracy}
+\end{figure}
+
+\subsection{Bounded active-probe experiment}
+
+The balanced probe experiment uses 40 training and 40 test traces for each class over 128 epochs. The probe is a deterministic sequence of two-epoch positive-demand pulses of 24 cells. The detector scores the maximum lagged correlation with downstream count and positive schedule differences.
+
+\begin{table}[ht]
+\centering
+\caption{Active-demand probe detectability}
+\label{tab:t3probe}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Profile & Accuracy & TPR & FPR & Absent score & Present score \\
+\midrule
+Fixed & 0.500 & 0.000 & 0.000 & 0.000 & 0.000 \\
+Adaptive & 0.913 & 0.900 & 0.075 & 0.203 & 0.457 \\
+Hybrid & 0.588 & 0.400 & 0.225 & 0.188 & 0.229 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The fixed count trace does not respond in this model, so the detector defaults to the negative class. Adaptive scheduling transmits a strong probe-dependent public response. Hybrid scheduling reduces but does not remove detectability. Active traffic-manipulation attacks can use delay, loss, or bandwidth modulation more aggressively than this bounded model~\cite{dropmark,duster,activeflowmark2026}; the experiment is therefore a regression gate, not an upper bound on attacker power.
+
 \subsection{R1 and cryptographic controls}
 
 \begin{table}[ht]
@@ -1423,7 +1649,7 @@ A gateway can correlate registration time, redemption time, endpoint handle, and
 
 \subsection{Reliability, congestion, and scheduling}
 
-\Tone{} supplies bounded adjacent-link selective recovery, and \Ttwo{} now defines finite fixed, adaptive, and work-conserving release policies. The result remains an experimental link-local model rather than an end-to-end congestion controller. Schedule-control loss, simultaneous offers, restart after peer state loss, strategic weight assignment, and adversarial ACK behavior require fuller state machines. Forward error correction and bounded redundancy remain unevaluated alternatives to retransmission. Fixed scheduling can waste substantial bandwidth, adaptive scheduling exposes public rate transitions, and work-conserving scheduling exposes cell presence directly. Timing and count correlation across links remain outside the claim.
+\Tone{} supplies bounded adjacent-link selective recovery, and \Ttwo{} now defines finite fixed, adaptive, and work-conserving release policies. The result remains an experimental link-local model rather than an end-to-end congestion controller. Schedule-control loss, simultaneous offers, restart after peer state loss, strategic weight assignment, and adversarial ACK behavior require fuller state machines. Forward error correction and bounded redundancy remain unevaluated alternatives to retransmission. Fixed scheduling can waste substantial bandwidth, adaptive scheduling exposes public rate transitions, and work-conserving scheduling exposes cell presence directly. Timing and count correlation across links remain outside the claim. \Tthree{} now measures a bounded subset of that leakage, but does not cover learned end-to-end flow correlation, routing-level observation, heterogeneous packet capture, open-world imbalance, long-term concept drift, selective-delay watermarks, or deployment traces.
 
 \subsection{Reply-key analysis}
 
@@ -1452,7 +1678,8 @@ A staged implementation should preserve module boundaries:
   \item property-based and network-emulation tests for selective ACKs, timeout ambiguity, replay, and bounded retry cleanup;
   \item a complete schedule-negotiation state machine covering loss, simultaneous offers, rejection, restart, and peer disagreement;
   \item differential scheduler tests for weighted service, queue admission, maximum-class overload, and fixed-profile breaks;
-  \item traffic-analysis experiments using realistic delay, clock noise, heterogeneous cross traffic, route churn, and stronger multi-link classifiers;
+  \item reproducible \Tthree{} equal-budget experiments with disjoint training and test data, stronger learned multi-link classifiers, open-world imbalance, realistic delay and clock noise, route churn, and deployment traces;
+  \item packet-level active-probe and selective-delay experiments, including shared bottlenecks and adaptive adversaries;
   \item external cryptographic, transport, side-channel, and protocol review before any production claim.
 \end{enumerate}
 
@@ -1465,7 +1692,7 @@ The disabled C2 transcription should remain reproducible. An author query should
 
 The semantic, fragmentation, recovery, and scheduling layers are distinct. Logical messages remain canonical and variable length; canonical fragments are bounded and reassembled before route semantics execute; and every adjacent-link cell has fixed length. Cumulative selective acknowledgements and bounded retries repair missing fragments without copying a recovery identifier across a relay. \Ttwo{} then chooses fixed, quantized-adaptive, or work-conserving release, bounds rate transitions and overload, and divides admitted new DATA with weighted deficit round robin.
 
-Route, reassembly, sender, acknowledgement, retry, negotiation, queue, schedule, registration, and redemption state have explicit lifetimes and budgets. The measured reliability and overload improvements are accompanied by explicit retry, queueing, chaff, and public-rate costs. The security claims distinguish per-hop representation replacement and conditional fixed-epoch shape from adaptive-rate leakage and global traffic-flow anonymity, exposing the directory/gateway and congestion-management trust boundaries rather than hiding them.
+Route, reassembly, sender, acknowledgement, retry, negotiation, queue, schedule, registration, and redemption state have explicit lifetimes and budgets. The measured reliability and overload improvements are accompanied by explicit retry, queueing, chaff, and public-rate costs. The security claims distinguish per-hop representation replacement and conditional fixed-epoch shape from adaptive-rate leakage and global traffic-flow anonymity, exposing the directory/gateway and congestion-management trust boundaries rather than hiding them. \Tthree{} further demonstrates that equal total bandwidth is not equal trace shape: fixed count schedules reach the balanced route-classification baseline in the reference model, adaptive schedules remain strongly classifiable, and a hybrid baseline with smoothing and decoys reduces but does not eliminate the measured signal.
 
 The unresolved universal-rerandomization candidates remain cited, executable, and falsifiable but are not active dependencies. The resulting document is a coherent interoperability and review baseline, not a production-ready anonymity guarantee.
 
@@ -1475,7 +1702,7 @@ The unresolved universal-rerandomization candidates remain cited, executable, an
 
 The keywords ``MUST'', ``MUST NOT'', ``REQUIRED'', ``SHOULD'', ``SHOULD NOT'', and ``MAY'' are interpreted according to BCP~14~\cite{rfc2119,rfc8174}.
 
-An implementation claiming \Uone{}, \Eone{}, \Rone{}, \Mtwo{}, \Wtwo{}, \Tone{}, and \Ttwo{} conformance MUST:
+An implementation claiming \Uone{}, \Eone{}, \Rone{}, \Mtwo{}, \Wtwo{}, \Tone{}, \Ttwo{}, and \Tthree{} conformance MUST:
 
 \begin{enumerate}
   \item omit endpoint capabilities, endpoint keys, endpoint addresses, descriptor commitments, gateway pseudonyms, global discovery identifiers, and complete routes from \textsc{Discover};
@@ -1504,6 +1731,8 @@ An implementation claiming \Uone{}, \Eone{}, \Rone{}, \Mtwo{}, \Wtwo{}, \Tone{},
   \item at the maximum class, reject or expire over-budget work rather than silently increasing cadence;
   \item in fixed mode, emit exactly one equal-length cell per declared directional slot; in adaptive mode, treat public class transitions as observable evidence;
   \item make batch-local or fixed-schedule claims only for the declared scheduler, epoch, overload assumptions, and anonymity-set treatment;
+  \item for \Tthree{} comparisons, use exact per-link super-epoch budgets, disjoint balanced training and test samples, training-only normalization, reported baselines, bounded probes, and explicit failure accounting;
+  \item retain no \Tthree{} trace, feature, class label, or probe metadata in forwarding messages or route-semantic state;
   \item refrain from private-directory, directory/gateway-collusion, global traffic-flow, hidden-adaptation, end-to-end congestion, post-quantum, or production-security claims unless separately specified and reviewed.
 \end{enumerate}
 
@@ -1532,7 +1761,7 @@ Operation & Direction & Principal purpose \\
 
 \begin{table}[ht]
 \centering
-\caption{T1/T2 adjacent-link frame classes}
+\caption{T1/T2 adjacent-link frame classes (T3 adds no frame)}
 \label{tab:t1frames}
 \begin{tabularx}{\textwidth}{@{}p{0.18\textwidth}p{0.25\textwidth}X@{}}
 \toprule
@@ -1569,7 +1798,7 @@ C2 $k=2$ transcription & \code{7f02} & Disabled & Reproduce source equations and
 
 \Mtwo{} uses minimal unsigned base-128 LEB128 for variable lengths. Every decoder rejects a longer encoding, an unterminated value, a value above its field limit, trailing bytes, or a nested length exceeding its container. Fixed-width numeric fields are unsigned big-endian values.
 
-\Wtwo{} defines the unique 992-byte fragment decomposition. \Tone{} and \Ttwo{} use fixed-width unsigned big-endian integers in the public 12-byte header and encrypted 32-byte common header. The suite identifier in every \textsc{Data} fragment must agree with the completed \Mtwo{} message. Every non-final fragment contains exactly 992 message bytes and the final fragment exactly the remainder. \textsc{Ack} bits outside the declared fragment count are invalid. A \textsc{Schedule} request must name the current class and either the same or one adjacent class, and its maximum class must be canonical for the configured menu. The 1,052-byte record length hides frame class and exact per-cell content length. Work-conserving mode reveals cell presence; adaptive mode additionally reveals the public class sequence; fixed mode leaves epoch boundaries, direction, topology, and overload behavior visible.
+\Wtwo{} defines the unique 992-byte fragment decomposition. \Tone{} and \Ttwo{} use fixed-width unsigned big-endian integers in the public 12-byte header and encrypted 32-byte common header. The suite identifier in every \textsc{Data} fragment must agree with the completed \Mtwo{} message. Every non-final fragment contains exactly 992 message bytes and the final fragment exactly the remainder. \textsc{Ack} bits outside the declared fragment count are invalid. A \textsc{Schedule} request must name the current class and either the same or one adjacent class, and its maximum class must be canonical for the configured menu. The 1,052-byte record length hides frame class and exact per-cell content length. Work-conserving mode reveals cell presence; adaptive mode additionally reveals the public class sequence; fixed mode leaves epoch boundaries, direction, topology, and overload behavior visible. \Tthree{} operates only on resulting public traces and introduces no additional wire encoding.
 
 \begingroup
 \small
@@ -1654,6 +1883,58 @@ in \emph{26th USENIX Security Symposium}, 2017, pp. 1199--1216.
 C. Chen, D. E. Asoni, A. Perrig, D. Barrera, G. Danezis, and C. Troncoso,
 ``TARANET: Traffic-Analysis Resistant Anonymity at the Network Layer,''
 in \emph{IEEE European Symposium on Security and Privacy}, 2018, pp. 137--152.
+
+\bibitem{deepcorr}
+M. Nasr, A. Bahramali, and A. Houmansadr,
+``DeepCorr: Strong Flow Correlation Attacks on Tor Using Deep Learning,''
+in \emph{ACM Conference on Computer and Communications Security}, 2018, pp. 1962--1976,
+doi:10.1145/3243734.3243824.
+
+\bibitem{raptor}
+Y. Sun, A. Edmundson, L. Vanbever, O. Li, J. Rexford, M. Chiang, and P. Mittal,
+``RAPTOR: Routing Attacks on Privacy in Tor,''
+in \emph{24th USENIX Security Symposium}, 2015, pp. 271--286.
+
+\bibitem{dropmark}
+F. Rochet and O. Pereira,
+``Dropping on the Edge: Flexibility and Traffic Confirmation in Onion Routing Protocols,''
+\emph{Proceedings on Privacy Enhancing Technologies}, vol. 2018, no. 2, 2018, pp. 27--46,
+doi:10.1515/popets-2018-0011.
+
+\bibitem{duster}
+A. Iacovazzi, D. Frassinelli, and Y. Elovici,
+``The DUSTER Attack: Tor Onion Service Attribution Based on Flow Watermarking,''
+in \emph{Research in Attacks, Intrusions and Defenses}, 2019, pp. 213--225.
+
+\bibitem{wang2014wf}
+T. Wang, X. Cai, R. Nithyanand, R. Johnson, and I. Goldberg,
+``Effective Attacks and Provable Defenses for Website Fingerprinting,''
+in \emph{23rd USENIX Security Symposium}, 2014, pp. 143--157.
+
+\bibitem{blindperturb}
+M. Nasr, A. Bahramali, A. Houmansadr, and A. Asgharian,
+``Blind Adversarial Network Perturbations,''
+in \emph{30th USENIX Security Symposium}, 2021, pp. 2705--2722.
+
+\bibitem{onlinewf}
+G. Cherubin, R. Jansen, and C. Troncoso,
+``Online Website Fingerprinting: Evaluating Website Fingerprinting Attacks on Tor in the Real World,''
+in \emph{31st USENIX Security Symposium}, 2022, pp. 753--770.
+
+\bibitem{gtt23}
+R. Jansen, R. Wails, and A. Johnson,
+``GTT23: Toward Realistic Website Fingerprinting Evaluation,''
+CoRR, arXiv:2404.07892, 2024.
+
+\bibitem{realitycheck2026}
+M. Shadbeh, K. Khajavi, and T. Wang,
+``A Reality Check on Website Fingerprinting,''
+CoRR, arXiv:2603.07412, 2026, preprint.
+
+\bibitem{activeflowmark2026}
+Z. Fan et al.,
+``ActiveFlowMark: Robust Active Flow Marking Against Encrypted Traffic,''
+CoRR, arXiv:2605.05887, 2026, preprint.
 
 \bibitem{gjjs}
 P. Golle, M. Jakobsson, A. Juels, and P. Syverson,
