@@ -1,64 +1,42 @@
-# Simulator
+# Trahens simulator
 
-The simulator is the first executable artifact. It currently provides three related models:
+The simulator is deterministic and uses only the Python standard library. It is a protocol-research model, not a packet-level benchmark.
 
-1. identifier-based bounded discovery with first-parent duplicate suppression;
-2. expanding-ring policy with fresh attempt contexts;
-3. U1 branch-local discovery without attempt-wide duplicate suppression.
+## Models
 
-The U1 model treats every accepted ingress as independent branch state, excludes only immediate backtracking, and enforces hard transmission, global-state, per-node-context, candidate-response, and candidate-count limits. Complete paths are retained internally only to measure hidden loop re-entry; they are not protocol-visible state.
+- `model.py` - identifier-based bounded discovery, expanding-ring policy, and U1 branch-local discovery.
+- `event_model.py` - E1 discrete-event lifecycle with candidate windows, reverse tentative state, COMMIT/READY, expiry, cancellation, loss, exact duplication, and fresh-branch attack generation.
+- `unlinkability_compare.py` - resource comparison between identifier-based and U1 branch-local discovery.
+- `lifecycle_compare.py` - clean, impaired-transport, and fresh-branch-attack lifecycle comparison.
 
-The simulator measures:
+The event model retains full paths and legitimate/malicious classification only for measurement. Those values are not protocol-visible fields.
 
-- discovery transmissions and candidate success;
-- state allocations and unique relays;
-- repeated branch contexts at one physical relay;
-- hidden loop re-entry;
-- context amplification;
-- per-node and global budget exhaustion;
-- expanding-ring work and cross-attempt overlap.
-
-It does not yet model event time, reverse candidate capsules, COMMIT/READY, expiry, cryptographic distributions, packet loss, churn, or malicious behavior.
-
-## Fixed identifier-based attempt
-
-```bash
-PYTHONPATH=simulator python -m trahens_sim.cli \
-  --nodes 100 \
-  --average-degree 4 \
-  --hop-limit 4 \
-  --relay-fanout 3 \
-  --seed 1
-```
-
-## Expanding rings
-
-```bash
-PYTHONPATH=simulator python -m trahens_sim.expanding_cli \
-  --nodes 500 \
-  --average-degree 8 \
-  --rings 2:2,3:2,4:3,5:4 \
-  --responder-fraction 0.02 \
-  --seed 1
-```
-
-A two-field ring is `hop_limit:fanout`. A three-field ring is `hop_limit:initial_fanout:relay_fanout`.
-
-## U1 comparison
-
-```bash
-make unlinkability-compare
-```
-
-This writes `reports/iteration-0004-unlinkability-comparison.csv` and compares the identifier-based baseline with branch-local U1 discovery across hop/fan-out settings.
-
-## Test and reproduce
+## Commands
 
 ```bash
 make test
-make reproduce
+make unlinkability-compare
+make lifecycle-compare
 ```
 
-## Next simulator increment
+A direct lifecycle comparison can be run with:
 
-The next model introduces an event queue, candidate windows, delayed candidates, reverse candidate propagation, tentative state, COMMIT/READY, expiration, cancellation, and malicious branch generation.
+```bash
+PYTHONPATH=simulator python -m trahens_sim.lifecycle_compare \
+  --nodes 500 \
+  --average-degree 8 \
+  --runs 100 \
+  --rings 2:2:18,3:2:24,4:3:32 \
+  --responder-fraction 0.02 \
+  --output reports/lifecycle.csv
+```
+
+Timed rings use `hop:fanout:window_ms` or `hop:initial_fanout:relay_fanout:window_ms`.
+
+## E1 event semantics
+
+State is valid on `[created, expiry)`. At the same timestamp, expiry precedes cancellation, route control, candidate, discovery, and candidate-window closure. Thus a candidate at the exact window deadline is eligible, while a message at the exact state expiry is rejected.
+
+## Limitations
+
+The simulator does not execute URE, KEM, signatures, packet codecs, or a real mixing scheduler. Delay, loss, duplication, attack classification, and token buckets are abstract controls. Results are comparative model outputs rather than network throughput or anonymity measurements.
