@@ -1,8 +1,18 @@
 # Changelog
 
-## Unreleased
+## Core v0.4 - 2026-07-30
 
-### Core v0.3 and U1
+- Added E1 event lifecycle with half-open deadlines and deterministic equal-time precedence.
+- Added candidate windows and delayed candidates across initiator-local expanding rings.
+- Added cancellation races and maximal off-route subtree cancellation.
+- Added tentative CANDIDATE mappings, `PENDING_READY` COMMIT reservation, reverse READY activation, and ready-gated data-plane exposure.
+- Added loss, exact duplication, reordering, forced fault injection, and deterministic cleanup.
+- Added malicious fresh-branch generation and ingress-peer token buckets.
+- Added 15 event-lifecycle tests, increasing the complete suite to 38 tests.
+- Added the 100-run lifecycle comparison report.
+- Updated the formal paper to Core v0.4 with five-line modulo numbering and no watermark.
+
+## Core v0.3 and earlier
 
 - Removed the attempt-wide wire identifier from the active design.
 - Replaced attempt-scoped forwarding with peer-bound branch-local contexts.

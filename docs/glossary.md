@@ -18,6 +18,6 @@
 - **Responder**: a node that can open the eligibility capsule, authenticate a candidate offer, and participate in route commitment.
 - **Reply-key blinding**: per-hop transformation of the candidate-encryption public key using a fresh scalar, with the scalar returned in a nested encrypted capsule.
 - **Route label**: a peer- and direction-bound forwarding capability used after commitment.
-- **Traffic-flow unlinkability**: resistance to correlation through timing, volume, topology, and active manipulation; Core v0.3 does not provide this by itself.
-- **U1**: the conditional Core v0.3 profile for non-adjacent wire-image and batch-local message unlinkability.
+- **Traffic-flow unlinkability**: resistance to correlation through timing, volume, topology, and active manipulation; Core v0.4 does not provide this by itself.
+- **U1**: the conditional Core v0.4 profile for non-adjacent wire-image and batch-local message unlinkability.
 - **Wire-image unlinkability**: absence of a stable protocol-field equality test across non-adjacent forwarding hops.

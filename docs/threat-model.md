@@ -1,11 +1,11 @@
 # Threat model
 
-- Status: Core v0.3 research model
+- Status: Core v0.4 research model
 - Date: 2026-07-30
 
 ## 1. Scope
 
-This model covers branch-local discovery, candidate return, route commitment, active hop-label state, and the U1 non-adjacent message unlinkability profile. It does not cover a global directory, endpoint malware, application-layer anonymity failures, incentives, or inter-domain routing policy.
+This model covers branch-local discovery, candidate return, route commitment, E1 candidate windows and state deadlines, cancellation races, active hop-label state, and the U1 non-adjacent message unlinkability profile. It does not cover a global directory, endpoint malware, application-layer anonymity failures, incentives, or inter-domain routing policy.
 
 ## 2. Protected assets
 
@@ -20,14 +20,15 @@ This model covers branch-local discovery, candidate return, route commitment, ac
 
 ## 3. Trust assumptions
 
-Core v0.3 assumes:
+Core v0.4 assumes:
 
 1. selected primitives satisfy their documented security definitions;
 2. honest nodes generate independent randomness and erase expired secrets;
 3. the adjacent-link underlay provides authenticated encryption and a replay domain;
 4. U1-conforming relays apply every required field transformation and batch permutation;
 5. local clocks are sufficient for bounded expiry and queue deadlines;
-6. a fully compromised endpoint cannot preserve its own secrets or anonymity.
+6. implementations compare expiry events with the current state generation or current deadline after a deadline-changing transition;
+7. a fully compromised endpoint cannot preserve its own secrets or anonymity.
 
 No relay, responder, network operator, or future directory is globally trusted.
 
@@ -99,6 +100,8 @@ Under U1 and its passive challenge game, protocol fields should not permit match
 ### Availability
 
 - Accepted work is bounded per peer, branch, physical node, time window, queue, and node global state.
+- A valid transition to `PENDING_READY` cannot be undone early by an obsolete tentative-expiry event.
+- CANCEL follows adjacent branch mappings and affects only the initiating logical discovery.
 - Local cleanup does not require remote cooperation.
 - Error behavior does not provide an amplification or detailed capacity oracle.
 
@@ -116,7 +119,7 @@ Under U1 and its passive challenge game, protocol fields should not permit match
 | Active tagging resistance | No | Not claimed | Not claimed until reviewed primitive | Required by future profile |
 | Global timing correlation resistance | No | No | No | Experimentally evaluated |
 
-## 7. Explicit leakage in Core v0.3
+## 7. Explicit leakage in Core v0.4
 
 A compromised relay can observe:
 
@@ -127,7 +130,8 @@ A compromised relay can observe:
 - whether a child returned a candidate;
 - whether a local tentative mapping was committed;
 - route lifetime and local traffic volume;
-- repeated independent branch contexts reaching the same physical relay.
+- repeated independent branch contexts reaching the same physical relay;
+- candidate-window, COMMIT/READY, cancellation, and deadline timing at that relay.
 
 Across local ring attempts, observers may correlate:
 
@@ -139,7 +143,7 @@ Across local ring attempts, observers may correlate:
 
 ## 8. Claims not made
 
-Core v0.3 does not claim:
+Core v0.4 does not claim:
 
 - sender or receiver anonymity against A4;
 - flow unlinkability from adjacent-link encryption alone;

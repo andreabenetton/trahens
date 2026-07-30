@@ -1,7 +1,7 @@
 # Trahens cryptographic transcript v0.1
 
 - Status: Proof-oriented design draft
-- Applies to: Core v0.3 U1 profile
+- Applies to: Core v0.4 U1 profile; E1 does not change the cryptographic transcript
 - Implementation status: Not approved for production
 
 ## 1. Primitive interfaces

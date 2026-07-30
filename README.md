@@ -6,15 +6,15 @@ The repository preserves the 2020 confidential draft as historical evidence and 
 
 ## Status
 
-Research design. The active specification is **Trahens Core v0.3** with the conditional **U1 non-adjacent message unlinkability profile**. It is incomplete, has no production cryptographic suite, and is not suitable for deployment.
+Research design. The active specification is **Trahens Core v0.4** with the conditional **U1 non-adjacent message unlinkability profile** and the deterministic **E1 event lifecycle profile**. It has no production cryptographic suite and is not suitable for deployment.
 
 ## Current result
 
-Core v0.3 removes the attempt-wide identifier introduced in v0.2 and replaces it with independently transformed branch-local contexts. Every forwarded branch receives a new link-local token, a blinded reply key, a rerandomized eligibility capsule, fresh local capabilities, and a fresh adjacent-link ciphertext.
+Core v0.4 retains independently transformed branch-local contexts and now defines event time, candidate windows, delayed candidates, cancellation races, tentative reverse mappings, forward COMMIT, reverse READY, expiry, exact duplication, loss, and malicious fresh-branch generation.
 
-The simulator measures the resource cost of removing attempt-wide duplicate suppression. On the tracked 500-node, average-degree-8 model with 2% responders, hop limit 4, and fan-out 3, the U1 branch-local model used 4.26% more discovery transmissions and 15.60% more state than the identifier-based baseline. At hop limit 5 and fan-out 4, state grew by 180.88% and 91% of runs exhausted a configured budget. These are deterministic model results, not network benchmarks or a cryptographic proof.
+E1 uses half-open state deadlines. Expiry is processed before an equal-time message, while a candidate arriving exactly at a candidate-window deadline is eligible. COMMIT reserves `PENDING_READY` state; the initiator exposes a route to the data plane only after authenticating the final READY. Every state class has deterministic local cleanup.
 
-The formal paper has been restored as a full research draft with definitions, algorithms, security assumptions, propositions, protocol tables, and experimental results.
+The tracked 500-node event experiment produced 89% route-setup success on clean transport and 80% with 2% loss plus 5% exact duplication. A fresh-branch attack reduced success to 32% without ingress-peer buckets. A one-token bucket refilling every 10 ms raised success to 76%, reduced attack transmissions by 25.4%, and reduced attack branch allocations by 24.8%, but did not restore clean behavior. All four scenarios reached zero final branch, responder-offer, initiator-candidate, tentative, pending, and active state in every run. These are deterministic model results, not network benchmarks or a security proof.
 
 ## Repository map
 
@@ -22,7 +22,7 @@ The formal paper has been restored as a full research draft with definitions, al
 - `paper/rewrite/` - formal paper aligned with the active specification.
 - `docs/` - assessment, strategy, threat model, research questions, ADRs, and review logs.
 - `spec/` - active and historical protocol specifications, transcripts, and invariants.
-- `simulator/` - deterministic identifier-based, expanding-ring, and U1 branch-local models.
+- `simulator/` - deterministic discovery, U1 branch-local, and E1 event-lifecycle models.
 - `implementation/` - requirements for a future overlay prototype.
 - `reports/` - reproducible experiment outputs.
 - `tools/` - repository checks and experiment runners.
@@ -31,22 +31,21 @@ The formal paper has been restored as a full research draft with definitions, al
 
 1. Preserve the legacy design as evidence, not as the current specification.
 2. Record architecture changes as ADRs.
-3. Separate wire-image, batch-local, and traffic-flow unlinkability.
+3. Separate wire-image, batch-local, lifecycle, and traffic-flow claims.
 4. Make security claims only against an explicit adversary and named deployment profile.
-5. Define wire semantics, state machines, limits, and failure behavior before implementation.
-6. Quantify the resource cost of privacy mechanisms in deterministic models.
+5. Define wire semantics, event precedence, state machines, limits, and failure behavior before implementation.
+6. Quantify privacy and abuse costs in deterministic models.
 7. Block production implementation on concrete cryptographic suites, test vectors, and independent review.
 
 ## Quick start
 
 ```bash
 make test
-make sweep
-make policy-compare
 make unlinkability-compare
+make lifecycle-compare
 make paper
 # Reproduce all tracked reports and the paper:
 make reproduce
 ```
 
-Start with [`spec/core-v0.3.md`](spec/core-v0.3.md), [`spec/unlinkability-profile-u1.md`](spec/unlinkability-profile-u1.md), [`docs/strategy.md`](docs/strategy.md), and [`ROADMAP.md`](ROADMAP.md).
+Start with [`spec/core-v0.4.md`](spec/core-v0.4.md), [`spec/unlinkability-profile-u1.md`](spec/unlinkability-profile-u1.md), [`spec/event-lifecycle-profile-e1.md`](spec/event-lifecycle-profile-e1.md), [`docs/strategy.md`](docs/strategy.md), and [`ROADMAP.md`](ROADMAP.md).

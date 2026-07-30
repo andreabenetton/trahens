@@ -14,7 +14,7 @@ Turn the 2020 concept into a falsifiable research program and then into an inter
 
 1. **Narrow before extending.** Solve bounded local discovery before global name resolution.
 2. **Transform every cross-hop handle.** A privacy claim fails if any opaque field remains a stable equality token.
-3. **Separate privacy properties.** Wire-image unlinkability, batch-local matching resistance, and traffic-flow unlinkability are distinct.
+3. **Separate security properties.** Wire-image unlinkability, batch-local matching resistance, traffic-flow unlinkability, and lifecycle correctness are distinct.
 4. **No implicit cryptography.** Every key, transcript, nonce, proof, error rule, and domain separator must be defined.
 5. **Bound every resource.** Messages, fan-out, branch contexts, candidate responses, lifetimes, queues, and cryptographic operations require explicit limits.
 6. **Make claims executable.** Every security or scalability claim maps to a test, simulation, model, or proof obligation.
@@ -23,17 +23,19 @@ Turn the 2020 concept into a falsifiable research program and then into an inter
 
 ## Current architecture
 
-Trahens Core v0.3 is a bounded discovery and opaque bidirectional route-establishment protocol. It excludes the legacy Beacon/Authority directory, economic incentives, inter-domain policy, and a replacement layer-2 stack.
+Trahens Core v0.4 is a bounded discovery and ready-gated bidirectional route-establishment protocol. It excludes the legacy Beacon/Authority directory, economic incentives, inter-domain policy, and a replacement layer-2 stack.
 
 The U1 profile removes attempt-wide wire identifiers. Every outgoing branch replaces its token and capabilities, blinds the reply public key, rerandomizes the hidden eligibility selector, reconstructs the canonical body, pads it to a fixed record class, and passes it through a mixing boundary. This restores the structure required for the original non-adjacent bit-pattern unlinkability objective.
 
-The restoration is conditional rather than absolute. U1 assumes a secure rerandomizable-encryption primitive and reply-key construction, and its batch-local claim excludes precise timing, queue observation, and active modification. The repository therefore distinguishes a restored protocol objective from a completed cryptographic proof.
+The E1 profile adds half-open state deadlines, deterministic equal-time event precedence, candidate windows, delayed candidates across local rings, cancellation races, tentative reverse mappings, pending-ready reservation, reverse activation, loss, exact duplication, and deterministic cleanup. COMMIT does not authorize data; the initiator exposes a route only after final READY.
+
+The restoration is conditional rather than absolute. U1 assumes a secure rerandomizable-encryption primitive and reply-key construction, and its batch-local claim excludes precise timing, queue observation, and active modification. E1 establishes lifecycle behavior, not traffic-flow unlinkability.
 
 ## Workstreams
 
 ### A. Core semantics
 
-Complete the DISCOVER, CANDIDATE, COMMIT, READY, ABORT, CLOSE, expiry, and cleanup behavior under event time, loss, delay, duplication, and cancellation.
+Maintain the completed E1 baseline for DISCOVER, CANDIDATE, COMMIT, READY, ABORT, CANCEL, CLOSE, expiry, loss, delay, duplication, reordering, and cancellation. Extend only through versioned lifecycle profiles and conformance tests.
 
 ### B. Unlinkability and cryptography
 
@@ -49,7 +51,7 @@ Use deterministic models to compare discovery success, cumulative work, peak con
 
 ### E. Overlay prototype
 
-After the event model and first cryptographic profile stabilize, implement the smallest interoperable user-space overlay over an existing authenticated transport. The prototype validates encoding and state machines; it does not replace IP.
+After the first cryptographic profile stabilizes, implement the smallest interoperable user-space overlay over an existing authenticated transport. The prototype validates encoding and state machines; it does not replace IP.
 
 ### F. Traffic-scheduling profiles
 
@@ -89,21 +91,13 @@ Core v0.3 removes stable cross-hop handles and defines branch-local transformati
 
 Gate status: protocol structure accepted; cryptographic guarantee not yet approved.
 
-### Phase 3 - Event-driven route lifecycle: next
+### Phase 3 - Event-driven route lifecycle: complete as a deterministic model
 
-Deliverables:
+Core v0.4 and E1 define event ordering, candidate windows, delayed candidates, tentative reverse state, pending-ready reservation, final READY gating, cancellation races, loss, exact duplication, fresh-branch attacks, and deterministic cleanup.
 
-- event queue and explicit clocks;
-- candidate windows and late-candidate policy;
-- tentative reverse state and candidate return;
-- COMMIT/READY activation;
-- expiry, cancellation, and deterministic cleanup;
-- packet loss, delay, duplication, and reordering;
-- malicious branch generation and token-bucket admission.
+Gate status: all modeled route-state transitions and races have bounded deterministic outcomes; network implementation remains unvalidated.
 
-Exit gate: all route-state transitions and races produce deterministic, bounded outcomes.
-
-### Phase 4 - Cryptographic profile v0.1
+### Phase 4 - Cryptographic profile v0.1: next
 
 Deliverables:
 
@@ -137,13 +131,13 @@ Exit gate: directory behavior does not silently invalidate Core privacy claims.
 
 ## Immediate backlog
 
-1. Add event time and candidate-window configuration to the simulator.
-2. Model delayed candidates from earlier rings and cancellation races.
-3. Implement candidate reverse propagation and tentative relay state.
-4. Implement COMMIT and READY propagation and route activation.
-5. Add deterministic expiration and cleanup under lost final messages.
-6. Add malicious fresh-branch floods, replay, candidate spam, and token buckets.
-7. Measure peak concurrent state in addition to cumulative allocations.
-8. Add the U1 two-relay matching harness and unchanged-field negative tests.
-9. Select candidate URE and reply-KEM constructions for cryptographic review.
-10. Produce canonical message and transcript test vectors before network I/O.
+1. Select candidate URE and tweakable reply-KEM constructions for independent review.
+2. Define canonical binary encodings and transcript domain separation.
+3. Publish deterministic cryptographic test vectors and malformed-input vectors.
+4. Add active-tagging and unchanged-field negative tests.
+5. Model distributed fresh-branch attackers and adaptive per-peer admission.
+6. Measure fairness impact of bucket parameters on legitimate branch convergence.
+7. Add responder and candidate spam to the event model.
+8. Define bounded retransmission policies that do not add cross-hop identifiers.
+9. Add the U1 two-relay matching harness with event and mixing delay.
+10. Keep network I/O and the overlay prototype blocked until the cryptographic gate passes.

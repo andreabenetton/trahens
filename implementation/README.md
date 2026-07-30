@@ -1,6 +1,6 @@
 # Overlay implementation
 
-Network implementation is deferred until Core v0.3 event behavior and the first cryptographic profile are stable enough for interoperability testing.
+Network implementation is deferred until the first cryptographic profile is stable enough for interoperability testing. Core v0.4 already provides the deterministic event-lifecycle baseline.
 
 The initial implementation should:
 
