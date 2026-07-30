@@ -74,6 +74,21 @@ jobs:
           name: p1-network-results
           path: build/p1-*
 
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Pinned separately from the 1.82 build floor: rustfmt output differs
+      # between toolchain versions, so the checker must match the version the
+      # tree was formatted with rather than track the MSRV or stable.
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: rustfmt
+      - name: Check workspace formatting
+        run: cargo fmt --manifest-path implementation/rust/Cargo.toml --all --check
+      - name: Check fuzz crate formatting
+        run: cargo fmt --manifest-path implementation/rust/fuzz/Cargo.toml --all --check
+
   paper:
     runs-on: ubuntu-latest
     steps:
