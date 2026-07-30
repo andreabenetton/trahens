@@ -9,12 +9,21 @@
 - What hybrid or post-quantum construction can preserve universal rerandomization?
 - Which independent implementation should cross-check the C1 vectors?
 
-## Codec and depth hiding
+## M1/W2 codec and reassembly
 
-- Is the current single 1,024-byte W1 plaintext sufficient for the target maximum route depth?
-- Should future versions keep one envelope or introduce a small declared class set without creating a useful fingerprint?
-- Which schema language can generate memory-safe parsers in two independent implementations?
+- Which machine-readable schema can generate memory-safe M1 and W2 parsers in two independent implementations?
+- Should the 16,384-byte logical-message ceiling and 17-cell limit remain fixed or become negotiated profile parameters?
+- How should fragment retransmission work without introducing stable cross-hop identifiers or amplification?
+- Which timeout and aggregate-byte policy best resists fragment sprays without penalizing delayed links?
+- Should a conflicting duplicate invalidate the complete reassembly context or only the conflicting fragment?
 - How should version and suite negotiation avoid downgrade and fingerprinting?
+
+## Cell-count and depth hiding
+
+- Which candidate depths map to one, two, or more W2 cells under realistic descriptors and application offers?
+- Should a scheduling profile pad message cell counts to powers of two, fixed transaction classes, or a probabilistic distribution?
+- Can fragments be interleaved with CHAFF and unrelated traffic without making reassembly deadlines or fairness impractical?
+- Can the nested candidate representation be made sublinear in route depth?
 
 ## Protocol lifecycle
 
@@ -22,18 +31,19 @@
 - How should route diversity be defined without exposing topology?
 - How are routes repaired without repeating a complete discovery?
 - Are active route labels single-use, flow-scoped, or reusable until expiry?
+- Which bounded acknowledgment scheme is appropriate for multi-cell control messages?
 
 ## Resource safety
 
-- Which quotas best resist Sybil, rotating-peer, candidate-spam, and distributed fresh-branch attacks?
-- What deterministic eviction policy avoids giving an attacker control over surviving routes?
+- Which quotas best resist Sybil, rotating-peer, candidate-spam, fragment-spray, and distributed fresh-branch attacks?
+- What deterministic eviction policy avoids giving an attacker control over surviving routes or reassemblies?
 - Can rejection remain non-amplifying without becoming a capacity oracle?
-- At what hop/fan-out settings does branch-context amplification become impractical by topology family?
+- At what hop/fan-out settings does branch-context and fragment amplification become impractical by topology family?
 
 ## Traffic privacy
 
 - What minimum mixing batch and release policy gives useful matching resistance at acceptable latency?
-- Which observable classes partition the anonymity set?
+- Which observable message sizes, cell counts, and timing patterns partition the anonymity set?
 - Can batching and chaff avoid exposing queue occupancy under low load?
 - What classifier and statistical tests should define traffic-flow unlinkability evidence?
 

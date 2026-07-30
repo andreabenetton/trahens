@@ -1,23 +1,30 @@
 # Glossary
 
 - **Adjacent peer**: a node directly reachable through the selected underlay profile.
-- **Batch-local message unlinkability**: inability, under a declared passive game, to match an input record to an output record across an honest transformation and mixing boundary except for the anonymity-set baseline and negligible cryptographic advantage.
+- **Batch-local message unlinkability**: inability, under a declared passive game, to match an input logical message to an output logical message across an honest transformation and mixing boundary except for the anonymity-set baseline and negligible cryptographic advantage.
 - **Branch context**: peer-bound relay state created for one admitted ingress token; it has no network-wide identifier.
 - **Branch token**: a fresh random capability meaningful only on one adjacent link and link epoch.
 - **Candidate responder**: a node eligible to answer a bounded discovery, such as a gateway or service endpoint.
 - **Candidate token**: a link-local capability used to map a reverse candidate response; it is replaced at every relay.
+- **Cell**: the fixed-size W2 unit authenticated and encrypted on one adjacent directional link.
+- **Cell-count leakage**: information revealed by the number and timing of W2 cells carrying one logical message, even though every individual cell has the same length.
 - **Discovery**: a bounded control-plane operation that creates temporary reverse state and obtains one or more route candidates.
 - **Eligibility capsule**: an end-to-responder encrypted selector that is rerandomized at every U1 forwarding hop.
 - **Endpoint identity**: a long-term identity key, credential, or address used by an application to name or authorize a destination.
+- **Fragment**: a canonical contiguous slice of one M1 message placed in the payload area of one W2 cell.
 - **Hop label**: an opaque, short-lived forwarding capability interpreted only by the relay that created it.
 - **Initiator**: the endpoint that starts a logical discovery.
 - **Logical discovery**: initiator-local policy state containing ring schedule, cumulative budgets, candidate set, and deadline; its identifier is never transmitted.
-- **Mixing boundary**: a relay queue that groups indistinguishable record classes and releases them under a hidden permutation and declared schedule.
+- **Logical message**: one canonical variable-length M1 encoding of a protocol operation, reconstructed before protocol semantics execute.
+- **M1**: the canonical variable-length logical-message profile. M1 uses minimal varints and contains no semantic padding.
+- **Mixing boundary**: a relay queue that groups indistinguishable W2 cells and releases them under a hidden permutation and declared schedule.
 - **Privacy profile**: a deployment-specific set of cryptography, padding, batching, scheduling, cover traffic, and observation assumptions.
-- **Relay**: a node that transforms and forwards protocol records while storing bounded ephemeral state.
+- **Reassembly context**: bounded temporary state keyed by authenticated adjacent-link scope and a link-local W2 message identifier until all canonical fragments arrive or the deadline expires.
+- **Relay**: a node that transforms and forwards protocol messages while storing bounded ephemeral state.
 - **Responder**: a node that can open the eligibility capsule, authenticate a candidate offer, and participate in route commitment.
 - **Reply-key blinding**: per-hop transformation of the candidate-encryption public key using a fresh scalar, with the scalar returned in a nested encrypted capsule.
 - **Route label**: a peer- and direction-bound forwarding capability used after commitment.
-- **Traffic-flow unlinkability**: resistance to correlation through timing, volume, topology, and active manipulation; Core v0.5 does not provide this by itself.
-- **U1**: the conditional Core v0.5 profile for non-adjacent wire-image and batch-local message unlinkability.
-- **Wire-image unlinkability**: absence of a stable protocol-field equality test across non-adjacent forwarding hops.
+- **Traffic-flow unlinkability**: resistance to correlation through timing, volume, topology, cell count, and active manipulation; Core does not provide this by itself.
+- **U1**: the conditional profile for non-adjacent wire-image and batch-local message unlinkability.
+- **W2**: the fixed-size adjacent-link cell profile. Each 1,052-byte record contains a 12-byte public link header, a 1,024-byte encrypted cell body, and a 16-byte authentication tag.
+- **Wire-image unlinkability**: absence of a stable protocol-field equality test across non-adjacent forwarding hops; it does not imply that message cell count or timing is hidden.

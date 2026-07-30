@@ -6,7 +6,7 @@ Turn the protocol concept into a falsifiable research program and then into an i
 
 - what information each participant learns;
 - what an adversary can observe or modify;
-- how much bandwidth, computation, and relay state discovery consumes;
+- how much bandwidth, computation, relay state, and reassembly memory discovery consumes;
 - which privacy properties survive each compromise and observation model;
 - which components are core mechanisms and which are deployment profiles.
 
@@ -14,52 +14,59 @@ Turn the protocol concept into a falsifiable research program and then into an i
 
 1. **Narrow before extending.** Solve bounded local discovery before global name resolution.
 2. **Transform every cross-hop handle.** A privacy claim fails if any opaque field remains a stable equality token.
-3. **Separate security properties.** Wire-image unlinkability, batch-local matching resistance, traffic-flow unlinkability, and lifecycle correctness are distinct.
-4. **No implicit cryptography.** Every key, transcript, nonce, proof, error rule, and domain separator must be defined.
-5. **Bound every resource.** Messages, fan-out, branch contexts, candidate responses, lifetimes, queues, and cryptographic operations require explicit limits.
-6. **Make claims executable.** Every security or scalability claim maps to a test, simulation, model, or proof obligation.
-7. **Preserve evolution.** Version and suite negotiation must resist downgrade without becoming a fingerprinting oracle.
-8. **Keep evidence immutable.** Improvements occur in versioned specifications and the standalone formal paper.
+3. **Separate semantic encoding from observable framing.** Logical messages should be canonical and extensible; link cells should carry the privacy and scheduling properties.
+4. **Separate security properties.** Wire-image unlinkability, batch-local matching resistance, traffic-flow unlinkability, lifecycle correctness, and reassembly safety are distinct.
+5. **No implicit cryptography.** Every key, transcript, nonce, proof, error rule, and domain separator must be defined.
+6. **Bound every resource.** Messages, cells, fragments, fan-out, branch contexts, candidates, lifetimes, queues, reassemblies, and cryptographic operations require explicit limits.
+7. **Make claims executable.** Every security or scalability claim maps to a test, simulation, model, or proof obligation.
+8. **Preserve evolution.** Version and suite negotiation must resist downgrade without becoming a fingerprinting oracle.
+9. **Keep evidence immutable.** Improvements occur in versioned specifications and the standalone formal paper.
 
 ## Current architecture
 
-Trahens Core v0.6 is a bounded discovery and ready-gated bidirectional route-establishment protocol. It excludes global directory resolution, incentives, inter-domain policy, and a replacement link stack.
+Trahens Core v0.7 is a bounded discovery and ready-gated bidirectional route-establishment protocol. It excludes global directory resolution, incentives, inter-domain policy, and a replacement link stack.
 
-U1 removes attempt-wide wire identifiers. Every outgoing branch replaces its capability, additively tweaks the reply public key, rerandomizes the hidden eligibility capsule, reconstructs the canonical body, pads it to one W1 record, and obtains fresh adjacent-link encryption.
+U1 removes attempt-wide wire identifiers. Every outgoing branch replaces its capability, additively tweaks the reply public key, rerandomizes the hidden eligibility capsule, and reconstructs a fresh logical message.
 
 E1 defines half-open state deadlines, deterministic equal-time precedence, candidate windows, delayed candidates across local rings, cancellation races, tentative reverse mappings, pending-ready reservation, reverse activation, loss, duplication, and deterministic cleanup.
 
-C1 fixes the concrete classical operations. W1 fixes the adjacent-link record at 1,052 bytes and moves message type and protocol fields inside the encrypted 1,024-byte body. The event model executes C1, W1, and E1 together.
+C1 fixes the concrete classical operations. M1 defines canonical variable-length logical messages without semantic padding. W2 fragments each M1 message into fixed 1,052-byte adjacent-link cells, assigns a fresh link-local message identifier, authenticates each cell independently, and reassembles under strict byte, context, fragment, and time limits. The event model executes C1, M1, W2, and E1 together.
 
-The active-tagging experiment found a persistent ratio relation in the C1 URE consistency pair. Active-adversary unlinkability is not claimed. This negative result is now a design gate: the eligibility construction must be replaced or strengthened before an active-security claim is reconsidered.
+The active-tagging experiment found a persistent ratio relation in the C1 URE consistency pair. Active-adversary unlinkability is not claimed. This negative result remains a design gate: the eligibility construction must be replaced or strengthened before an active-security claim is reconsidered.
+
+W2 closes exact cell-length classification but does not hide the number or timing of cells. A traffic scheduler must address fragment-count and burst-shape leakage separately.
 
 ## Workstreams
 
 ### A. Core semantics
 
-Maintain the completed E1 baseline for DISCOVER, CANDIDATE, COMMIT, READY, ABORT, CANCEL, CLOSE, expiry, loss, delay, duplication, reordering, and cancellation. Extend only through versioned lifecycle profiles and conformance tests.
+Maintain the completed E1 baseline for DISCOVER, CANDIDATE, COMMIT, READY, ABORT, CANCEL, CLOSE, expiry, loss, delay, duplication, reordering, fragmentation, and cancellation. Extend only through versioned lifecycle profiles and conformance tests.
 
 ### B. Unlinkability and cryptography
 
-Review and challenge the concrete C1 URE and reply KEM. Align the construction with an explicit security definition, define depth-hiding candidate classes, expand malformed-input vectors, and run active-tagging and related-key experiments. Independent review remains a release gate.
+Review and challenge the concrete C1 URE and reply KEM. Align the construction with an explicit security definition, replace the active-tag-vulnerable eligibility mechanism, expand malformed-input vectors, and run active-tagging and related-key experiments. Independent review remains a release gate.
 
-### C. Resource and denial-of-service model
+### C. Message and cell interoperability
 
-Because U1 removes attempt-wide duplicate suppression, quantify branch-context amplification and enforce per-link, per-peer, per-node, queue, time-window, and global limits before expensive operations.
+Specify M1 and W2 independently. Require canonical varints, deterministic fragmentation, exact header validation, bounded out-of-order reassembly, duplicate conflict rules, generic failure behavior, two independent codecs, fuzzing, and cross-language vectors.
 
-### D. Simulation and measurement
+### D. Resource and denial-of-service model
 
-Use deterministic models to compare discovery success, cumulative work, peak concurrent state, delayed-candidate behavior, route setup, churn, and attacker strategies. Privacy experiments must report adversarial matching success rather than infer privacy from encryption alone.
+Because U1 removes attempt-wide duplicate suppression and W2 permits multi-cell messages, quantify branch-context amplification and fragment-spray pressure. Enforce per-link, per-peer, per-node, queue, time-window, logical-byte, cell, reassembly, and global limits before expensive operations.
 
-### E. Overlay prototype
+### E. Simulation and measurement
 
-Begin with schema, codec, and conformance work using C1 only as a research profile. After two independent codecs agree on vectors and negative inputs, implement the smallest user-space overlay over an existing authenticated transport. The prototype validates interoperability and state machines; it does not replace IP.
+Use deterministic models to compare discovery success, cumulative work, peak concurrent state, delayed-candidate behavior, route setup, fragmentation, cell loss, churn, and attacker strategies. Privacy experiments must report adversarial matching success rather than infer privacy from encryption alone.
 
-### F. Traffic-scheduling profiles
+### F. Overlay prototype
 
-Specify batching, chaff, release cadence, overflow, and constant- or quantized-rate behavior separately from Core. Measure the latency and bandwidth cost against named correlation adversaries.
+Begin with schema, codec, reassembly, and conformance work using C1 only as a research profile. After two independent M1/W2 codecs agree on vectors and negative inputs, implement the smallest user-space overlay over an existing authenticated transport. The prototype validates interoperability and state machines; it does not replace IP.
 
-### G. Directory research
+### G. Traffic-scheduling profiles
+
+Specify cell interleaving, CHAFF, release cadence, fragment-count padding, overflow, fairness, and constant- or quantized-rate behavior separately from Core. Measure latency, loss exposure, and bandwidth cost against named correlation adversaries.
+
+### H. Directory research
 
 Treat long-range registration and resolution as a separate protocol. Compare rendezvous, capability-based introduction, private-query-compatible directories, replication, poisoning resistance, and selective-denial behavior. Repeated hashing is not accepted as query privacy.
 
@@ -81,7 +88,7 @@ An iteration is incomplete when it changes prose without changing a testable art
 
 ### Phase 0 - Evidence baseline: complete
 
-The original source and PDF are immutable, current material is versioned separately, and repository checks are reproducible.
+Legacy material is immutable, current material is versioned separately, and repository checks are reproducible.
 
 ### Phase 1 - Core correctness baseline: complete
 
@@ -89,56 +96,65 @@ Core v0.2 established the first coherent message taxonomy, lifecycle, state mach
 
 ### Phase 2 - U1 structural unlinkability: complete as a research design
 
-Core v0.3 removes stable cross-hop handles and defines branch-local transformation, fixed record classes, mixing, and a conditional challenge game. The simulator records the cost of losing attempt-wide deduplication.
+Core v0.3 removed stable cross-hop handles and defined branch-local transformation, fixed observable classes, mixing, and a conditional challenge game. The simulator records the cost of losing attempt-wide deduplication.
 
-Gate status: protocol structure accepted; cryptographic guarantee not yet approved.
+Gate status: protocol structure accepted; cryptographic guarantee not approved.
 
 ### Phase 3 - Event-driven route lifecycle: complete as a deterministic model
 
 Core v0.4 and E1 define event ordering, candidate windows, delayed candidates, tentative reverse state, pending-ready reservation, final READY gating, cancellation races, loss, exact duplication, fresh-branch attacks, and deterministic cleanup.
 
-Gate status: all modeled route-state transitions and races have bounded deterministic outcomes; network implementation remains unvalidated.
+Gate status: modeled route-state transitions and races have bounded deterministic outcomes; network implementation remains unvalidated.
 
 ### Phase 4 - Cryptographic profile C1: concrete research baseline complete
 
 Delivered:
 
-- concrete GJJS-style URE and additive reply-key constructions;
+- concrete URE and additive reply-key constructions;
 - canonical `ristretto255` point/scalar rules and endpoint descriptors;
 - KDF, AEAD, signature, and transcript domain separation;
 - generic malformed-input behavior;
 - deterministic vectors and executable reference code;
 - positive and negative conformance tests.
 
-Gate status: interoperability ambiguity is closed, but the production-security gate is open. Independent proof review, active-tagging analysis, related-key analysis, side-channel review, and a post-quantum strategy remain required.
+Gate status: interoperability ambiguity is reduced, but the production-security gate is open. Independent proof review, active-tagging analysis, related-key analysis, side-channel review, and a post-quantum strategy remain required.
 
-
-### Phase 5 - W1 and integrated active-security analysis: complete as a research baseline
+### Phase 5 - Integrated wire and active-security baseline: complete
 
 Delivered:
 
-- one 1,052-byte W1 control record and exact message layouts;
-- link authentication, canonical parsing, and exact byte accounting;
+- exact adjacent-link authentication and byte accounting;
 - integrated C1 candidate, COMMIT, and READY processing in the E1 event model;
 - adjacent-link tampering tests;
 - a reproducible persistent-ratio-tag counterexample;
 - explicit closure of the active-unlinkability claim gate.
 
-Gate status: codec interoperability can proceed, but active-security approval is blocked until the eligibility construction is replaced or proven against the identified attack class.
+### Phase 6 - M1/W2 message-cell separation: complete as a research baseline
 
-### Phase 6 - Overlay interoperability prototype
+Delivered:
 
-Deliverables include a canonical codec, conformance harness, fault injection, packet captures, and a controlled testbed.
+- canonical variable-length M1 messages without semantic padding;
+- fixed-size W2 encrypted cells and deterministic fragmentation;
+- bounded out-of-order reassembly and conflict handling;
+- integrated cell-level loss, duplication, tampering, and cleanup;
+- route-depth and fragmentation measurements;
+- explicit fragment-count leakage and reliability limits.
 
-Exit gate: independent nodes establish, activate, use, and expire routes consistently under adverse transport behavior.
+Gate status: the single-cell capacity limit is removed. Independent codec agreement, fuzzing, fragment-spray analysis, scheduler design, and active-security repair remain open.
 
-### Phase 7 - Traffic privacy profiles
+### Phase 7 - Overlay interoperability prototype
 
-Deliverables include padded, mixed, and scheduled-link profiles with correlation experiments and quantified bandwidth/latency costs.
+Deliverables include two independent codecs, a conformance harness, fault injection, packet captures, and a controlled testbed.
+
+Exit gate: independent nodes establish, activate, use, and expire routes consistently under adverse transport and fragment behavior.
+
+### Phase 8 - Traffic privacy profiles
+
+Deliverables include padded, mixed, interleaved, and scheduled-cell profiles with correlation experiments and quantified bandwidth/latency costs.
 
 Exit gate: every traffic-analysis claim names its profile, adversary, topology, and measured success metric.
 
-### Phase 8 - Long-range resolution
+### Phase 9 - Long-range resolution
 
 Deliverables include a separate directory threat model, ownership and freshness rules, replication model, private-query analysis, and poisoning/enumeration tests.
 
@@ -148,11 +164,11 @@ Exit gate: directory behavior does not silently invalidate Core privacy claims.
 
 1. Replace or redesign the C1 eligibility capsule against persistent algebraic tagging and selective failure.
 2. State the exact active-security game and required proof obligations.
-3. Implement W1 independently from a reviewed schema and cross-check canonical encodings.
-4. Build a malformed-record and malformed-nested-candidate fuzzing corpus.
-5. Extend the integrated model with batching, release delay, and two-relay correlation measurements.
-6. Model distributed fresh-branch attackers, peer rotation, and candidate spam.
-7. Measure admission fairness for legitimate discovery under adaptive attack.
-8. Define bounded retransmission without cross-hop identifiers.
+3. Define M1/W2 in a machine-readable schema and implement an independent codec.
+4. Build malformed-message, malformed-cell, reassembly, and nested-candidate fuzzing corpora.
+5. Model fragment sprays, overlapping message identifiers, timeout churn, and distributed reassembly exhaustion.
+6. Define cell interleaving, fragment-count padding, release delay, and fairness profiles.
+7. Measure admission fairness for legitimate discovery under adaptive branch and fragment attacks.
+8. Define bounded retransmission without stable cross-hop identifiers.
 9. Add transport churn and route-repair experiments.
 10. Keep production claims blocked until independent cryptographic and implementation review.

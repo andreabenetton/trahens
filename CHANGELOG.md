@@ -1,5 +1,17 @@
 # Changelog
 
+## Core v0.7 - 2026-07-30
+
+- Added M1 canonical variable-length logical messages with minimal varints and no semantic padding.
+- Added W2 fixed-size 1,052-byte adjacent-link cells with a 32-byte encrypted fragment header and 992-byte fragment payload.
+- Added canonical fragmentation for messages up to 16,384 bytes and at most 17 cells.
+- Added bounded out-of-order reassembly, exact-duplicate idempotency, conflicting-duplicate invalidation, timeouts, concurrent-context limits, and aggregate reserved-byte limits.
+- Prohibited branch, candidate, tentative, pending, or active route-state allocation before complete W2 reassembly and canonical M1 decoding.
+- Integrated M1/W2 into the E1/C1 event model with cell-level loss, duplication, tampering, wire-byte, fragment, and reassembly metrics.
+- Added a route-depth comparison showing that candidate messages may span multiple cells instead of failing at a single-record capacity limit.
+- Added eight tests, bringing the deterministic suite to 61 tests.
+- Reworked the formal paper to explain the separation between logical messages and fixed encrypted cells, bounded reassembly, fragment-count leakage, and the reliability cost of multi-cell candidates.
+
 ## Core v0.6 - 2026-07-30
 
 - Added W1: one 1,052-byte adjacent-link record with a 12-byte public header, 1,024-byte encrypted body, and 16-byte tag.
