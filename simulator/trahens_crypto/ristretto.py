@@ -44,6 +44,8 @@ _lib.crypto_core_ristretto255_scalar_reduce.argtypes = [_U8P, _U8P]
 _lib.crypto_core_ristretto255_scalar_reduce.restype = None
 _lib.crypto_core_ristretto255_scalar_add.argtypes = [_U8P, _U8P, _U8P]
 _lib.crypto_core_ristretto255_scalar_add.restype = None
+_lib.crypto_core_ristretto255_scalar_mul.argtypes = [_U8P, _U8P, _U8P]
+_lib.crypto_core_ristretto255_scalar_mul.restype = None
 _lib.crypto_scalarmult_ristretto255.argtypes = [_U8P, _U8P, _U8P]
 _lib.crypto_scalarmult_ristretto255.restype = ctypes.c_int
 _lib.crypto_scalarmult_ristretto255_base.argtypes = [_U8P, _U8P]
@@ -130,6 +132,15 @@ def scalar_add(left: bytes, right: bytes) -> bytes:
     result = _out(SCALAR_BYTES)
     _lib.crypto_core_ristretto255_scalar_add(result, _arr(left), _arr(right))
     return bytes(result)
+
+
+def scalar_mul(left: bytes, right: bytes) -> bytes:
+    """Multiply two canonical scalars modulo the ristretto255 group order."""
+    require_scalar(left)
+    require_scalar(right)
+    result = _out(SCALAR_BYTES)
+    _lib.crypto_core_ristretto255_scalar_mul(result, _arr(left), _arr(right))
+    return require_scalar(bytes(result))
 
 
 def scalarmult_base(scalar: bytes) -> bytes:

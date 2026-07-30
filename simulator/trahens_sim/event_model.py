@@ -16,6 +16,7 @@ import hashlib
 import heapq
 import hmac
 import random
+import os
 from typing import Any, Iterable
 
 from trahens_codec.m2w2 import (
@@ -35,11 +36,13 @@ from trahens_codec.m2w2 import (
     encode_to_link_cells,
     open_link_cell,
 )
+os.environ.setdefault("TRAHENS_TEST_CRYPTO", "1")
+
 from trahens_crypto import ristretto as r255
 from trahens_crypto.c1 import (
     CryptoError,
     build_endpoint_keys,
-    reply_tweak_public,
+    reply_blind_public,
 )
 from trahens_crypto.eligibility import (
     EligibilityError,
@@ -51,8 +54,10 @@ from trahens_crypto.candidate import (
     commit_proof,
     open_candidate_chain,
     ready_proof,
-    seal_responder_candidate,
-    wrap_relay_candidate,
+)
+from trahens_crypto.candidate_test_support import (
+    seal_responder_candidate_deterministic,
+    wrap_relay_candidate_deterministic,
 )
 
 from .model import Graph, choose_responders
@@ -286,7 +291,7 @@ class _BranchContext:
     expires_at_ms: int
     branch_token: bytes = b""
     reply_public_key: bytes | None = None
-    reply_delta: bytes | None = None
+    reply_blinding_factor: bytes | None = None
     eligibility_capsule: bytes | None = None
     root_reply_secret: bytes | None = None
     status: str = "live"
@@ -1086,7 +1091,7 @@ class _LifecycleSimulator:
                 "hop_count": 1,
                 "hop_limit": ring.hop_limit,
                 "relay_fanout": ring.relay_fanout,
-                "reply_delta": None,
+                "reply_blinding_factor": None,
             }
             if self.config.enable_crypto:
                 try:
@@ -1228,7 +1233,7 @@ class _LifecycleSimulator:
             reply_public_key=(
                 None if decoded is None else decoded.reply_public_key
             ),
-            reply_delta=data.get("reply_delta"),
+            reply_blinding_factor=data.get("reply_blinding_factor"),
             eligibility_capsule=(
                 None if decoded is None else bytes(decoded.eligibility_capsule)
             ),
@@ -1310,9 +1315,9 @@ class _LifecycleSimulator:
                     self.crypto_failures += 1
                     continue
                 try:
-                    delta = self._scalar(b"reply-delta")
-                    child_public = reply_tweak_public(
-                        context.reply_public_key, delta
+                    blinding_factor = self._scalar(b"reply-blinding-factor")
+                    child_public = reply_blind_public(
+                        context.reply_public_key, blinding_factor
                     )
                     child_capsule = self._rerandomize_eligibility(
                         context.eligibility_capsule
@@ -1327,7 +1332,7 @@ class _LifecycleSimulator:
                             child_capsule
                         )
                         self.tagged_branches_created += 1
-                    child_data["reply_delta"] = delta
+                    child_data["reply_blinding_factor"] = blinding_factor
                     child_data["logical_message"] = self._make_discover_body(
                         hop_remaining=max(
                             context.hop_limit - (context.hop_count + 1), 0
@@ -1434,7 +1439,7 @@ class _LifecycleSimulator:
                     commit_challenge=commit_challenge,
                     responder_nonce=self._randbytes(16),
                 )
-                candidate_blob = seal_responder_candidate(
+                candidate_blob = seal_responder_candidate_deterministic(
                     context.reply_public_key,
                     responder_payload,
                     ephemeral_secret=self._scalar(b"candidate-responder-e"),
@@ -1541,13 +1546,13 @@ class _LifecycleSimulator:
                 self.crypto_failures += 1
                 return
             child_context = self.branches[path[path_index + 1]]
-            if child_context.reply_delta is None:
+            if child_context.reply_blinding_factor is None:
                 self.crypto_failures += 1
                 return
             try:
-                outgoing_blob = wrap_relay_candidate(
+                outgoing_blob = wrap_relay_candidate_deterministic(
                     context.reply_public_key,
-                    delta=child_context.reply_delta,
+                    blinding_factor=child_context.reply_blinding_factor,
                     child_candidate_token=decoded.candidate_token,
                     forward_label=self._token(),
                     child_blob=decoded.candidate_blob,
@@ -2033,7 +2038,7 @@ class _LifecycleSimulator:
                     "hop_count": 1,
                     "hop_limit": self.config.attack_hop_limit,
                     "relay_fanout": self.config.attack_fanout,
-                    "reply_delta": None,
+                    "reply_blinding_factor": None,
                 }
                 if self.config.enable_crypto:
                     try:

@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import os
 import unittest
 
+os.environ.setdefault("TRAHENS_TEST_CRYPTO", "1")
+
 from trahens_crypto import ristretto as r255
-from trahens_crypto.c1 import build_endpoint_keys, reply_tweak_public
+from trahens_crypto.c1 import build_endpoint_keys, reply_blind_public
 from trahens_crypto.candidate import (
     build_responder_payload,
     commit_proof,
     open_candidate_chain,
     ready_proof,
-    seal_responder_candidate,
-    wrap_relay_candidate,
+)
+from trahens_crypto.candidate_test_support import (
+    seal_responder_candidate_deterministic,
+    wrap_relay_candidate_deterministic,
 )
 
 
@@ -19,10 +24,10 @@ class CandidateChainTests(unittest.TestCase):
         endpoint = build_endpoint_keys(b"candidate-chain")
         x0 = r255.scalar_from_label(b"candidate-x0")
         x0_public = r255.scalarmult_base(x0)
-        d1 = r255.scalar_from_label(b"candidate-d1")
-        d2 = r255.scalar_from_label(b"candidate-d2")
-        x1_public = reply_tweak_public(x0_public, d1)
-        x2_public = reply_tweak_public(x1_public, d2)
+        b1 = r255.scalar_from_label(b"candidate-b1")
+        b2 = r255.scalar_from_label(b"candidate-b2")
+        x1_public = reply_blind_public(x0_public, b1)
+        x2_public = reply_blind_public(x1_public, b2)
         challenge = b"Q" * 32
         payload = build_responder_payload(
             endpoint,
@@ -32,22 +37,22 @@ class CandidateChainTests(unittest.TestCase):
             commit_challenge=challenge,
             responder_nonce=b"N" * 16,
         )
-        blob = seal_responder_candidate(
+        blob = seal_responder_candidate_deterministic(
             x2_public,
             payload,
             ephemeral_secret=r255.scalar_from_label(b"candidate-e2"),
         )
-        blob = wrap_relay_candidate(
+        blob = wrap_relay_candidate_deterministic(
             x1_public,
-            delta=d2,
+            blinding_factor=b2,
             child_candidate_token=b"2" * 16,
             forward_label=b"F" * 16,
             child_blob=blob,
             ephemeral_secret=r255.scalar_from_label(b"candidate-e1"),
         )
-        blob = wrap_relay_candidate(
+        blob = wrap_relay_candidate_deterministic(
             x0_public,
-            delta=d1,
+            blinding_factor=b1,
             child_candidate_token=b"1" * 16,
             forward_label=b"G" * 16,
             child_blob=blob,

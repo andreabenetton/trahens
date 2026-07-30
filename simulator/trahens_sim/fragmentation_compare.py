@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from statistics import mean
@@ -20,16 +21,18 @@ from trahens_codec.m1w2 import (
     encode_control,
     encode_discover,
 )
+os.environ.setdefault("TRAHENS_TEST_CRYPTO", "1")
+
 from trahens_crypto import ristretto as r255
 from trahens_crypto.c1 import (
     build_endpoint_keys,
-    reply_tweak_public,
+    reply_blind_public,
     ure_encrypt,
 )
-from trahens_crypto.candidate import (
-    build_responder_payload,
-    seal_responder_candidate,
-    wrap_relay_candidate,
+from trahens_crypto.candidate import build_responder_payload
+from trahens_crypto.candidate_test_support import (
+    seal_responder_candidate_deterministic,
+    wrap_relay_candidate_deterministic,
 )
 
 from .event_model import (
@@ -78,14 +81,14 @@ def _candidate_blob(relay_wrappers: int) -> bytes:
     endpoint = build_endpoint_keys(b"m1-w2-capacity-endpoint")
     root_secret = r255.scalar_from_label(b"m1-w2-capacity-root")
     publics = [r255.scalarmult_base(root_secret)]
-    deltas: list[bytes] = []
+    blinding_factors: list[bytes] = []
     for index in range(relay_wrappers):
-        delta = r255.scalar_from_label(
+        blinding_factor = r255.scalar_from_label(
             index.to_bytes(4, "big"),
-            dst=b"Trahens-M1-W2-capacity-delta-v1",
+            dst=b"Trahens-M1-W2-capacity-blinding-v1",
         )
-        deltas.append(delta)
-        publics.append(reply_tweak_public(publics[-1], delta))
+        blinding_factors.append(blinding_factor)
+        publics.append(reply_blind_public(publics[-1], blinding_factor))
     payload = build_responder_payload(
         endpoint,
         responder_id=7,
@@ -94,15 +97,15 @@ def _candidate_blob(relay_wrappers: int) -> bytes:
         commit_challenge=b"C" * 32,
         responder_nonce=b"N" * 16,
     )
-    blob = seal_responder_candidate(
+    blob = seal_responder_candidate_deterministic(
         publics[-1],
         payload,
         ephemeral_secret=r255.scalar_from_label(b"m1-w2-responder-e"),
     )
     for index in reversed(range(relay_wrappers)):
-        blob = wrap_relay_candidate(
+        blob = wrap_relay_candidate_deterministic(
             publics[index],
-            delta=deltas[index],
+            blinding_factor=blinding_factors[index],
             child_candidate_token=(index + 1).to_bytes(16, "big"),
             forward_label=(index + 101).to_bytes(16, "big"),
             child_blob=blob,

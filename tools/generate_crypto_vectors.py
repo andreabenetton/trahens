@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
+
+os.environ.setdefault("TRAHENS_TEST_CRYPTO", "1")
 
 from trahens_crypto import ristretto as r255
 from trahens_crypto.c1 import (
@@ -14,15 +17,15 @@ from trahens_crypto.c1 import (
     candidate_transcript_hash,
     eligibility_marker,
     reply_open,
-    reply_seal,
-    reply_tweak_public,
-    reply_tweak_secret,
+    reply_blind_public,
+    reply_blind_secret,
     ure_decrypt,
     ure_encrypt,
     ure_is_eligible,
     ure_rerandomize,
     verify_candidate_signature,
 )
+from trahens_crypto.test_support import reply_seal_deterministic
 
 
 def hx(value: bytes) -> str:
@@ -42,14 +45,16 @@ def build_vectors() -> dict[str, object]:
 
     x0 = r255.scalar_from_label(b"vector/reply/x0")
     X0 = r255.scalarmult_base(x0)
-    delta0 = r255.scalar_from_label(b"vector/reply/delta0")
-    x1 = reply_tweak_secret(x0, delta0)
-    X1 = reply_tweak_public(X0, delta0)
+    blinding0 = r255.scalar_from_label(b"vector/reply/blinding0")
+    x1 = reply_blind_secret(x0, blinding0)
+    X1 = reply_blind_public(X0, blinding0)
     ephemeral = r255.scalar_from_label(b"vector/reply/ephemeral")
     aad = b"candidate-token=00112233445566778899aabbccddeeff"
     info = b"CANDIDATE/layer/1"
-    plaintext = b"delta-and-child-capsule-example"
-    sealed = reply_seal(X1, plaintext, aad=aad, info=info, ephemeral_secret=ephemeral)
+    plaintext = b"blinding-factor-and-child-capsule"
+    sealed = reply_seal_deterministic(
+        X1, plaintext, aad=aad, info=info, ephemeral_secret=ephemeral
+    )
     opened = reply_open(x1, sealed, aad=aad, info=info)
 
     transcript = candidate_transcript_hash([
@@ -85,10 +90,10 @@ def build_vectors() -> dict[str, object]:
         "reply_kem": {
             "root_secret": hx(x0),
             "root_public": hx(X0),
-            "delta": hx(delta0),
-            "tweaked_secret": hx(x1),
-            "tweaked_public": hx(X1),
-            "public_from_tweaked_secret": hx(r255.scalarmult_base(x1)),
+            "blinding_factor": hx(blinding0),
+            "blinded_secret": hx(x1),
+            "blinded_public": hx(X1),
+            "public_from_blinded_secret": hx(r255.scalarmult_base(x1)),
             "ephemeral_secret": hx(ephemeral),
             "aad": hx(aad),
             "info": hx(info),

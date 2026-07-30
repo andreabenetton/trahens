@@ -20,12 +20,12 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from . import ristretto as r255
 
 C1_SUITE_ID = b"\x00\x01"
-C1_VERSION = b"\x01"
+C1_VERSION = b"\x02"
 URE_BYTES = 4 * r255.POINT_BYTES
 REPLY_ENC_BYTES = r255.POINT_BYTES
 AEAD_TAG_BYTES = 16
 
-_LABEL_PREFIX = b"Trahens-C1-v1"
+_LABEL_PREFIX = b"Trahens-C1-v2"
 _MARKER = r255.point_from_label(b"eligibility-marker")
 
 
@@ -66,12 +66,15 @@ def _hkdf_expand(prk: bytes, info: bytes, length: int) -> bytes:
 
 
 def _derive_reply_context(dh_point: bytes, encapsulated: bytes, recipient_public: bytes, info: bytes) -> tuple[bytes, bytes]:
+    """Derive one AEAD key and nonce with one RFC 5869 Extract/Expand schedule.
+
+    The 44-byte output is split into a 32-byte ChaCha20-Poly1305 key and a
+    12-byte nonce.  No HKDF output is reused as a new PRK.
+    """
     context = _encode_fields(b"reply-kem-context", [C1_SUITE_ID, encapsulated, recipient_public, info])
     prk = _hkdf_extract(b"", _encode_fields(b"reply-kem-dh", [dh_point]))
-    secret = _hkdf_expand(prk, _encode_fields(b"reply-kem-secret", [context]), 32)
-    key = _hkdf_expand(secret, _encode_fields(b"reply-aead-key", [context]), 32)
-    nonce = _hkdf_expand(secret, _encode_fields(b"reply-aead-nonce", [context]), 12)
-    return key, nonce
+    okm = _hkdf_expand(prk, _encode_fields(b"reply-kem-key-schedule", [context]), 44)
+    return okm[:32], okm[32:]
 
 
 @dataclass(frozen=True)
@@ -215,24 +218,45 @@ def ure_is_eligible(recipient_secret: bytes, ciphertext: URECiphertext) -> bool:
         return False
 
 
-def reply_tweak_public(public: bytes, delta: bytes) -> bytes:
+def reply_blind_public(public: bytes, factor: bytes) -> bytes:
+    """Apply Sphinx-style multiplicative blinding to a reply public key."""
     try:
-        r255.require_point(public, allow_identity=False)
-        delta = r255.require_scalar(delta)
-        tweaked = r255.point_add(public, r255.scalarmult_base(delta))
-        return r255.require_point(tweaked, allow_identity=False)
+        public = r255.require_point(public, allow_identity=False)
+        factor = r255.require_scalar(factor)
+        return r255.require_point(r255.scalarmult(factor, public), allow_identity=False)
     except r255.RistrettoError as exc:
-        raise CryptoError("reply public-key tweak failed") from exc
+        raise CryptoError("reply public-key blinding failed") from exc
 
 
-def reply_tweak_secret(secret: bytes, delta: bytes) -> bytes:
+def reply_blind_secret(secret: bytes, factor: bytes) -> bytes:
+    """Apply the same non-zero blinding factor to the reply secret scalar."""
     try:
         secret = r255.require_scalar(secret)
-        delta = r255.require_scalar(delta)
-        tweaked = r255.scalar_add(secret, delta)
-        return r255.require_scalar(tweaked)
+        factor = r255.require_scalar(factor)
+        return r255.scalar_mul(secret, factor)
     except r255.RistrettoError as exc:
-        raise CryptoError("reply secret-key tweak failed") from exc
+        raise CryptoError("reply secret-key blinding failed") from exc
+
+
+def _reply_seal_with_secret(
+    recipient_public: bytes,
+    plaintext: bytes,
+    *,
+    aad: bytes,
+    info: bytes,
+    ephemeral_secret: bytes,
+) -> bytes:
+    """Internal deterministic primitive used only by the test-support module."""
+    try:
+        recipient_public = r255.require_point(recipient_public, allow_identity=False)
+        ephemeral_secret = r255.require_scalar(ephemeral_secret)
+        encapsulated = r255.scalarmult_base(ephemeral_secret)
+        dh_point = r255.scalarmult(ephemeral_secret, recipient_public)
+        key, nonce = _derive_reply_context(dh_point, encapsulated, recipient_public, info)
+        ciphertext = ChaCha20Poly1305(key).encrypt(nonce, plaintext, aad)
+        return encapsulated + ciphertext
+    except (r255.RistrettoError, ValueError) as exc:
+        raise CryptoError("reply encryption failed") from exc
 
 
 def reply_seal(
@@ -241,22 +265,23 @@ def reply_seal(
     *,
     aad: bytes,
     info: bytes,
-    ephemeral_secret: bytes | None = None,
 ) -> bytes:
-    try:
-        recipient_public = r255.require_point(recipient_public, allow_identity=False)
-        ephemeral_secret = (
-            r255.scalar_from_label(os.urandom(32), dst=b"Trahens-C1-reply-ephemeral")
-            if ephemeral_secret is None
-            else r255.require_scalar(ephemeral_secret)
-        )
-        encapsulated = r255.scalarmult_base(ephemeral_secret)
-        dh_point = r255.scalarmult(ephemeral_secret, recipient_public)
-        key, nonce = _derive_reply_context(dh_point, encapsulated, recipient_public, info)
-        ciphertext = ChaCha20Poly1305(key).encrypt(nonce, plaintext, aad)
-        return encapsulated + ciphertext
-    except (r255.RistrettoError, ValueError) as exc:
-        raise CryptoError("reply encryption failed") from exc
+    """Seal one reply layer with fresh operating-system entropy.
+
+    The production-facing API intentionally has no deterministic-ephemeral
+    argument.  Deterministic vectors use the separately gated test-support
+    helper.
+    """
+    ephemeral_secret = r255.scalar_from_label(
+        os.urandom(32), dst=b"Trahens-C1-v2-reply-ephemeral"
+    )
+    return _reply_seal_with_secret(
+        recipient_public,
+        plaintext,
+        aad=aad,
+        info=info,
+        ephemeral_secret=ephemeral_secret,
+    )
 
 
 def reply_open(

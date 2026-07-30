@@ -1,0 +1,458 @@
+{
+  "all_nontrivial_chains_fail": true,
+  "chains": [
+    {
+      "equations_tested": 4,
+      "failures": 1,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 0,
+        "u": 4,
+        "v": 4
+      },
+      "homomorphism_holds": false,
+      "p": 5,
+      "q": 2,
+      "qr_p_size": 2,
+      "r": 11
+    },
+    {
+      "equations_tested": 25,
+      "failures": 15,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 3,
+        "v": 4
+      },
+      "homomorphism_holds": false,
+      "p": 11,
+      "q": 5,
+      "qr_p_size": 5,
+      "r": 23
+    },
+    {
+      "equations_tested": 121,
+      "failures": 82,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 12
+      },
+      "homomorphism_holds": false,
+      "p": 23,
+      "q": 11,
+      "qr_p_size": 11,
+      "r": 47
+    },
+    {
+      "equations_tested": 1681,
+      "failures": 1543,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 3,
+        "v": 28
+      },
+      "homomorphism_holds": false,
+      "p": 83,
+      "q": 41,
+      "qr_p_size": 41,
+      "r": 167
+    },
+    {
+      "equations_tested": 7921,
+      "failures": 7568,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 3,
+        "v": 60
+      },
+      "homomorphism_holds": false,
+      "p": 179,
+      "q": 89,
+      "qr_p_size": 89,
+      "r": 359
+    },
+    {
+      "equations_tested": 32041,
+      "failures": 30877,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 180
+      },
+      "homomorphism_holds": false,
+      "p": 359,
+      "q": 179,
+      "qr_p_size": 179,
+      "r": 719
+    },
+    {
+      "equations_tested": 128881,
+      "failures": 126206,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 360
+      },
+      "homomorphism_holds": false,
+      "p": 719,
+      "q": 359,
+      "qr_p_size": 359,
+      "r": 1439
+    },
+    {
+      "equations_tested": 259081,
+      "failures": 256506,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 3,
+        "v": 340
+      },
+      "homomorphism_holds": false,
+      "p": 1019,
+      "q": 509,
+      "qr_p_size": 509,
+      "r": 2039
+    },
+    {
+      "equations_tested": 516961,
+      "failures": 511728,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 720
+      },
+      "homomorphism_holds": false,
+      "p": 1439,
+      "q": 719,
+      "qr_p_size": 719,
+      "r": 2879
+    },
+    {
+      "equations_tested": 1038361,
+      "failures": 1030831,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 1020
+      },
+      "homomorphism_holds": false,
+      "p": 2039,
+      "q": 1019,
+      "qr_p_size": 1019,
+      "r": 4079
+    },
+    {
+      "equations_tested": 1062961,
+      "failures": 1055315,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 1032
+      },
+      "homomorphism_holds": false,
+      "p": 2063,
+      "q": 1031,
+      "qr_p_size": 1031,
+      "r": 4127
+    },
+    {
+      "equations_tested": 1510441,
+      "failures": 1503729,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 3,
+        "v": 820
+      },
+      "homomorphism_holds": false,
+      "p": 2459,
+      "q": 1229,
+      "qr_p_size": 1229,
+      "r": 4919
+    },
+    {
+      "equations_tested": 1985281,
+      "failures": 1977447,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 3,
+        "v": 940
+      },
+      "homomorphism_holds": false,
+      "p": 2819,
+      "q": 1409,
+      "qr_p_size": 1409,
+      "r": 5639
+    },
+    {
+      "equations_tested": 2105401,
+      "failures": 2093891,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 1452
+      },
+      "homomorphism_holds": false,
+      "p": 2903,
+      "q": 1451,
+      "qr_p_size": 1451,
+      "r": 5807
+    },
+    {
+      "equations_tested": 2193361,
+      "failures": 2185744,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 3,
+        "v": 988
+      },
+      "homomorphism_holds": false,
+      "p": 2963,
+      "q": 1481,
+      "qr_p_size": 1481,
+      "r": 5927
+    },
+    {
+      "equations_tested": 2283121,
+      "failures": 2272436,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 1512
+      },
+      "homomorphism_holds": false,
+      "p": 3023,
+      "q": 1511,
+      "qr_p_size": 1511,
+      "r": 6047
+    },
+    {
+      "equations_tested": 3279721,
+      "failures": 3267454,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 1812
+      },
+      "homomorphism_holds": false,
+      "p": 3623,
+      "q": 1811,
+      "qr_p_size": 1811,
+      "r": 7247
+    },
+    {
+      "equations_tested": 3568321,
+      "failures": 3556828,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 3,
+        "v": 1260
+      },
+      "homomorphism_holds": false,
+      "p": 3779,
+      "q": 1889,
+      "qr_p_size": 1889,
+      "r": 7559
+    },
+    {
+      "equations_tested": 3613801,
+      "failures": 3603762,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 3,
+        "v": 1268
+      },
+      "homomorphism_holds": false,
+      "p": 3803,
+      "q": 1901,
+      "qr_p_size": 1901,
+      "r": 7607
+    },
+    {
+      "equations_tested": 3728761,
+      "failures": 3713970,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 1932
+      },
+      "homomorphism_holds": false,
+      "p": 3863,
+      "q": 1931,
+      "qr_p_size": 1931,
+      "r": 7727
+    },
+    {
+      "equations_tested": 6046681,
+      "failures": 6024712,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 2460
+      },
+      "homomorphism_holds": false,
+      "p": 4919,
+      "q": 2459,
+      "qr_p_size": 2459,
+      "r": 9839
+    },
+    {
+      "equations_tested": 7284601,
+      "failures": 7262624,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 2700
+      },
+      "homomorphism_holds": false,
+      "p": 5399,
+      "q": 2699,
+      "qr_p_size": 2699,
+      "r": 10799
+    },
+    {
+      "equations_tested": 7946761,
+      "failures": 7922916,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 2820
+      },
+      "homomorphism_holds": false,
+      "p": 5639,
+      "q": 2819,
+      "qr_p_size": 2819,
+      "r": 11279
+    },
+    {
+      "equations_tested": 11895601,
+      "failures": 11874508,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 3,
+        "v": 2300
+      },
+      "homomorphism_holds": false,
+      "p": 6899,
+      "q": 3449,
+      "qr_p_size": 3449,
+      "r": 13799
+    },
+    {
+      "equations_tested": 12187081,
+      "failures": 12162915,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 3492
+      },
+      "homomorphism_holds": false,
+      "p": 6983,
+      "q": 3491,
+      "qr_p_size": 3491,
+      "r": 13967
+    },
+    {
+      "equations_tested": 12524521,
+      "failures": 12496033,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 3540
+      },
+      "homomorphism_holds": false,
+      "p": 7079,
+      "q": 3539,
+      "qr_p_size": 3539,
+      "r": 14159
+    },
+    {
+      "equations_tested": 14600041,
+      "failures": 14577493,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 3,
+        "v": 2548
+      },
+      "homomorphism_holds": false,
+      "p": 7643,
+      "q": 3821,
+      "qr_p_size": 3821,
+      "r": 15287
+    },
+    {
+      "equations_tested": 15295921,
+      "failures": 15266292,
+      "first_counterexample": {
+        "left_reduction": 1,
+        "product_mod_p": 1,
+        "right_product": 2,
+        "u": 2,
+        "v": 3912
+      },
+      "homomorphism_holds": false,
+      "p": 7823,
+      "q": 3911,
+      "qr_p_size": 3911,
+      "r": 15647
+    }
+  ],
+  "chains_found": 28,
+  "interpretation": "mu(u)=u mod q under ordinary QR*_p multiplication",
+  "scope": "Arithmetic check of the literal finite-field interpretation only; not a result about the generic Re-T-SPHF framework or a corrected instantiation.",
+  "search_limit": 5000,
+  "tool": "c2_k2_exhaustive_check"
+}

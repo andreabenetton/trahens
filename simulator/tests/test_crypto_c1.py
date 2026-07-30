@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+os.environ.setdefault("TRAHENS_TEST_CRYPTO", "1")
 
 from trahens_crypto import ristretto as r255
 from trahens_crypto.c1 import (
@@ -14,14 +17,15 @@ from trahens_crypto.c1 import (
     candidate_transcript_hash,
     reply_open,
     reply_seal,
-    reply_tweak_public,
-    reply_tweak_secret,
+    reply_blind_public,
+    reply_blind_secret,
     ure_decrypt,
     ure_encrypt,
     ure_is_eligible,
     ure_rerandomize,
     verify_candidate_signature,
 )
+from trahens_crypto.test_support import reply_seal_deterministic
 
 
 class C1CryptoTests(unittest.TestCase):
@@ -66,14 +70,14 @@ class C1CryptoTests(unittest.TestCase):
         with self.assertRaises(CryptoError):
             URECiphertext.decode(ciphertext.encode()[:-1])
 
-    def test_reply_tweak_is_consistent_and_seal_opens(self) -> None:
+    def test_reply_blinding_is_consistent_and_seal_opens(self) -> None:
         x0 = r255.scalar_from_label(b"x0")
         X0 = r255.scalarmult_base(x0)
-        delta = r255.scalar_from_label(b"delta")
-        x1 = reply_tweak_secret(x0, delta)
-        X1 = reply_tweak_public(X0, delta)
+        factor = r255.scalar_from_label(b"factor")
+        x1 = reply_blind_secret(x0, factor)
+        X1 = reply_blind_public(X0, factor)
         self.assertEqual(r255.scalarmult_base(x1), X1)
-        sealed = reply_seal(
+        sealed = reply_seal_deterministic(
             X1,
             b"payload",
             aad=b"aad",
@@ -85,7 +89,7 @@ class C1CryptoTests(unittest.TestCase):
     def test_reply_tamper_and_context_mismatch_fail_uniformly(self) -> None:
         secret = r255.scalar_from_label(b"reply-secret")
         public = r255.scalarmult_base(secret)
-        sealed = reply_seal(
+        sealed = reply_seal_deterministic(
             public,
             b"payload",
             aad=b"aad",
@@ -100,6 +104,18 @@ class C1CryptoTests(unittest.TestCase):
         ]:
             with self.assertRaisesRegex(CryptoError, "reply decryption failed"):
                 reply_open(secret, candidate, aad=aad, info=info)
+
+    def test_production_reply_api_rejects_caller_chosen_ephemeral(self) -> None:
+        secret = r255.scalar_from_label(b"api-secret")
+        public = r255.scalarmult_base(secret)
+        with self.assertRaises(TypeError):
+            reply_seal(
+                public,
+                b"payload",
+                aad=b"aad",
+                info=b"info",
+                ephemeral_secret=r255.scalar_from_label(b"forbidden"),  # type: ignore[call-arg]
+            )
 
     def test_candidate_signature_binds_transcript(self) -> None:
         endpoint = build_endpoint_keys(b"signer")

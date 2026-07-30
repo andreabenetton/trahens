@@ -1,9 +1,9 @@
 """C1 candidate-layer construction for the event-driven simulator.
 
 A responder payload is sealed to the final reply public key. Each reverse relay
-wraps the child blob under its incoming reply public key and includes the scalar
-tweak needed by the initiator to derive the next reply secret. The result is a
-nested chain that only the initiator can peel.
+wraps the child blob under its incoming reply public key and includes the
+non-zero multiplicative blinding factor needed by the initiator to derive the
+next reply secret. The result is a nested chain that only the initiator can peel.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from .c1 import (
     candidate_transcript_hash,
     reply_open,
     reply_seal,
-    reply_tweak_secret,
+    reply_blind_secret,
     verify_candidate_signature,
 )
 
@@ -50,7 +50,7 @@ class CandidateOpenResult:
 
 
 def _endpoint_address(descriptor: bytes) -> bytes:
-    prefix = b"Trahens-C1-v1"
+    prefix = b"Trahens-C1-v2"
     label = b"endpoint-address"
     encoded = prefix + len(label).to_bytes(2, "big") + label
     encoded += len(descriptor).to_bytes(2, "big") + descriptor
@@ -190,54 +190,75 @@ def parse_responder_payload(
     )
 
 
-def seal_responder_candidate(
+def _seal_responder_candidate_with(
+    sealer,
     reply_public: bytes,
     payload: bytes,
-    *,
-    ephemeral_secret: bytes | None = None,
 ) -> bytes:
     if len(payload) != RESPONDER_PAYLOAD_BYTES:
         raise CryptoError("invalid responder payload")
-    return reply_seal(
+    return sealer(
         reply_public,
         payload,
         aad=CANDIDATE_AAD,
         info=CANDIDATE_INFO,
-        ephemeral_secret=ephemeral_secret,
     )
 
 
-def wrap_relay_candidate(
+def seal_responder_candidate(reply_public: bytes, payload: bytes) -> bytes:
+    """Seal a responder layer using the production-facing random sealer."""
+    return _seal_responder_candidate_with(reply_seal, reply_public, payload)
+
+
+def _wrap_relay_candidate_with(
+    sealer,
     parent_reply_public: bytes,
     *,
-    delta: bytes,
+    blinding_factor: bytes,
     child_candidate_token: bytes,
     forward_label: bytes,
     child_blob: bytes,
-    ephemeral_secret: bytes | None = None,
 ) -> bytes:
     try:
-        delta = r255.require_scalar(delta)
+        blinding_factor = r255.require_scalar(blinding_factor)
     except r255.RistrettoError as exc:
-        raise CryptoError("invalid candidate relay delta") from exc
+        raise CryptoError("invalid candidate reply blinding factor") from exc
     if len(child_candidate_token) != 16 or len(forward_label) != 16:
         raise CryptoError("invalid candidate local capability")
     if not 1 <= len(child_blob) <= 0xFFFF:
         raise CryptoError("invalid child candidate blob")
     plaintext = (
         bytes([RELAY_LAYER])
-        + delta
+        + blinding_factor
         + child_candidate_token
         + forward_label
         + len(child_blob).to_bytes(2, "big")
         + child_blob
     )
-    return reply_seal(
+    return sealer(
         parent_reply_public,
         plaintext,
         aad=CANDIDATE_AAD,
         info=CANDIDATE_INFO,
-        ephemeral_secret=ephemeral_secret,
+    )
+
+
+def wrap_relay_candidate(
+    parent_reply_public: bytes,
+    *,
+    blinding_factor: bytes,
+    child_candidate_token: bytes,
+    forward_label: bytes,
+    child_blob: bytes,
+) -> bytes:
+    """Wrap one relay layer using a multiplicative reply-key factor."""
+    return _wrap_relay_candidate_with(
+        reply_seal,
+        parent_reply_public,
+        blinding_factor=blinding_factor,
+        child_candidate_token=child_candidate_token,
+        forward_label=forward_label,
+        child_blob=child_blob,
     )
 
 
@@ -274,12 +295,12 @@ def open_candidate_chain(
             return CandidateOpenResult(payload, secret, layer_count)
         if plaintext[0] != RELAY_LAYER or len(plaintext) < 67:
             raise CryptoError("candidate verification failed")
-        delta = plaintext[1:33]
+        blinding_factor = plaintext[1:33]
         child_length = int.from_bytes(plaintext[65:67], "big")
         if child_length < 1 or len(plaintext) != 67 + child_length:
             raise CryptoError("candidate verification failed")
         current = plaintext[67:]
-        secret = reply_tweak_secret(secret, delta)
+        secret = reply_blind_secret(secret, blinding_factor)
     raise CryptoError("candidate verification failed")
 
 
