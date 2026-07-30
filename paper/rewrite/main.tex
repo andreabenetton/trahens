@@ -50,7 +50,7 @@
   citecolor=accent,
   pdftitle={Trahens: A Privacy-Enabled Route Discovery Protocol},
   pdfauthor={Andrea Benetton},
-  pdfsubject={Trahens Core v0.5 and C1 cryptographic profile}
+  pdfsubject={Current Trahens protocol draft with U1, E1, C1, and W1 profiles}
 }
 
 \setstretch{1.045}
@@ -69,8 +69,8 @@
 
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[L]{\small\color{accent}Trah\={e}ns Core v0.5}
-\fancyhead[R]{\small\color{accenttwo}Research draft -- 30 July 2026}
+\fancyhead[L]{\small\color{accent}Trah\={e}ns Protocol}
+\fancyhead[R]{\small\color{accenttwo}Protocol draft -- 30 July 2026}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.35pt}
 \renewcommand{\headrule}{\hbox to\headwidth{\color{rulegray}\leaders\hrule height \headrulewidth\hfill}}
@@ -95,6 +95,7 @@
 \newcommand{\Uone}{\ensuremath{\mathsf{U1}}}
 \newcommand{\Eone}{\ensuremath{\mathsf{E1}}}
 \newcommand{\Cone}{\ensuremath{\mathsf{C1}}}
+\newcommand{\Wone}{\ensuremath{\mathsf{W1}}}
 \newcommand{\bytes}[1]{\langle #1\rangle}
 \newcommand{\code}[1]{\texttt{#1}}
 
@@ -121,24 +122,23 @@
 
 \title{\vspace{-1.2em}\ProtoName\\[0.25em]\Large A Privacy-Enabled Route Discovery Protocol}
 \author{Andrea Benetton\\BlueTeam O\"U, Tallinn, Estonia\\\texttt{andrea.benetton@blueteam.ee}}
-\date{Core v0.5 research draft -- 30 July 2026}
+\date{Protocol draft -- 30 July 2026}
 
 \begin{document}
 \maketitle
 \vspace{-1.0em}
 
 \begin{statusbox}
-\textbf{Document status.} This paper specifies a research protocol and an executable classical cryptographic profile. It is not an Internet Standard, has not received independent cryptographic review, and is not suitable for production deployment. The legacy 2020 manuscript is preserved separately; this document is the active formal rewrite.
+\textbf{Document status.} This document specifies the current research draft of the \ProtoName{} protocol. It defines bounded route discovery, deterministic route-state activation, a concrete classical cryptographic profile, and one fixed-size adjacent-link record. The protocol has not received independent cryptographic review and is not suitable for production deployment. In particular, the active-tagging result in \Cref{sec:active-tagging} blocks any active-adversary unlinkability claim.
 \end{statusbox}
 
 \begin{abstract}
-Route discovery can disclose endpoint relationships, local topology, and stable correlation handles before an anonymous data path is established. The original \ProtoName{} manuscript proposed a network-layer control plane based on local flooding, ephemeral routing labels, reverse acknowledgements, distributed registration, and traffic-analysis countermeasures. This revision preserves the privacy objective while reducing the proposal to a bounded, testable, and explicitly scoped core.
+Route discovery can disclose endpoint relationships, local topology, and stable correlation handles before an anonymous data path is established. \ProtoName{} is a privacy-enabled control-plane protocol that discovers an eligible responder within a bounded graph radius and installs hop-local bidirectional forwarding state without transmitting a complete route or a network-wide discovery identifier.
 
-Core v0.5 combines three profiles. The \Uone{} privacy profile removes network-wide discovery identifiers and requires every relay to replace branch capabilities, tweak the branch reply key, universally rerandomize the destination-eligibility capsule, reconstruct the message, and transmit a fresh adjacent-link ciphertext through a declared mixing boundary. The \Eone{} lifecycle profile defines half-open deadlines, equal-time event precedence, candidate windows, delayed candidates, cancellation races, tentative state, forward \textsc{Commit}, reverse \textsc{Ready}, and deterministic cleanup. The new \Cone{} cryptographic profile makes the previously abstract transformations executable: it uses the RFC~9496 \code{ristretto255} group, a Golle--Jakobsson--Juels--Syverson universal re-encryption construction in additive notation, an additively tweakable reply KEM, HKDF-SHA-256, ChaCha20-Poly1305, and Ed25519.
+The protocol binds four profiles. \Uone{} requires every forwarded branch to replace its adjacent capability, additively tweak its reply key, universally rerandomize its destination-eligibility capsule, reconstruct the message, and cross a declared mixing boundary. \Eone{} defines half-open deadlines, equal-time event precedence, candidate windows, delayed responses, cancellation races, tentative state, forward \textsc{Commit}, reverse \textsc{Ready}, and deterministic cleanup. \Cone{} instantiates the cryptographic operations with the RFC~9496 \code{ristretto255} group, a Golle--Jakobsson--Juels--Syverson universal re-encryption construction, an additively tweakable reply KEM, HKDF-SHA-256, ChaCha20-Poly1305, and Ed25519. \Wone{} encodes every control message in one 1,052-byte adjacent-link record comprising a 12-byte public link header, a 1,024-byte encrypted body, and a 16-byte authentication tag.
 
-The paper states separate claims for wire-image unlinkability, batch-local message unlinkability, lifecycle correctness, and traffic-flow unlinkability. Only the first and the bounded lifecycle mechanism are structurally specified; batch-local unlinkability remains conditional on the chosen cryptographic assumptions and an honest mixing boundary, while timing and active-tagging resistance remain open. Deterministic simulations on 500-node graphs quantify discovery amplification and event-lifecycle behavior. A reference implementation and reproducible C1 vectors verify URE correctness, reply-key tweak consistency, transcript binding, and generic failure behavior. These results establish a precise research baseline, not a security proof or production benchmark.
+The paper separates record-length equality, passive wire-image unlinkability, conditional batch-local message unlinkability, lifecycle correctness, active-adversary unlinkability, and traffic-flow unlinkability. The integrated reference model executes the wire codec and cryptography inside the event lifecycle. It accepts every clean five-node route in the tracked experiment, rejects adjacent-link tampering, and reaches zero residual state. The analysis also identifies a persistent algebraic ratio tag in the current eligibility capsule: a compromised relay can create a relation that survives honest rerandomization and can be recognized by a colluding downstream relay. Active-adversary unlinkability is therefore not claimed. The results constitute a precise, falsifiable research baseline rather than a security proof or production benchmark.
 \end{abstract}
-
 \linenumbers
 \modulolinenumbers[5]
 
@@ -147,35 +147,36 @@ The paper states separate claims for wire-image unlinkability, batch-local messa
 
 \subsection{Motivation}
 
-Anonymous communication is commonly described in terms of a protected data path. Before that path exists, however, a control plane must locate a destination or service, discover one or more usable routes, and install forwarding state. That preparatory process may disclose exactly the information that the eventual anonymity mechanism is intended to hide: which endpoint is sought, which relays are topologically close, which messages belong to the same attempt, and which reverse response corresponds to which forward exploration.
+Anonymous communication is commonly described in terms of a protected data path. Before that path exists, however, a control plane must locate a destination or service, discover one or more usable routes, and install forwarding state. That preparatory process may disclose the same information that the eventual anonymity mechanism is intended to hide: which endpoint is sought, which relays are topologically close, which messages belong to one exploration, and which reverse response corresponds to which forward branch.
 
-This distinction is especially important in decentralized or path-aware networks. A conventional routing protocol may distribute a global or regional topology view. A source-routing system may return a complete path to the sender. A directory may provide a stable lookup handle. Each approach can be operationally sound while creating a durable correlation surface. \ProtoName{} instead investigates whether route discovery can be made \emph{privacy-enabled by construction}: relays should maintain only local capabilities, the sender should not receive a globally meaningful topology map, and non-adjacent protocol observations should not contain a stable equality handle.
+The problem is especially visible in decentralized and path-aware networks. A conventional routing protocol may distribute a global or regional topology view. A source-routing system may return a complete path to the sender. A directory may provide a stable lookup handle. Each design can be operationally sound while creating a durable correlation surface. \ProtoName{} investigates a different structure: relays maintain only adjacent capabilities, the initiator receives candidates rather than a topology map, and every branch representation is independently transformed at each forwarding hop.
 
-The 2020 manuscript introduced this direction but left essential parts incomplete~\cite{legacy}. The cryptographic algorithms were abstract, the global directory phases were unfinished, the threat model mixed node compromise with unobservable links, and no resource bounds constrained flooding. Subsequent repository iterations separated the protocol core from the deferred directory, replaced global attempt identifiers with branch-local state, introduced bounded expanding rings, and specified an event-driven route activation lifecycle. Core v0.5 now addresses the next blocking issue: the exact cryptographic meaning of ``rerandomize'', ``blind'', ``seal'', and ``authenticate''.
+Privacy cannot be inferred from encryption alone. A stable token inside an encrypted link becomes visible to a compromised relay; a unique record length reveals message class; a deterministic retry handle links expanding rings; a route may be activated before end-to-end confirmation; and a malleable ciphertext may permit active tagging even though every honest rerandomization changes its bytes. The protocol therefore treats privacy, lifecycle correctness, resource safety, wire encoding, and active-adversary behavior as separate objects of specification and measurement.
 
 \subsection{Contributions}
 
-The current revision makes the following contributions:
+This paper makes the following contributions:
 
 \begin{enumerate}
-  \item It defines a precise system model and separates four claims that must not be conflated: wire-image unlinkability, batch-local message unlinkability, lifecycle correctness, and traffic-flow unlinkability.
-  \item It retains the \Uone{} branch-local design: no logical discovery, ring, attempt, candidate, or route identifier is forwarded unchanged across hops.
-  \item It defines the \Eone{} state lifecycle, including half-open deadlines, deterministic equal-time precedence, delayed candidates, cancellation races, \textsc{Commit}/\textsc{Ready}, and local cleanup after loss.
-  \item It introduces the concrete \Cone{} research suite with canonical encodings and three distinct key roles: eligibility, responder authentication, and per-branch replies.
-  \item It adapts universal re-encryption to the prime-order \code{ristretto255} group and gives exact encryption, rerandomization, and eligibility equations.
-  \item It defines an additively tweakable reply KEM and shows how the initiator derives each nested reverse-layer secret from relay-provided encrypted tweaks.
-  \item It publishes deterministic vectors and an executable reference implementation, increasing the repository conformance suite from 38 to 44 tests.
+  \item It defines a bounded route-discovery control plane in which logical discoveries and expanding-ring policy remain local to the initiator, while relays see only peer-bound branch contexts.
+  \item It separates six properties that must not be conflated: record-length equality, passive wire-image unlinkability, conditional batch-local message unlinkability, lifecycle correctness, active-adversary unlinkability, and traffic-flow unlinkability.
+  \item It specifies the \Uone{} branch-local transformation: branch, candidate, cancellation, and route capabilities are replaced at every hop; reply keys are tweaked; eligibility capsules are rerandomized; and outgoing bodies are reconstructed.
+  \item It specifies the \Eone{} event lifecycle, including half-open deadlines, deterministic equal-time precedence, delayed candidates, cancellation races, tentative mappings, \textsc{Commit}, \textsc{Ready}, and cleanup after loss.
+  \item It defines the concrete \Cone{} research suite with distinct eligibility, responder-signing, branch-reply, and adjacent-link key roles, canonical encodings, transcript domains, and generic failure behavior.
+  \item It defines the \Wone{} fixed-size wire record and exact layouts for \textsc{Discover}, \textsc{Candidate}, route-control, and chaff messages.
+  \item It integrates \Uone{}, \Eone{}, \Cone{}, and \Wone{} in one deterministic event model that performs actual cryptographic and codec operations before state activation.
+  \item It gives an executable active-tagging counterexample, states the resulting claim boundary, and identifies replacement of the eligibility construction as a mandatory security gate.
 \end{enumerate}
 
 \subsection{Scope and reading guide}
 
 \begin{claimbox}[Scope of this document]
-Core v0.5 discovers a responder within a bounded graph radius and establishes hop-local bidirectional forwarding state to one selected responder. It does not define global name resolution, inter-domain policy, data-plane congestion control, economic incentives, or a replacement for IP. The long-range Beacon and Authority design from the legacy manuscript is deliberately deferred.
+\ProtoName{} discovers one or more eligible responders within a bounded graph radius and establishes hop-local bidirectional forwarding state to one selected responder. It does not define global name resolution, inter-domain routing policy, application-data congestion control, economic incentives, a new physical or link layer, or a replacement for IP.
 \end{claimbox}
 
-\Cref{sec:model} states the model and claims. \Cref{sec:notation} fixes the notation. \Cref{sec:overview} explains the protocol before any cryptographic detail. \Cref{sec:c1} defines C1. \Cref{sec:forward,sec:reverse,sec:lifecycle} specify the operational phases. \Cref{sec:unlinkability,sec:resources} analyze privacy structure and abuse bounds. \Cref{sec:evaluation} reports deterministic evidence. The appendices summarize normative requirements and identify the tracked test vectors.
+\Cref{sec:background} relates the design to anonymity and cryptographic mechanisms. \Cref{sec:model} states the network and adversary models. \Cref{sec:notation} fixes the notation and key roles. \Cref{sec:overview} explains the complete protocol before formal cryptography. \Cref{sec:c1,sec:forward,sec:reverse,sec:lifecycle,sec:messages} define the cryptographic, operational, and wire mechanisms. \Cref{sec:unlinkability,sec:resources} state the privacy and abuse boundaries. \Cref{sec:evaluation} reports deterministic evidence. The appendices summarize normative requirements and conformance values.
 
-\section{Background and design lineage}
+\section{Related work and cryptographic context}
 \label{sec:background}
 
 \subsection{Network-layer anonymity and mix packets}
@@ -186,7 +187,7 @@ These systems begin with a route or layered packet structure already selected by
 
 \subsection{Universal re-encryption}
 
-Ordinary rerandomizable ElGamal permits ciphertext rerandomization when the public key is known. Universal re-encryption (URE) additionally permits a mixer to transform a ciphertext without knowing which public key protects it~\cite{gjjs}. That property is useful for \ProtoName{} because including the destination public key beside each discovery capsule would itself create a stable selector. The original Golle--Jakobsson--Juels--Syverson construction doubles the ElGamal representation: one pair carries the message and a second pair carries an encryption of the identity, enabling public-key-free rerandomization.
+Ordinary rerandomizable ElGamal permits ciphertext rerandomization when the public key is known. Universal re-encryption (URE) additionally permits a mixer to transform a ciphertext without knowing which public key protects it~\cite{gjjs}. That property is useful for \ProtoName{} because including the destination public key beside each discovery capsule would itself create a stable selector. The Golle--Jakobsson--Juels--Syverson construction doubles the ElGamal representation: one pair carries the message and a second pair carries an encryption of the identity, enabling public-key-free rerandomization.
 
 Security terminology for URE has evolved. Recent work emphasizes encryption anonymity, minimal security notions, and composable application behavior rather than rerandomization correctness alone~\cite{ure2023}. C1 therefore treats the 2004 construction as a concrete research candidate and states its claim boundary. It does not infer active security merely because the equations are correct.
 
@@ -211,7 +212,7 @@ where a node $n\in V$ may act as initiator, relay, responder, or any combination
 \end{equation}
 The initiator is $n_0$ and the responder is $n_d$. The protocol never transmits $\rho$ as one object.
 
-The underlay supplies confidentiality and integrity between adjacent peers, message boundaries, a maximum record size, a link epoch, and an exact replay domain. Under a privacy profile it additionally supplies fixed record classes, fresh link nonces, batching, permutation, and a declared release schedule. These mechanisms protect an edge; they do not make a compromised relay honest.
+The adjacent-link transport supplies peer authentication, confidentiality and integrity, exact record boundaries, a directional link epoch, a monotonically managed sequence, and notification of connection failure. The W1 profile fixes the record length and authenticated body. A separate scheduling profile defines batching, permutation, release delay, and cover traffic. Adjacent-link protection prevents an external observer from reading or modifying an honest-to-honest edge; it does not make a compromised relay honest or constrain the content of a new record emitted by that relay.
 
 \subsection{Adversary}
 
@@ -230,34 +231,44 @@ The adversary cannot break the selected cryptographic assumptions, forge uncompr
 
 \subsection{Separated properties}
 
-\begin{definition}[Wire-image unlinkability]
-Protocol fields exposed after adjacent-link decryption do not provide a deterministic equality test that links an incoming message at one honest relay to an outgoing message at a non-adjacent honest relay.
+\begin{definition}[Record-length equality]
+Every control message has the same complete adjacent-link length, independently of message type, candidate depth, protected-body length, or chaff status.
+\end{definition}
+
+\begin{definition}[Passive wire-image unlinkability]
+For passively observed messages processed by at least one honest relay, protocol fields exposed after adjacent-link decryption do not provide a deterministic equality test linking an incoming representation to a non-adjacent outgoing representation.
 \end{definition}
 
 \begin{definition}[Batch-local message unlinkability]
-After an honest per-hop cryptographic transformation and a mixing boundary containing $k\ge2$ indistinguishable records, a passive observer cannot match a designated input to its output with advantage exceeding the cryptographic advantage plus the information available from the batch policy.
+After an honest per-hop cryptographic transformation and a mixing boundary containing $k\ge2$ records with the same observable treatment, a passive observer cannot match a designated input to its output with advantage exceeding the relevant cryptographic advantage and information exposed by the batching policy.
 \end{definition}
 
 \begin{definition}[Lifecycle correctness]
 Every accepted control event produces one deterministic state transition or rejection, every state has a finite local deadline, and loss of any cleanup message cannot create permanent state.
 \end{definition}
 
+\begin{definition}[Active-adversary unlinkability]
+Compromised relays cannot install a persistent recognizable relation, selective-failure marker, or other active tag that links non-adjacent representations of one branch with non-negligible advantage.
+\end{definition}
+
 \begin{definition}[Traffic-flow unlinkability]
-An observer cannot reliably correlate communication endpoints using timing, volume, queue behavior, topology, retries, active tags, or long-lived observation.
+An observer cannot reliably correlate communication endpoints using timing, direction, volume, queue behavior, topology, retries, or long-lived observation.
 \end{definition}
 
 \begin{table}[ht]
 \centering
-\caption{Claim matrix for Core v0.5}
+\caption{Protocol claim matrix}
 \label{tab:claims}
-\begin{tabularx}{\textwidth}{@{}p{0.27\textwidth}p{0.20\textwidth}X@{}}
+\begin{tabularx}{\textwidth}{@{}p{0.25\textwidth}p{0.19\textwidth}X@{}}
 \toprule
 Property & Status & Required evidence or dependency \\
 \midrule
-Wire-image unlinkability & Structural claim & No stable field; per-hop token replacement, key tweak, URE rerandomization, reconstruction, and fresh link encryption. \\
-Batch-local unlinkability & Conditional claim & C1 assumptions, at least one honest transform, fixed record class, and a declared mixing boundary. \\
-Lifecycle correctness & Model-supported claim & E1 rules, state-machine tests, bounded event simulation, and zero final state. \\
-Traffic-flow unlinkability & Not claimed & Scheduling profile, cover traffic, active-tagging analysis, and correlation experiments are still required. \\
+Record-length equality & Specified and tested & One 1,052-byte W1 encoding for every control message. \\
+Passive wire-image unlinkability & Structural claim & No stable field; per-hop token replacement, key tweak, URE rerandomization, body reconstruction, and fresh link encryption. \\
+Batch-local unlinkability & Conditional claim & C1 assumptions, at least one honest transform, W1 equality, and a declared mixing boundary. \\
+Lifecycle correctness & Model-supported claim & E1 state rules, integrated authentication, bounded event simulation, and zero final state. \\
+Active-adversary unlinkability & Not claimed & The persistent ratio-tag counterexample in \Cref{sec:active-tagging} violates the property. \\
+Traffic-flow unlinkability & Not claimed & A scheduling profile, cover traffic, and correlation experiments are required. \\
 Production cryptographic security & Not claimed & Independent review, proof alignment, side-channel analysis, and implementation audit are absent. \\
 \bottomrule
 \end{tabularx}
@@ -267,7 +278,7 @@ Production cryptographic security & Not claimed & Independent review, proof alig
 \section{Terms and notation}
 \label{sec:notation}
 
-A recurring source of ambiguity in the legacy manuscript was reuse of the same symbol for long-term endpoint keys, hop keys, and encryption ephemerals. Core v0.5 assigns each role a distinct alphabet and never uses the graph-edge symbol $E$ for a cryptographic value.
+The notation assigns each key role and capability a distinct alphabet. The graph-edge symbol $E$ is never used for a cryptographic value, and a capability symbol denotes only one direction and one adjacent scope.
 
 \begin{table}[H]
 \centering
@@ -293,6 +304,9 @@ $\lambda_i^{\leftarrow}$ & route capability & Child-facing reverse label for \te
 $C_i$ & reverse capsule & Candidate capsule encrypted to reply key $X_i$. \\
 $[t_c,t_e)$ & lifetime & Half-open local validity interval under E1. \\
 $\mathcal B$ & budget & Initiator or relay limits for transmissions, state, bytes, cryptographic work, and time. \\
+$L_W=1052$ & W1 record & Complete adjacent-link length in bytes; $12+1024+16$. \\
+$P_W$ & W1 plaintext & Canonical 1,024-byte encrypted control body. \\
+$(e_\ell,s_\ell)$ & link scope & Public directional epoch and sequence in the 12-byte header. \\
 \bottomrule
 \end{tabularx}}
 \end{table}
@@ -623,7 +637,7 @@ For each selected child, the relay performs all transformations independently. R
 
 Immediate backtracking to the ingress peer is excluded. Exact duplicates on the same link epoch are rejected. A branch arriving over another peer or under another token is a different branch context, even if it belongs to the same initiator-local discovery. Longer cycles and converging branches therefore cause repeated state. The hop limit, fan-out, per-peer token bucket, per-node context ceiling, cumulative transmission budget, and expiry bound the amplification.
 
-Attempt-wide first-parent suppression would reduce cost but requires an equality domain shared across hops. Core v0.5 chooses the privacy structure and measures the resulting cost rather than hiding it.
+Attempt-wide first-parent suppression would reduce cost but requires an equality domain shared across hops. the current protocol chooses the privacy structure and measures the resulting cost rather than hiding it.
 
 \section{Candidate return and route activation}
 \label{sec:reverse}
@@ -759,12 +773,86 @@ Lost READY & Local expiry & Partial pending or active state is reclaimed without
 \end{tabularx}
 \end{table}
 
-\section{Message classes and relay state}
+\section{Wire protocol W1 and relay state}
 \label{sec:messages}
 
-\subsection{Abstract record classes}
+\subsection{Fixed adjacent-link envelope}
 
-C1 fixes cryptographic field encodings but Core v0.5 does not yet freeze the complete binary packet codec. Every control message is carried in one adjacent-link record class whose plaintext body is reconstructed and padded at each hop. The link header exposes only underlay-required data. Protocol type and fields are link-encrypted.
+W1 gives every control message one complete wire length. Let $H_W$ be the public link header, $P_W$ the authenticated plaintext, and $T_W$ the AEAD tag. The reference record is
+\begin{equation}
+R_W=H_W\concat\operatorname{AEAD.Seal}(K_\ell,N_\ell,H_W,P_W),
+\qquad |R_W|=12+1024+16=1052\ \text{bytes}.
+\label{eq:w1record}
+\end{equation}
+The public header is $H_W=e_\ell\concat s_\ell$, where the epoch is a four-byte unsigned integer and the sequence is an eight-byte unsigned integer, both in network byte order. The pair is scoped to one direction of one adjacent association. Reuse of a link key and nonce pair is prohibited.
+
+The encrypted body begins with an eight-byte common prefix. The message type and all protocol-classifying values are therefore hidden from an observer without the adjacent-link key.
+
+\begin{table}[ht]
+\centering
+\caption{W1 record composition}
+\label{tab:w1record}
+\begin{tabularx}{\textwidth}{@{}p{0.19\textwidth}p{0.12\textwidth}p{0.19\textwidth}X@{}}
+\toprule
+Component & Bytes & Visibility & Meaning \\
+\midrule
+Link epoch & 4 & Public & Directional key/replay epoch. \\
+Link sequence & 8 & Public & Unique sequence within the directional epoch. \\
+Common prefix & 8 & Encrypted & Type, protocol, U1, E1, C1, W1, and reserved byte. \\
+Message fields and padding & 1,016 & Encrypted & Canonical type-specific fields and fresh random padding. \\
+AEAD tag & 16 & Public bytes & ChaCha20-Poly1305 authentication tag. \\
+\midrule
+Complete record & 1,052 & Observable length & Identical for every control message. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{property}[Length equality]
+For every valid control type $t$, the W1 encoder produces $|\Encode_W(t)|=1052$ bytes. Candidate depth and protected-body length affect only encrypted fields and padding, not the adjacent-link record length.
+\end{property}
+
+W1 hides neither the existence nor direction of a record, and it does not impose a constant transmission rate. Its purpose is narrower: remove record-length and plaintext message-class leakage while making parsing and byte accounting exact.
+
+\subsection{Canonical plaintext layouts}
+
+\begin{table}[ht]
+\centering
+\caption{Principal W1 plaintext layouts after the eight-byte common prefix}
+\label{tab:w1layouts}
+{\small
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.18\textwidth}>{\raggedright\arraybackslash}p{0.26\textwidth}>{\raggedright\arraybackslash}X@{}}
+\toprule
+Type & Fixed fields & Variable protected region and padding \\
+\midrule
+\textsc{Discover} & token 16; bounds 4; reply key 32; URE 128 & 836 bytes of fresh padding. \\
+\textsc{Candidate} & token 16; expiry 1; layer count 1; length 2 & 1--960 candidate bytes; fresh padding to 1,024. \\
+\textsc{Commit}, \textsc{Ready} & local label 16; generation 4; expiry 1; length 2 & 0--512 protected bytes; fresh padding. \\
+\textsc{Cancel}, \textsc{Abort}, \textsc{Close} & local label 16; generation 4; expiry 1; length 2 & Bounded protected reason or proof; fresh padding. \\
+\textsc{Chaff} & no route field & Fresh padding only; bounded post-authentication discard. \\
+\bottomrule
+\end{tabularx}}
+\end{table}
+
+The current CANDIDATE region accommodates the 256-byte responder payload and up to five relay wrappers. A conforming implementation requiring greater depth must select a different wire profile rather than silently create a second W1 length. All unused bytes are freshly generated padding; an implementation must not preserve received padding or modify a received body in place.
+
+\subsection{Receive pipeline}
+
+A receiver applies the following order:
+
+\begin{enumerate}
+  \item reject a record whose length is not exactly 1,052 bytes;
+  \item apply directional epoch, sequence, byte-rate, and exact-replay admission;
+  \item authenticate and open the adjacent-link AEAD;
+  \item validate the common prefix, reserved byte, message type, and canonical lengths;
+  \item enforce E1 expiry, per-peer token-bucket, node-global state, and cryptographic-work budgets;
+  \item validate C1 points, capsules, nested layers, signatures, or route-control proofs;
+  \item allocate or transition protocol state only after all required validation succeeds;
+  \item construct a new plaintext and new adjacent-link ciphertext for each outgoing record.
+\end{enumerate}
+
+This order prevents malformed length and link ciphertexts from allocating branch or route state. Detailed cryptographic failure remains local and maps to one externally visible behavior: bounded silent discard unless a separately specified non-amplifying control response is required.
+
+\subsection{Control-message roles}
 
 \begin{table}[ht]
 \centering
@@ -775,32 +863,32 @@ C1 fixes cryptographic field encodings but Core v0.5 does not yet freeze the com
 Message & State effect & Privacy-relevant fields \\
 \midrule
 \textsc{Discover} & Creates bounded branch context & Fresh branch token, tweaked reply key, rerandomized 128-byte eligibility capsule. \\
-\textsc{Candidate} & Creates tentative route mapping & Replaced candidate token, parent forward label, opaque C1 reverse capsule. \\
-\textsc{Commit} & Tentative $\rightarrow$ pending-ready & Local incoming label and opaque end-to-end commit proof. \\
-\textsc{Ready} & Pending-ready $\rightarrow$ active & Local reverse label and opaque ready proof. \\
+\textsc{Candidate} & Creates tentative route mapping & Replaced candidate token, parent forward label, opaque nested C1 reverse capsule. \\
+\textsc{Commit} & Tentative $\rightarrow$ pending-ready & Local incoming label and end-to-end commit proof. \\
+\textsc{Ready} & Pending-ready $\rightarrow$ active & Local reverse label and end-to-end ready proof. \\
 \textsc{Cancel} & Removes one off-route subtree context & Per-hop cancellation capability; no global route identifier. \\
 \textsc{Abort}/\textsc{Close} & Removes tentative or active generation & Local labels and bounded protected reason class. \\
-\textsc{Chaff} & No route allocation & Real record class and scheduling path; bounded parse cost only. \\
+\textsc{Chaff} & No route allocation & Identical W1 envelope and scheduling path; bounded parse cost only. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\subsection{State tables}
+\subsection{Relay state}
 
 \begin{table}[ht]
 \centering
-\caption{Core relay state}
+\caption{Relay state and authoritative lifetime}
 \label{tab:state}
 \begin{tabularx}{\textwidth}{@{}p{0.18\textwidth}p{0.31\textwidth}X@{}}
 \toprule
-Table & Key & Essential values \\
+Table & Local key & Essential values \\
 \midrule
-$\BranchT$ & link epoch, ingress peer, branch token & Incoming reply key and capsule context, expiry, bounded child token/tweak mappings, response counters. \\
+$\BranchT$ & link epoch, ingress peer, branch token & Incoming reply key, expiry, bounded child token/tweak mappings, response counters. \\
 Responder offer & branch context and local nonce & Signed candidate data, challenge, expiry, response budget. \\
 Tentative route & peer, forward label, generation & Child mapping, reverse-label offer, capacity class, deadline. \\
 Pending-ready & peer, labels, generation & Reserved capacity, transcript digest, ready deadline. \\
 Active route & peer, labels, generation & Data-plane limits, idle and hard deadlines, closure state. \\
-Replay state & link epoch and local capability & Exact adjacent-link record or local transcript key; finite retention. \\
+Replay state & link epoch and local capability & Exact adjacent-link sequence or local transcript key; finite retention. \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -838,13 +926,48 @@ Let an honest relay release a batch of $k$ records with identical observable cla
 
 The argument fails when $k=1$, when one record has a distinct length or release time, when a stable logging or tracing field leaks, or when the observer uses end-to-end timing. Accordingly, U1 conformance is profile-specific rather than a property of C1 alone.
 
-\subsection{Active tagging limitation}
+\subsection{Persistent active ratio tag}
+\label{sec:active-tagging}
 
-The URE capsule is intentionally malleable. The consistency pair and fixed marker reject many arbitrary changes, but C1 does not prove that every tag created by a malicious relay is erased by a later honest rerandomization or cannot be recognized by a colluder. The protocol therefore makes no active-adversary unlinkability claim. A future profile may require a stronger URE construction, verifiable transformation, or a proof that remains compatible with the absence of a stable proof handle.
+The passive transformation argument does not extend to a compromised relay. In a valid C1 consistency pair,
+\begin{equation}
+(U_1,V_1)=(r_1A,r_1B), \qquad A=aB.
+\label{eq:validconsistency}
+\end{equation}
+A malicious relay chooses a known non-zero scalar $c$ and replaces the pair by
+\begin{equation}
+(\widetilde U_1,\widetilde V_1)=(cV_1,V_1).
+\label{eq:ratiotag}
+\end{equation}
+Both values remain canonical non-identity group elements. After an honest relay rerandomizes with non-zero scalar $s$, the pair becomes
+\begin{equation}
+(\widetilde U'_1,\widetilde V'_1)=(scV_1,sV_1).
+\end{equation}
+A colluding downstream relay tests
+\begin{equation}
+\widetilde U'_1\stackrel{?}=c\widetilde V'_1,
+\label{eq:tagtest}
+\end{equation}
+which always holds. The relation is therefore a deterministic cross-hop tag that survives the honest transformation.
+
+The destination computes the consistency value
+\begin{equation}
+T=\widetilde U'_1-a\widetilde V'_1=(c-a)sV_1.
+\label{eq:tagfailure}
+\end{equation}
+Except when $c=a$, the destination rejects the capsule and returns no candidate. The attack combines linkability and denial of service; observation of the missing candidate or missing route activation may also provide confirmation.
+
+\begin{proposition}[Active-unlinkability counterexample]
+Under the present C1 eligibility construction, two colluding compromised relays separated by any number of honest rerandomizing relays can link a tagged branch by the test in \Cref{eq:tagtest}. Consequently, the protocol does not satisfy active-adversary message unlinkability.
+\end{proposition}
+
+Adjacent-link authentication does not prevent the attack. It rejects modification by a third party on an edge, but a compromised relay can originate a new syntactically valid outgoing W1 record containing the tagged pair. Fixed length, canonical point encoding, non-identity checks, fresh link encryption, and generic endpoint failure are necessary controls but do not erase the algebraic relation.
+
+The active-security gate remains closed until a replacement destination-eligibility mechanism has a precise active-adversary definition, reviewed security argument, bounded verification cost, fixed-size encoding, and negative tests for algebraic, substitution, replay, truncation, and selective-failure tags.
 
 \subsection{Timing limitation}
 
-Fixed record sizes and per-hop cryptographic changes do not hide timing. TARANET's coordinated constant-rate approach and Loopix's stochastic mixing with cover traffic represent different latency--bandwidth trade-offs~\cite{taranet,loopix}. \ProtoName{} will treat them as separate deployment profiles and measure correlation directly rather than assume one unspecified ``Nexus'' behavior.
+Fixed record sizes and per-hop cryptographic changes do not hide timing. TARANET's coordinated constant-rate approach and Loopix's stochastic mixing with cover traffic represent different latency--bandwidth trade-offs~\cite{taranet,loopix}. \ProtoName{} treats batching, release cadence, and cover traffic as separate scheduling profiles. Each profile must state its observer, latency, bandwidth cost, minimum anonymity set, and measured matching success.
 
 \section{Resource and denial-of-service model}
 \label{sec:resources}
@@ -887,7 +1010,7 @@ where the numerator represents normalized outgoing, state, and cryptographic wor
 
 \subsection{Method}
 
-The repository contains deterministic graph and event models rather than a packet-level network benchmark. The experiments use reproducible seeds, explicit topology size and average degree, responder density, fan-out, hop limits, state and transmission budgets, link delay, loss, exact duplication, and attacker generation. Results quantify design behavior under the model; they do not estimate Internet latency or prove security.
+The evaluation uses deterministic graph and event models rather than a packet-level network benchmark. The experiments use reproducible seeds, explicit topology size and average degree, responder density, fan-out, hop limits, state and transmission budgets, link delay, loss, exact duplication, and attacker generation. Results quantify design behavior under the model; they do not estimate Internet latency or prove security.
 
 The C1 reference implementation uses \code{libsodium} group operations and the Python \code{cryptography} implementations of Ed25519 and ChaCha20-Poly1305. Deterministic vectors cover URE encryption and rerandomization, wrong-key rejection, reply-key tweak consistency, KEM/AEAD opening, tamper and context mismatch, descriptor/address derivation, and candidate signature binding.
 
@@ -918,7 +1041,7 @@ The tracked event experiment uses 100 deterministic 500-node graphs with average
 
 \begin{table}[ht]
 \centering
-\caption{Core v0.5 event-lifecycle comparison}
+\caption{Event-lifecycle comparison on 500-node graphs}
 \label{tab:lifecycle}
 \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}Xrrrrrr@{}}
 \toprule
@@ -950,62 +1073,92 @@ Reply public/secret tweak & $(x+\delta)B=X+\delta B$. & Pass \\
 Reply KEM and AEAD & Correct context opens; tamper, AAD, and info mismatch fail generically. & Pass \\
 Candidate signature & Any transcript-field change invalidates the Ed25519 signature. & Pass \\
 Vector reproducibility & Generated JSON equals the tracked canonical vector file. & Pass \\
-Complete repository suite & 44 deterministic unit and conformance tests. & Pass \\
+Complete deterministic suite & 53 unit, lifecycle, codec, cryptographic, and tagging tests. & Pass \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
+\subsection{Integrated W1, C1, and active-tagging experiment}
+
+A second experiment uses a five-node line so that every cryptographic and wire transformation has an unambiguous expected count. Forty deterministic runs are executed per scenario. The clean route emits 16 W1 records, corresponding to 16,832 complete wire bytes; performs three forward URE/reply-key transformations; opens four nested candidate layers; authenticates \textsc{Commit} and \textsc{Ready}; and finishes with zero residual state.
+
+\begin{table}[ht]
+\centering
+\caption{Integrated fixed-wire and active-tagging comparison}
+\label{tab:integrated}
+{\small
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}Xrrrrr@{}}
+\toprule
+Scenario & Success & Mean tx & Mean wire bytes & Crypto fail & Cleanup \\
+\midrule
+Clean integrated path & 1.000 & 16.000 & 16,832.0 & 0.000 & 1.000 \\
+2\% adjacent-link tampering & 0.825 & 14.875 & 15,648.5 & 0.000 & 1.000 \\
+Single ratio-tagging relay & 0.000 & 8.000 & 8,416.0 & 1.000 & 1.000 \\
+Colluding ratio-tagging relays & 0.000 & 8.000 & 8,416.0 & 1.000 & 1.000 \\
+\bottomrule
+\end{tabularx}}
+\end{table}
+
+The tampering scenario records a mean of 0.2 adjacent-link authentication failures per run and never allocates state from a rejected ciphertext. In the single-tag scenario the destination rejects the capsule. In the colluding scenario the downstream compromised relay records one successful ratio observation per run before the destination rejection. The attack changes algebraic content, not record length. These results demonstrate the executable mechanism and failure path; they do not quantify detectability in an arbitrary topology or prove security of any replacement construction.
+
 \section{Limitations and open problems}
 \label{sec:limitations}
 
+\subsection{Eligibility construction and active security}
+
+The ratio-tag counterexample is the principal blocking defect. Correct URE rerandomization and passive ciphertext anonymity are insufficient when a relay can deliberately install a homogeneous relation that an honest transformation preserves. A replacement must hide the destination key, permit public per-hop transformation, resist persistent tagging and selective failure, fit a fixed wire envelope, and have bounded verification cost. Detection only at the destination is insufficient because colluding relays have already linked the branch.
+
 \subsection{Independent cryptographic review}
 
-The C1 equations are executable and internally consistent, but correctness is not equivalent to security. Review must address URE recipient anonymity, modern composable definitions, malicious ciphertext transformations, key privacy of the custom reply KEM, CCA behavior of nested layers, subgroup and encoding assumptions, and whether failure normalization is sufficient in an event-driven implementation.
+The remaining C1 equations are executable and internally consistent, but correctness is not equivalent to security. Review must address recipient anonymity, the additive related-key behavior of the custom reply KEM, CCA behavior of nested layers, transcript and key privacy, point-encoding assumptions, failure timing, and side-channel behavior. The custom reply construction is HPKE-inspired and is not an RFC~9180 HPKE suite.
 
-\subsection{Fixed-size reverse encoding}
+\subsection{Candidate depth and wire capacity}
 
-C1 defines each reverse cryptographic layer, but the final constant-size candidate packet codec remains a protocol-engineering gate. Naive nesting grows with route depth and leaks length unless the maximum depth is padded. A practical codec may use a Sphinx-like shifting frame, fixed cell reservation, or fragmentation padded to a depth class. The chosen encoding must not expose unchanged inner substrings to compromised non-adjacent relays.
+W1 fixes one 1,024-byte plaintext. The current 960-byte candidate region accommodates the 256-byte responder payload and up to five relay wrappers. A target topology requiring greater setup depth needs either a larger fixed profile, a compact shifting construction, or a separately analyzed fragmentation scheme. A deployment must not silently vary the W1 length because doing so would reintroduce a record-class fingerprint.
 
 \subsection{Post-quantum migration}
 
-C1 is entirely classical. A hybrid KEM replacement is not enough because the eligibility selector must remain universally rerandomizable without exposing the recipient public key. Post-quantum URE or a different private eligibility mechanism is therefore a separate research problem.
+C1 is entirely classical. A hybrid KEM replacement is not enough because the eligibility selector must also preserve destination-key privacy and safe public transformation. Post-quantum rerandomization or a different private eligibility mechanism is therefore a separate research problem.
 
 \subsection{Directory and descriptor distribution}
 
-The legacy Beacon and Authority design is outside Core. A future directory must provide authenticated descriptor binding, freshness, replication, poisoning resistance, selective-denial analysis, and private lookup. Repeated deterministic hashes of an endpoint address are not a sufficient private directory design.
+Long-range descriptor resolution is outside the protocol defined here. A future directory must provide authenticated descriptor binding, freshness, replication, poisoning resistance, selective-denial analysis, enumeration resistance, and private queries. Repeated deterministic hashing of an endpoint address is not sufficient query privacy.
 
 \subsection{Distributed abuse and fairness}
 
-Per-peer buckets are vulnerable to Sybil distribution. Candidate and responder spam also require quotas independent of branch admission. Future experiments must vary attacker distribution, peer churn, adaptive refill, honest convergence, and fairness by ingress peer, not only aggregate success.
+Per-peer token buckets remain vulnerable to Sybil distribution. Candidate and responder spam require quotas independent of branch admission. Evaluation must vary attacker distribution, peer churn, adaptive refill, honest convergence, and fairness by ingress peer rather than report only aggregate success.
 
 \subsection{Traffic privacy}
 
-Timing, volume, and topology remain the largest practical correlation surfaces. The next privacy milestone must specify at least two scheduling profiles, measure bandwidth and latency, and run an explicit classifier or statistical matching attack. A protocol should not claim traffic-flow unlinkability merely because every packet is encrypted.
+Timing, direction, volume, and topology remain major correlation surfaces. A traffic-privacy profile must define batching, release cadence, cover traffic, overflow behavior, and observable classes, then measure bandwidth, latency, and matching success against a named adversary. Encryption and fixed length alone do not imply traffic-flow unlinkability.
 
 \section{Implementation and review strategy}
 \label{sec:strategy}
 
-The repository follows a gated sequence:
+Development should proceed through explicit gates:
 
 \begin{enumerate}
-  \item freeze C1 equations, encodings, transcript labels, and vectors;
-  \item obtain independent review of URE and reply-KEM assumptions;
-  \item define the constant-size candidate codec and negative parser corpus;
-  \item implement two independent C1 libraries and cross-check every vector;
-  \item build a user-space overlay prototype over an authenticated existing transport;
-  \item add packet loss, duplication, reordering, churn, and malicious-peer interoperability tests;
-  \item specify and evaluate traffic-scheduling profiles;
-  \item design long-range descriptor resolution as a separate protocol.
+  \item replace or strengthen the eligibility construction against the ratio-tag and selective-failure class;
+  \item state a precise active-adversary game and obtain independent review of the eligibility and reply-key mechanisms;
+  \item generate the W1 parser and encoder from a reviewed schema and implement an independent second codec;
+  \item cross-check canonical records, C1 vectors, and a malformed-input corpus across implementations;
+  \item add fuzzing for record lengths, nested candidate boundaries, point encodings, transcript substitutions, and state races;
+  \item build a user-space overlay prototype over an existing authenticated transport;
+  \item test interoperability under loss, duplication, reordering, link churn, malicious peers, and distributed resource pressure;
+  \item specify and evaluate traffic-scheduling profiles before making timing or flow claims;
+  \item design long-range descriptor resolution as a separate protocol with its own threat model.
 \end{enumerate}
 
-The first overlay prototype should not implement a new layer-2 stack or require special routers. Existing IP connectivity can serve as the underlay while the protocol's state, privacy transformations, and abuse limits are evaluated. Only after the control plane is interoperable and measured should a lower-layer integration be considered.
+The first overlay prototype should use ordinary IP connectivity only as an experimental transport. It should not require special routers or a new link technology. Protocol state, privacy transformations, failure behavior, and resource limits should be evaluated before lower-layer integration is considered.
 
 \section{Conclusion}
 \label{sec:conclusion}
 
-\ProtoName{} is a plausible research direction when framed as a privacy-enabled route-discovery control plane rather than an immediate replacement for IP or BGP. Core v0.5 now has a substantially clearer boundary. U1 removes explicit cross-hop equality handles; E1 gives deterministic bounded route setup and cleanup; C1 replaces cryptographic placeholders with exact classical algorithms, encodings, transcripts, and vectors.
+\ProtoName{} defines a privacy-enabled route-discovery control plane rather than a replacement for IP or BGP. Its current form has a precise operational boundary. U1 removes explicit cross-hop equality handles under passive observation; E1 gives deterministic bounded route setup and cleanup; C1 defines concrete classical cryptographic operations and transcripts; and W1 gives every control message one exact adjacent-link representation.
 
-The concrete profile also clarifies what remains unresolved. Universal rerandomization is malleable and requires modern active-security review. The reply KEM is custom. Candidate framing is not yet constant-size. Timing and distributed denial of service remain serious. These are not reasons to abandon the protocol; they are the next falsifiable research questions. The repository can now proceed from conceptual pseudocode to independent cryptographic review and cross-implementation testing without pretending that the production-security gate has already been passed.
+The integrated model shows that codec, cryptography, and lifecycle can be exercised together: clean routes activate only after authenticated candidate, \textsc{Commit}, and \textsc{Ready} processing; link tampering fails before state allocation; and every evaluated scenario reclaims all state. The same integration exposes a material defect. The C1 eligibility consistency pair admits a persistent ratio tag, so active-adversary message unlinkability is not achieved. This negative result narrows the next task: redesign the private eligibility mechanism, preserve the fixed-size branch-local structure, and require evidence against active tagging before advancing the security claim.
+
+The protocol is therefore suitable as a falsifiable research specification and interoperability target, but not as a production anonymity system.
 
 \appendix
 \section{Normative requirement summary}
@@ -1013,7 +1166,7 @@ The concrete profile also clarifies what remains unresolved. Universal rerandomi
 
 The keywords ``MUST'', ``MUST NOT'', ``REQUIRED'', ``SHOULD'', ``SHOULD NOT'', and ``MAY'' are interpreted according to BCP~14~\cite{rfc2119,rfc8174}.
 
-A Core v0.5 implementation claiming U1, E1, and C1 conformance MUST:
+An implementation claiming U1, E1, C1, and W1 conformance MUST:
 
 \begin{enumerate}
   \item omit logical discovery, attempt, ring, global candidate, and global route identifiers from the wire;
@@ -1026,19 +1179,20 @@ A Core v0.5 implementation claiming U1, E1, and C1 conformance MUST:
   \item apply the exact C1 reply-key tweak and \code{TR-KEM-R255} context derivation;
   \item bind candidate fields in the exact ordered transcript and verify Ed25519 under the descriptor key;
   \item map cryptographic failures to one external state-machine result;
-  \item reconstruct and pad every outgoing record and use fresh adjacent-link encryption;
+  \item encode every control message as one exact 1,052-byte W1 record, reconstruct and pad every outgoing body, and use fresh adjacent-link encryption;
   \item enforce finite per-peer, node-global, time, byte, state, queue, and cryptographic-work limits;
   \item treat state lifetimes as half-open intervals and follow E1 equal-time precedence;
   \item create tentative state on \textsc{Candidate}, reserve pending state on \textsc{Commit}, and authorize data only after final \textsc{Ready};
   \item reclaim all setup state by local expiry without remote cooperation;
   \item make batch-local unlinkability claims only for a declared fixed-size mixing profile;
-  \item refrain from active-tagging, traffic-flow, post-quantum, or production-security claims until separately reviewed and tested.
+  \item refrain from active-adversary, traffic-flow, post-quantum, or production-security claims until separately reviewed and tested;
+  \item expose no detailed error behavior that distinguishes tagged eligibility failure from other invalid cryptographic input.
 \end{enumerate}
 
 \section{C1 vector summary}
 \label{app:vectors}
 
-The complete canonical vectors are stored in \code{spec/crypto-test-vectors-c1.json}. The following values identify the tracked set:
+The supplementary canonical vector set fixes the C1 interoperability values. The following values identify that set:
 
 \begin{table}[ht]
 \centering
@@ -1060,16 +1214,11 @@ Candidate transcript hash & {\ttfamily\small\seqsplit{32703335d293a706b97a9beb49
 
 The vector generator uses public deterministic labels to make results reproducible. These labels and derived scalars MUST NOT be used in an operational deployment.
 
-\section{Variable-length integer note}
+\section{Canonical integer and length encoding note}
 
-The legacy document defined a one-to-one MSB base-128 integer encoding. Core v0.5 does not yet select the complete packet codec. Variable-length values may remain useful inside encrypted padded bodies, but every accepted representation must be canonical. Public variable-length fields can reveal value classes and therefore require explicit privacy analysis.
+W1 fixes the public outer record length and uses fixed-width unsigned big-endian integers in the link header. Encrypted nested lengths use their specified fixed-width fields and must be minimally consistent with the containing message: no trailing protected bytes, no length beyond the W1 capacity, and no alternative representation of the same value. Variable-length integers may be introduced only inside a future encrypted profile with a one-to-one canonical encoding and explicit parser bounds. They must not alter the public W1 record length.
 
 \begin{thebibliography}{99}
-
-\bibitem{legacy}
-A. Benetton,
-``Trah\={e}ns: A Privacy Enabled Route Discovery Protocol,''
-unpublished confidential draft, October 2020.
 
 \bibitem{rfc2119}
 S. Bradner,
