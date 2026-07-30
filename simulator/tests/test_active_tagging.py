@@ -36,6 +36,7 @@ class ActiveTaggingTests(unittest.TestCase):
         base = EventLifecycleConfig(
             rings=(TimedRingStep(3, 1, 1, 30),),
             seed=19,
+            eligibility_profile="c1",
             discover_delay_min_ms=1,
             discover_delay_max_ms=1,
             candidate_delay_min_ms=1,

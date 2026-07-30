@@ -9,9 +9,9 @@
 M2 retains canonical variable-length logical messages and no semantic padding. It adds two requirements needed for cryptographic agility:
 
 1. the suite identifier is accepted as a profile-selected value rather than being hard-coded to C1;
-2. the `DISCOVER` eligibility capsule is length-delimited with a canonical VarUInt.
+2. the suite-selected `DISCOVER` field is length-delimited with a canonical VarUInt.
 
-M1 remains archived for C1 interoperability tests. New C2-capable implementations use M2.
+M1 remains archived for interoperability tests. New implementations use M2 with active R1 suite `0x0101`; C1 and C2 encodings are research-only.
 
 ## 2. Envelope
 
@@ -38,20 +38,21 @@ fanout_class        u8
 expiry_class        u8
 options             u8
 reply_public_key    32 bytes
-capsule_length      canonical VarUInt
-eligibility_capsule capsule_length bytes
+field_length        canonical VarUInt
+discovery_field      field_length bytes
 ```
 
-The suite determines the capsule parser:
+The suite determines the field parser:
 
-- C1 (`0x0001`): exactly 128 bytes and four canonical non-identity `ristretto255` encodings;
-- symbolic C2 (`0x0002`): exactly 640 non-zero bytes; semantic validity is checked by the C2 operation, not by M2 syntax.
+- R1 (`0x0101`, active): exactly 32 non-zero bytes representing a non-semantic service-query nonce;
+- C1 (`0x0001`, research only): exactly 128 bytes and four canonical non-identity `ristretto255` encodings;
+- symbolic C2 (`0x0002`, research only): exactly 640 non-zero bytes; semantic validity is checked by the symbolic operation.
 
-A concrete C2 suite will define exact cryptographic parsing under a new or reviewed suite profile.
+Reserved audit suite `0x7f02` is rejected. The R1 field MUST NOT contain an endpoint capability, capability commitment, endpoint key, endpoint address, gateway pseudonym, or endpoint handle.
 
 ## 4. Other messages
 
-`CANDIDATE`, `COMMIT`, `READY`, `CANCEL`, `ABORT`, `CLOSE`, and `CHAFF` retain the M1 semantic bodies. Their M2 envelope carries the active suite so all fragments and lifecycle messages for one route setup are suite-consistent.
+`CANDIDATE`, `COMMIT`, `READY`, `RENDEZVOUS_OPEN`, `CANCEL`, `ABORT`, `CLOSE`, and `CHAFF` retain the M1 semantic bodies. Their M2 envelope carries the active suite so all fragments and lifecycle messages for one route setup are suite-consistent.
 
 ## 5. W2 binding
 

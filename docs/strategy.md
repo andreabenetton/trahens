@@ -2,125 +2,85 @@
 
 ## Objective
 
-Turn Trahens into a falsifiable research protocol and then an interoperable experimental overlay. The project succeeds only when it states precisely what each participant learns, what an adversary can observe or modify, what resources each operation consumes, and which privacy property is supported under which profile.
+Develop Trahens as a falsifiable privacy-preserving route-discovery protocol and then as an interoperable experimental overlay. Every security claim must identify the adversary, observation boundary, required profile, retained leakage, and supporting test, proof obligation, or measurement.
+
+## Active architecture
+
+Core v1.0 binds U1, E1, R1, M2, and W2.
+
+- U1 replaces branch-local capabilities and representations at each honest relay.
+- E1 defines deterministic state transitions, half-open deadlines, candidate windows, COMMIT, READY, cancellation, and cleanup.
+- R1 discovers generic rendezvous gateways and presents a one-time endpoint capability only after READY.
+- M2 defines canonical variable-length logical messages.
+- W2 transports M2 in fixed 1,052-byte authenticated cells with bounded reassembly.
+
+R1 is Gate B of the cryptographic decision. The active protocol no longer depends on receiver-anonymous universal rerandomization. C1, symbolic C2, and the C2 k=2 transcription remain research providers and mandatory negative or composition controls.
 
 ## Design principles
 
-1. **Narrow before extending.** Complete bounded local discovery before global resolution.
-2. **Transform every cross-hop handle.** No opaque field is assumed unlinkable merely because it is encrypted.
-3. **Separate semantic encoding from observable framing.** M2 describes messages; W2 describes cells.
-4. **Separate adversaries and claims.** Cell equality, passive wire-image unlinkability, batch-local matching resistance, active tagging, traffic-flow unlinkability, lifecycle correctness, and resource safety are distinct.
-5. **Use explicit cryptographic contracts.** Keys, algorithms, transcript domains, replay equivalence, errors, encodings, and proof obligations are normative.
-6. **Keep counterexamples executable.** C1 remains in the suite because a future design must defeat the same ratio-tag experiment, not merely remove its description.
-7. **Bound every resource.** Messages, cells, fragments, fan-out, state, queues, timers, and cryptographic work have hard limits.
-8. **Make claims executable.** Every claim maps to a test, simulation, attack game, proof obligation, or independent implementation.
-9. **Block deployment claims.** Symbolic models and reference implementations are not substitutes for cryptographic review, fuzzing, side-channel analysis, or operational measurement.
-
-## Current architecture
-
-Trahens Core v0.9 is a bounded route-discovery and ready-gated bidirectional route-establishment protocol. It excludes global directory resolution, incentives, inter-domain policy, and a replacement link stack.
-
-U1 removes network-wide discovery handles. Each outgoing branch replaces its capability, tweaks the reply public key, rerandomizes the eligibility capsule, and reconstructs the message.
-
-E1 defines half-open deadlines, deterministic event precedence, candidate windows, delayed candidates, cancellation races, tentative mappings, COMMIT, READY, loss, duplication, and cleanup.
-
-C2 defines the active-security target for destination eligibility: public rerandomization without the recipient key, receiver anonymity, replayable chosen-ciphertext security, and resistance to persistent cross-hop tags. The repository provides an executable ideal functionality and a separate exact `k = 2` arithmetic transcription audit of Wang et al. [Wang2021](citation-audit.md#wang2021). The audit is fail-closed: it validates most Figure 6 equations and canonical encoding, but an exact counterexample shows that the paper's literal finite-field map `u -> u mod q` is not multiplicative under ordinary `QR*_p` group multiplication. Nontrivial full rerandomization is therefore disabled. C1 remains the negative-control eligibility backend and supplies the executable reply-key, nested-candidate, signature, KDF, AEAD, and transcript components.
-
-M2 defines suite-agile canonical variable-length messages. W2 fragments them into fixed 1,052-byte adjacent-link cells and reassembles them under strict byte, context, fragment, suite, and time bounds. W2 equalizes individual cell length but does not hide cell count or timing.
+1. **No endpoint selector in active discovery.** The raw capability, commitment, endpoint key, address, gateway pseudonym, and endpoint handle are prohibited from DISCOVER.
+2. **Transform every branch-local handle.** Tokens, query nonces, reply keys, message identifiers, padding, and link ciphertexts are replaced for each child.
+3. **Separate messages from cells.** M2 is semantic and variable length; W2 is fixed-size observable framing.
+4. **Separate route activation from rendezvous.** CANDIDATE is tentative, COMMIT reserves, READY activates, and only then may RENDEZVOUS_OPEN carry the capability.
+5. **Make trust boundaries explicit.** R1 requires a directory and gateways; private lookup and operator separation are separate profiles.
+6. **Keep counterexamples executable.** C1 and the C2 audit remain reproducible and fail closed.
+7. **Bound every resource.** Cells, bytes, fragments, contexts, branches, candidates, timers, queues, work, registrations, and failed redemptions have finite limits.
+8. **Normalize failure behavior.** Invalid capability, suite, message, cell, route, signature, and reassembly failures must not become detailed oracles.
+9. **Block production claims.** Reference code and deterministic simulations are not independent cryptographic or operational validation.
 
 ## Current evidence
 
-The integrated C1 experiment reproduces a persistent ratio relation across an honest rerandomizing relay. The separated colluder recognizes the relation and the destination rejects the capsule.
+The R1 event model erases an upstream literal nonce marker at the first honest replacement. The correct capability redeems once, while replay, expiry, wrong gateway, all-zero input, and duplicate registration fail. The raw capability is absent from encoded DISCOVER bytes.
 
-In the symbolic C2 experiment, an upstream marker mutation is not replay-equivalent. The first honest transformation rejects it and no transformed capsule reaches the downstream colluder. This confirms the intended state-machine location of validation and rerandomization, the generic failure path, and cleanup behavior. It does not demonstrate security of the concrete CRYPTO 2021 construction.
+The C1 negative control still carries a persistent algebraic ratio relation through an honest rerandomizing relay. The symbolic C2 control rejects a non-replay-equivalent mutation before an honest relay emits a child. The C2 k=2 audit reproduces the source equations that are executable and demonstrates that the literal finite-field reduction is not multiplicative over the tested small chains.
 
 ## Workstreams
 
-### A. Concrete C2 cryptography
+### A. Private descriptor distribution
 
-The exact Figure 6 `k = 2` construction has been transcribed with a reserved audit encoding. The literal finite-field tag reduction stated in the source is non-homomorphic, so the audited instantiation cannot be enabled as written. Obtain an author-confirmed correction or select an independently reviewed replacement construction; then define modern parameters, enable full `ReRand`, complete real-byte game harnesses, and obtain independent review. This finding is limited to the literal finite-field instantiation and does not invalidate the generic Re-T-SPHF framework.
+Specify how descriptors are authenticated, privately queried, replicated, rotated, revoked, and protected from enumeration. Define what the directory learns and how gateway pseudonyms are selected.
 
-### B. Suite and transcript composition
+### B. Gateway trust reduction
 
-Ensure the M2 suite, W2 reassembly suite, endpoint descriptor, reply-key transcript, candidate transcript, COMMIT, and READY cannot be confused or downgraded. Keep eligibility, reply, signing, and adjacent-link keys domain-separated.
+Evaluate multiple gateways, short epochs, operator separation, threshold registration, auditable selective denial, and end-to-end authentication that limits a stolen capability race.
 
-### C. Independent codec interoperability
+### C. Reliability
 
-Specify M2 and W2 in a machine-readable schema. Build a second independent implementation, cross-check canonical encodings and malformed inputs, and fuzz envelope, varint, fragmentation, reassembly, nested-candidate, and suite-mismatch paths.
+Add bounded acknowledgements and retransmissions for W2 fragments. Every retransmission must use fresh adjacent-link encryption and must not introduce a cross-hop identifier. Measure amplification and stale-fragment behavior.
 
-### D. Resource and denial-of-service model
+### D. Traffic scheduling
 
-Measure branch amplification, fragment sprays, cryptographic-work exhaustion, distributed peer rotation, invalid C2 proof cost, and selective failure. Enforce pre-cryptographic peer and global limits and account for every rejected operation.
+Define fragment interleaving, batch release, count padding, chaff, queue fairness, and congestion response. Evaluate timing and cell-count classifiers before claiming flow unlinkability.
 
-### E. Reliability profile
+### E. Independent interoperability
 
-After concrete C2, define bounded recovery for multi-cell messages. Retransmission, acknowledgement, erasure coding, or repair must use fresh adjacent-link encryption, finite retry counts, bounded reassembly extension, and no stable cross-hop identifier.
+Implement M2/W2 and E1 independently, exchange conformance corpora, fuzz malformed inputs, and verify that both implementations produce identical acceptance and rejection behavior.
 
-### F. Traffic scheduling
+### F. Retained cryptography
 
-Define fragment interleaving, CHAFF, release cadence, cell-count padding, fairness, and rate shaping separately from Core. Measure bandwidth, latency, loss exposure, and correlation advantage for named adversaries.
+Review the additive reply-key transform, custom KEM, nested candidate chain, transcript binding, and failure timing. Preserve the C2 author query and exhaustive checker; reopen endpoint-specific eligibility only after a corrected construction is independently reviewed.
 
-### G. Overlay prototype
+## Completion gates
 
-Build the smallest user-space overlay over an existing authenticated transport only after C2 and two codec implementations satisfy their gates. The prototype validates interoperability and operational state behavior; it does not replace IP.
+### Gate R1-private
 
-### H. Directory research
+- descriptor queries have a specified privacy goal and adversary;
+- descriptors are authenticated, finite, rotatable, and revocable;
+- directory and gateway collusion leakage is quantified;
+- abuse and replication limits are defined.
 
-Treat registration and long-range resolution as a separate protocol with its own ownership, freshness, private-query, replication, poisoning, enumeration, and selective-denial analysis.
+### Gate T1-reliability
 
-## Iteration model
+- bounded recovery improves multi-cell success;
+- retransmission creates no stable cross-hop handle;
+- retries, acknowledgements, and buffers have hard limits;
+- loss, duplication, reordering, and attacker-induced repair are tested.
 
-Each revision contains:
+### Gate I1-interoperability
 
-1. a defect or research question;
-2. explicit assumptions and proposed change;
-3. one or more ADRs;
-4. versioned specification changes;
-5. executable tests, simulations, vectors, or proof obligations;
-6. measured results and known counterexamples;
-7. an accept, revise, or revert decision.
+- two independent codecs and state machines agree;
+- fuzzing covers message, cell, reassembly, candidate, and capability paths;
+- all tracked vectors reproduce;
+- externally observable failure classes match.
 
-A revision is incomplete when it changes prose without changing a testable artifact.
-
-## Phase gates
-
-### Completed research baselines
-
-- Core semantics and expanding-ring policy.
-- U1 branch-local structural unlinkability.
-- E1 event-driven route lifecycle.
-- C1 executable reply/signature component baseline and negative-control eligibility attack.
-- M2/W2 message-cell separation and bounded reassembly.
-- C2 abstract games, suite integration, executable ideal functionality, and fail-closed k=2 transcription audit.
-
-### Current gate: concrete C2 interoperability
-
-Exit requires:
-
-- author-confirmed corrected group action or an independently reviewed replacement for the non-homomorphic literal Figure 6 finite-field map;
-- reviewed modern parameters;
-- canonical encodings and deterministic vectors;
-- positive, malformed, receiver-anonymity, RCCA, replay, and tag tests;
-- no observable C1 ratio-tag analogue under the declared game;
-- independent cryptographic review;
-- paper claims aligned exactly with proved and measured properties.
-
-### Subsequent gates
-
-1. bounded reliability for fragmented messages;
-2. independent codecs and fuzzing;
-3. overlay interoperability under faults and churn;
-4. traffic-privacy scheduling with measured correlation results;
-5. separate long-range resolution.
-
-## Immediate backlog
-
-1. Resolve the fail-closed C2-K2 full-rerandomization path with an author-confirmed or independently reviewed mapping.
-2. Cross-check the 412-byte audit representation with a second implementation and choose modern parameters.
-3. Add C2 receiver-anonymity, RCCA, replay-equivalence, and tag-game harnesses against real bytes.
-4. Add cross-suite downgrade and transcript-confusion tests.
-5. Build a second M2/W2 codec and differential fuzzer.
-6. Model invalid-C2 work exhaustion and distributed fragment sprays.
-7. Define bounded reliability without stable cross-hop identifiers.
-8. Define cell interleaving and fragment-count padding.
-9. Keep production claims blocked until independent review and implementation audit.
+Only after these gates should the project attempt a wider overlay deployment or traffic-privacy claim.

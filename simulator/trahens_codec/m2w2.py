@@ -24,6 +24,7 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from trahens_crypto import ristretto as r255
 from trahens_crypto.c1 import C1_SUITE_ID, URE_BYTES, URECiphertext
 from trahens_crypto.c2_ideal import C2_SUITE_ID, C2_SYMBOLIC_CIPHERTEXT_BYTES
+from trahens_crypto.eligibility import R1_SUITE_ID, R1_DISCOVERY_NONCE_BYTES
 
 # M2 logical-message constants.
 PROTOCOL_VERSION = 1
@@ -331,7 +332,7 @@ def decode_varuint(
 
 
 def _require_suite_id(suite_id: bytes) -> bytes:
-    if suite_id not in {C1_SUITE_ID, C2_SUITE_ID}:
+    if suite_id not in {C1_SUITE_ID, C2_SUITE_ID, R1_SUITE_ID}:
         raise CodecError("unsupported cryptographic suite")
     return suite_id
 
@@ -400,10 +401,16 @@ def _encode_eligibility_capsule(suite_id: bytes, capsule: bytes | URECiphertext)
     try:
         encoded = bytes(capsule)
     except (ValueError, TypeError) as exc:
-        raise CodecError("invalid C2 eligibility capsule") from exc
-    if len(encoded) != C2_SYMBOLIC_CIPHERTEXT_BYTES or encoded == bytes(len(encoded)):
-        raise CodecError("invalid C2 eligibility capsule")
-    return encoded
+        raise CodecError("invalid eligibility capsule") from exc
+    if suite_id == C2_SUITE_ID:
+        if len(encoded) != C2_SYMBOLIC_CIPHERTEXT_BYTES or encoded == bytes(len(encoded)):
+            raise CodecError("invalid C2 eligibility capsule")
+        return encoded
+    if suite_id == R1_SUITE_ID:
+        if len(encoded) != R1_DISCOVERY_NONCE_BYTES or encoded == bytes(len(encoded)):
+            raise CodecError("invalid R1 discovery nonce")
+        return encoded
+    raise CodecError("unsupported eligibility capsule suite")
 
 
 def encode_discover(record: DiscoverRecord) -> bytes:

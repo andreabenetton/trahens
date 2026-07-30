@@ -1,106 +1,69 @@
-# Trahens U1 non-adjacent message unlinkability profile
+# Trahens U1 branch-local unlinkability profile
 
-- Status: Research profile
-- Applies to: Core v0.8 with M2 logical messages, W2 cells, and the C2 eligibility contract
-- Property class: cryptographic and batch-local message unlinkability
+- Status: Active research profile
+- Applies to: Core v1.0 with R1, M2, and W2
+- Property class: structural and conditional batch-local message unlinkability
 
 ## 1. Objective
 
-U1 prevents protocol-visible values from serving as stable handles across non-adjacent forwarding hops. It restores the narrow unlinkability objective expressed by the legacy Trahens draft while separating it from traffic-flow unlinkability.
+U1 prevents protocol-visible branch values from serving as stable equality handles across non-adjacent forwarding hops. It does not claim traffic-flow unlinkability.
 
 ## 2. Adversary
 
-The U1 claim considers a probabilistic polynomial-time adversary that:
-
-- passively observes or controls two non-adjacent relays;
-- sees plaintext protocol bodies at those compromised relays;
-- knows the topology and protocol parameters;
-- can choose other discovery traffic in the same experiment;
-- does not observe precise link timing or queue occupancy at the honest mixing relay;
-- does not modify the challenge messages.
-
-Active tagging, selective delay, and global timing correlation are separate experiments and are not covered by U1.
+The narrow passive game considers an adversary that observes or controls two non-adjacent relays, sees plaintext protocol bodies at those relays, knows topology and parameters, and chooses background traffic. At least one honest transforming and mixing relay lies between observations. Precise global timing, active modification, selective delay, directory/gateway collusion, and endpoint compromise are separate experiments.
 
 ## 3. Challenge game
 
-The challenger selects two conforming input discovery messages \(a_0,a_1\) entering an honest relay. The relay independently transforms both messages, encodes them as M2, places their W2 cells in an eligible mixing batch, samples a uniform permutation \(\pi\), and emits \(b_0,b_1\). The adversary receives the input and output observations but not \(\pi\), and returns a guess for the correspondence.
+The challenger selects two conforming input branches entering an honest relay. The relay independently transforms both, encodes new M2 messages, carries them in W2 cells, places eligible cells in a mixing or interleaving set, and emits a hidden permutation. The adversary guesses the input/output correspondence.
 
-For a two-message challenge, the advantage is
+For a two-message challenge:
 
-\[
-\operatorname{Adv}^{\mathsf{U1}}_{\mathcal A}
-=
-\left|\Pr[\mathcal A\text{ guesses }\pi]-\frac12\right|.
-\]
+```text
+Adv_U1(A) = | Pr[A guesses the permutation] - 1/2 |.
+```
 
-For a batch of size \(s\), the baseline matching probability is \(1/s\). A profile is conforming only if the residual cryptographic advantage above this baseline is negligible under its stated assumptions.
+For an anonymity set of size `s`, the random baseline is `1/s`. Any claim must state cell-count class, release timing, topology, honest-relay placement, and background load.
 
 ## 4. Required transformations
 
-An honest relay MUST, independently for each child branch:
+For each child branch, an honest relay MUST independently:
 
 1. replace the ingress branch token;
-2. replace all candidate and setup capabilities;
-3. blind the reply public key;
-4. rerandomize the eligibility capsule;
-5. reconstruct one canonical M2 message rather than patching the received bytes;
+2. replace candidate and setup capabilities;
+3. additively transform the reply public key;
+4. replace the complete R1 service-query nonce with a fresh independent non-zero value;
+5. reconstruct one canonical M2 message rather than patching received bytes;
 6. assign a fresh link-local W2 message identifier;
-7. fragment the message canonically and pad each W2 cell with fresh randomness;
-8. transmit every cell under a fresh adjacent-link nonce and ciphertext;
-9. place the cells in an eligible mixing batch or interleaving schedule.
+7. fragment canonically and generate fresh padding;
+8. use a fresh adjacent-link nonce, sequence, and ciphertext;
+9. enter the cells into the declared scheduler or mixing treatment.
 
-Any unchanged variable-length opaque field invalidates the U1 claim unless its selected primitive explicitly proves rerandomization unlinkability.
+The raw R1 endpoint capability, capability commitment, endpoint key, endpoint address, gateway pseudonym, and endpoint handle MUST NOT appear in DISCOVER.
 
-## 5. Observable cell classes
+## 5. Observable classes
 
-W2 defines one fixed adjacent-link cell length for `DISCOVER`, `CANDIDATE`, `COMMIT`, `READY`, `ABORT`, `CLOSE`, and `CHAFF`. M2 logical messages are variable length and may require different numbers of W2 cells. Individual cell length is therefore equalized, but total cell count and release timing are explicit leakage.
+W2 equalizes individual cell length at 1,052 bytes. M2 messages may occupy different cell counts. The scheduler must state whether fragments are interleaved, cell counts are padded, chaff is inserted, and releases are constant, quantized, or event-driven.
 
-A traffic-scheduling profile MAY pad a message to a declared cell-count class or interleave fragments with unrelated traffic and CHAFF. Any cell-count class remains observable and must be included in the adversary model.
+A solitary immediately forwarded cell supports only structural field-replacement claims. It does not support batch-local matching resistance.
 
-A `CHAFF` cell MUST be indistinguishable from a real cell to an observer that lacks the adjacent-link keys and MUST consume the same scheduling path.
+## 6. Explicit leakage
 
-## 6. Mixing rule
+U1 does not conceal predecessor and successor peers, local acceptance decisions, cell count, coarse timing, queue pressure, route depth inferred from candidate growth, repeated contexts at one physical relay, origin adjacency across local rings, gateway choice, or directory and redemption observations.
 
-An eligible batch contains at least \(s_{min}\ge2\) fixed-size W2 cells of the same observable class. The relay applies a cryptographically secure uniform permutation. The release policy MUST state:
+## 7. Active attacks
 
-- maximum batching delay;
-- action when fewer than \(s_{min}\) cells are available;
-- chaff injection rule;
-- whether records are released at constant or quantized intervals;
-- queue-overflow behavior.
+R1 removes literal discovery-field tags by complete replacement. This does not defeat tags encoded through selective delay, drop, topology, reply-key manipulation, cell count, or other protocol behavior. Extending the claim to active adversaries requires explicit experiments and review of the reply-key chain, candidate authentication, failure normalization, and scheduler.
 
-A deployment that immediately forwards a solitary transformed cell can claim only per-cell wire-image unlinkability, not batch-local logical-message unlinkability. Multi-cell messages require an explicit interleaving and progress policy.
+C1 remains a negative control whose ratio tag survives an honest rerandomization. Symbolic C2 remains a composition oracle. Neither is an active network suite.
 
-## 7. Explicit leakage
-
-U1 does not conceal:
-
-- the predecessor and successor peers of a compromised relay;
-- local acceptance or rejection decisions;
-- W2 cell count and any configured padded count class;
-- coarse time window unless another profile conceals it;
-- local resource pressure;
-- the fact that several independent branch contexts reached the same compromised relay;
-- origin adjacency across local expanding-ring attempts.
-
-## 8. Active attack requirements
-
-Before extending U1 to an active adversary, a concrete profile MUST demonstrate:
-
-- tagging detection or non-transferability;
-- ciphertext integrity across rerandomization;
-- replay handling that does not introduce a stable global tag;
-- resistance to malformed-ciphertext partitioning;
-- indistinguishable error behavior;
-- bounded work before expensive verification.
-
-## 9. Conformance evidence
+## 8. Conformance evidence
 
 A U1 implementation requires:
 
-- canonical test vectors for every hop transformation;
-- statistical tests showing fresh output distributions;
-- a two-relay matching experiment;
-- active-tagging negative tests;
-- M2 size, W2 cell-count, fragment-interleaving, and queue-schedule captures;
-- a concrete C2 receiver-anonymous Rand-RCCA implementation and independent review of C2 and reply-key blinding.
+- deterministic per-hop transformation vectors;
+- proof that endpoint capability bytes are absent from DISCOVER;
+- statistical freshness tests for branch tokens, R1 nonces, message identifiers, padding, and link ciphertexts;
+- passive matching experiments with at least one honest scheduler boundary;
+- literal-field, selective-delay, drop, and malformed-input attacks;
+- cell-count and timing captures;
+- independent review of the retained reply-key and nested-candidate components.

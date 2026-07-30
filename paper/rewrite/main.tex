@@ -50,7 +50,7 @@
   citecolor=accent,
   pdftitle={Trahens: A Privacy-Enabled Route Discovery Protocol},
   pdfauthor={Andrea Benetton},
-  pdfsubject={Current Trahens protocol draft with U1, E1, C2, M2, and W2 profiles}
+  pdfsubject={Current Trahens protocol draft with U1, E1, R1, M2, and W2 profiles}
 }
 
 \setstretch{1.045}
@@ -87,13 +87,13 @@
 \newcommand{\Hash}{\operatorname{H}}
 \newcommand{\Seal}{\operatorname{Seal}}
 \newcommand{\Open}{\operatorname{Open}}
-\newcommand{\Rerand}{\operatorname{Rerand}}
 \newcommand{\KDF}{\operatorname{KDF}}
 \newcommand{\RouteT}{\mathsf{RouteT}}
 \newcommand{\BranchT}{\mathsf{BranchT}}
 \newcommand{\CandidateT}{\mathsf{CandidateT}}
 \newcommand{\Uone}{\ensuremath{\mathsf{U1}}}
 \newcommand{\Eone}{\ensuremath{\mathsf{E1}}}
+\newcommand{\Rone}{\ensuremath{\mathsf{R1}}}
 \newcommand{\Cone}{\ensuremath{\mathsf{C1}}}
 \newcommand{\Ctwo}{\ensuremath{\mathsf{C2}}}
 \newcommand{\Mtwo}{\ensuremath{\mathsf{M2}}}
@@ -131,17 +131,19 @@
 \vspace{-1.0em}
 
 \begin{statusbox}
-\textbf{Document status.} This document specifies the current research draft of the \ProtoName{} protocol. It defines bounded route discovery, deterministic route-state activation, a receiver-anonymous rerandomizable RCCA security contract for destination eligibility, canonical suite-agile logical messages, and fixed-size authenticated adjacent-link cells with bounded reassembly. The eligibility contract is integrated through an executable ideal functionality. A separate $k=2$ transcription audits the concrete construction of Wang et al.~\cite{anonrcca2021}. The audit proves that the construction's literal finite-field map $\mu(u)=u\bmod q$ is not multiplicative under ordinary quadratic-residue-group multiplication; concrete rerandomization is therefore disabled. The protocol is not suitable for production deployment, and no concrete active-adversary unlinkability claim is made.
+\textbf{Document status.} This document specifies one current experimental protocol. Its active profiles are \Uone{} branch-local representation replacement, \Eone{} deterministic route-state lifecycle, \Rone{} rendezvous-capability discovery, \Mtwo{} canonical variable-length logical messages, and \Wtwo{} fixed-size encrypted adjacent-link cells. Endpoint-specific material is absent from forward discovery. A short-lived, single-use rendezvous capability is presented only after an authenticated route to an acceptable gateway has reached \textsc{Ready}. Earlier universal-rerandomization constructions are retained solely as research controls: one demonstrates a persistent algebraic tag, one is an ideal functionality, and one concrete transcription remains disabled after a reproducible algebraic inconsistency. The protocol is a research specification, not a production anonymity system.
 \end{statusbox}
 
 \begin{abstract}
-Route discovery can disclose endpoint relationships, local topology, and stable correlation handles before an anonymous data path is established. \ProtoName{} is a privacy-enabled control-plane protocol that discovers an eligible responder within a bounded graph radius and installs hop-local bidirectional forwarding state without transmitting a complete route or a network-wide discovery identifier.
+Route discovery can reveal endpoint relationships, local topology, and stable correlation handles before a protected data path exists. \ProtoName{} is a privacy-enabled control-plane protocol that explores a bounded graph, returns authenticated gateway candidates through nested reverse encryption, and installs hop-local bidirectional forwarding state without transmitting a complete route or a network-wide discovery identifier.
 
-The protocol binds five profiles. \Uone{} requires every forwarded branch to replace its adjacent capability, additively tweak its reply key, rerandomize its destination-eligibility capsule, reconstruct the logical message, and cross a declared mixing boundary. \Eone{} defines half-open deadlines, equal-time event precedence, candidate windows, delayed responses, cancellation races, tentative state, forward \textsc{Commit}, reverse \textsc{Ready}, and deterministic cleanup. \Ctwo{} specifies the destination-eligibility algorithms \textsf{KeyGen}, \textsf{Enc}, \textsf{ReRand}, and \textsf{Dec}, together with receiver anonymity, replayable chosen-ciphertext security, replay equivalence, and an explicit cross-hop tagging game. The currently executable reply-key, candidate-encryption, transcript, signature, KDF, and AEAD components are retained from \Cone{}. \Mtwo{} defines one canonical suite-agile variable-length representation for each logical control message without semantic padding. \Wtwo{} fragments an M2 message into one or more fixed 1,052-byte adjacent-link cells, authenticates every cell independently, binds the cryptographic suite during reassembly, and enforces explicit byte, fragment, concurrency, and time limits.
+The active design separates endpoint rendezvous from route discovery. A destination creates random, short-lived, single-use capabilities and registers their commitments at selected rendezvous gateways. An initiator privately obtains a descriptor containing the capability and acceptable short-lived gateway pseudonyms. Forward \textsc{Discover} messages contain only a non-semantic service-query nonce. Every honest relay replaces that nonce, the adjacent branch token, the reply public key, the logical-message representation, the wire message identifier, the padding, and the link ciphertext. A gateway returns its pseudonym inside an authenticated end-to-end candidate. The initiator selects a candidate, completes \textsc{Commit} and \textsc{Ready}, and only then sends the rendezvous capability through the active route. Atomic redemption prevents a second successful use.
 
-This separation avoids treating a fixed transmission unit as the logical message format. A short control message usually occupies one cell, whereas a deeply nested candidate may occupy several. Individual cell length no longer reveals message type or exact logical length, but cell count and timing remain observable unless a separate scheduling profile conceals them. The integrated reference model executes cryptography, canonical encoding, fragmentation, reassembly, and route-state transitions in one event lifecycle. It demonstrates clean multi-cell route activation, bounded cleanup after fragment loss, and rejection of malformed or unauthenticated cells before route-state allocation.
+The protocol binds five profiles. \Uone{} defines per-hop replacement and conditional batch-local unlinkability. \Eone{} defines half-open deadlines, equal-time precedence, candidate windows, delayed responses, cancellation races, tentative state, \textsc{Commit}, \textsc{Ready}, and local expiry. \Rone{} specifies descriptor distribution assumptions, generic gateway discovery, post-activation redemption, and explicit trust boundaries. \Mtwo{} gives each logical control operation one canonical variable-length encoding without semantic padding. \Wtwo{} fragments a logical message into fixed 1,052-byte authenticated cells with canonical fragmentation and bounded out-of-order reassembly.
 
-The analysis retains the C1 eligibility capsule as a negative control. Its persistent algebraic ratio tag survives an honest rerandomizing relay and is recognizable by a separated colluder. In the symbolic C2 experiment, an arbitrary mutation is rejected by the first honest transformation and no transformed capsule reaches that colluder. The concrete audit fixes $k=2$, related quadratic-residue groups, a canonical 412-byte ciphertext, and deterministic vectors from the source equations~\cite{anonrcca2021}; key generation, encryption, decryption, mutation rejection, and the linear strand equations execute successfully. The source also explains the inner tag by the integer reduction $u\bmod q$ and states that this operation supplies the required homomorphism~\cite{anonrcca2021}. An exact counterexample disproves that literal multiplicative claim, so the implementation fails closed. These results validate protocol composition and isolate a concrete algebraic blocker; they do not establish the security of a deployable cryptosystem or refute the paper's generic framework. The paper therefore presents a falsifiable research baseline rather than a security proof or production benchmark.
+The retained reply path uses independent first-hop reply keys, additive relay tweaks over the Ristretto255 group, nested ChaCha20-Poly1305 encryption, Ed25519 candidate authentication, and domain-separated HKDF-SHA-256. Deterministic experiments show successful clean route activation and complete cleanup; a literal upstream nonce marker is removed by the first honest \Rone{} transformation. The same harness preserves a negative control in which an algebraic ratio tag survives an honest universal-re-encryption transform and is recognized by a separated colluder. The paper also audits receiver-anonymous rerandomizable RCCA encryption and an updatable/randomizable public-key encryption proposal, with citations at the points where their results are used. Neither supplies an enabled endpoint-specific discovery primitive in this draft.
+
+The resulting design removes an unresolved cryptographic dependency from the active protocol, but introduces a directory-and-gateway trust boundary. It does not claim traffic-flow unlinkability, private directory lookup, protection from a colluding directory and gateway, post-quantum security, or production readiness. Its purpose is to provide a coherent, testable protocol baseline whose security claims, failures, resource limits, and external dependencies are explicit.
 \end{abstract}
 \linenumbers
 \modulolinenumbers[5]
@@ -149,1348 +151,871 @@ The analysis retains the C1 eligibility capsule as a negative control. Its persi
 \section{Introduction}
 \label{sec:introduction}
 
-\subsection{Motivation}
+Anonymous communication systems ordinarily concentrate on the data path. Before that path can carry application traffic, however, a control plane must locate an eligible service, explore one or more paths, return a response, and install forwarding state. If the discovery procedure carries a stable endpoint key, address hash, attempt identifier, or recognizable ciphertext, separated relays may correlate representations of the same exploration even when the subsequent data path is onion encrypted.
 
-Anonymous communication is commonly described in terms of a protected data path. Before that path exists, however, a control plane must locate a destination or service, discover one or more usable routes, and install forwarding state. That preparatory process may disclose the same information that the eventual anonymity mechanism is intended to hide: which endpoint is sought, which relays are topologically close, which messages belong to one exploration, and which reverse response corresponds to which forward branch.
+The design problem is therefore not only to encrypt route discovery, but to minimize equality handles while retaining bounded operation. A relay needs enough information to return a response and later forward selected traffic, but should not receive the complete route. The initiator needs authenticated candidates, but a responder identity should not be exposed to every relay. A deployment also needs strict limits because branch exploration without a stable global duplicate identifier consumes more state than conventional flooding.
 
-The problem is especially visible in decentralized and path-aware networks. A conventional routing protocol may distribute a global or regional topology view. A source-routing system may return a complete path to the sender. A directory may provide a stable lookup handle. Each design can be operationally sound while creating a durable correlation surface. \ProtoName{} investigates a different structure: relays maintain only adjacent capabilities, the initiator receives candidates rather than a topology map, and every branch representation is independently transformed at each forwarding hop.
-
-Privacy cannot be inferred from encryption alone. A stable token inside an encrypted link becomes visible to a compromised relay; variable ciphertext length reveals the length of the padded plaintext; a multi-cell burst may reveal a candidate's approximate depth; a deterministic retry handle links expanding rings; a route may be activated before end-to-end confirmation; and a malleable ciphertext may permit active tagging even though every honest rerandomization changes its bytes. The protocol therefore treats privacy, lifecycle correctness, resource safety, logical encoding, cell framing, reassembly, scheduling, and active-adversary behavior as separate objects of specification and measurement.
-
-\subsection{Contributions}
-
-This paper makes the following contributions:
+\ProtoName{} addresses these constraints by separating two questions:
 
 \begin{enumerate}
-  \item It defines a bounded route-discovery control plane in which logical discoveries and expanding-ring policy remain local to the initiator, while relays see only peer-bound branch contexts.
-  \item It separates seven properties that must not be conflated: per-cell length equality, passive wire-image unlinkability, conditional batch-local message unlinkability, lifecycle correctness, reassembly safety, active-adversary unlinkability, and traffic-flow unlinkability.
-  \item It specifies the \Uone{} branch-local transformation: branch, candidate, cancellation, and route capabilities are replaced at every hop; reply keys are tweaked; eligibility capsules are rerandomized; and outgoing logical messages are reconstructed.
-  \item It specifies the \Eone{} event lifecycle, including half-open deadlines, deterministic equal-time precedence, delayed candidates, cancellation races, tentative mappings, \textsc{Commit}, \textsc{Ready}, and cleanup after loss.
-  \item It defines the \Ctwo{} active-security contract for eligibility, including receiver anonymity, rerandomizable RCCA behavior, replay equivalence, cross-hop tag resistance, composition, and generic failure behavior.
-  \item It retains \Cone{} as an executable negative-control eligibility construction and as the concrete component set for reply-key tweaking, nested candidates, responder signatures, transcripts, KDF, and AEAD.
-  \item It defines \Mtwo{} as a canonical variable-length logical-message codec and \Wtwo{} as a fixed-size encrypted-cell profile with deterministic fragmentation and bounded out-of-order reassembly.
-  \item It formalizes the boundary between per-cell length equality and message-size leakage: a message of length $L$ occupies $\lceil L/992\rceil$ W2 cells unless a scheduling profile pads or obscures that count.
-  \item It integrates \Uone{}, \Eone{}, \Ctwo{}, \Mtwo{}, and \Wtwo{} in one deterministic event model while preserving the executable C1 reply and authentication components.
-  \item It gives both an executable C1 ratio-tag counterexample and a symbolic C2 rejection experiment, then transcribes the selected $k=2$ construction into canonical bytes and records the exact related-group operation that still requires independent interoperability review.
+  \item Which nearby nodes can provide a rendezvous-gateway service?
+  \item Which destination should that gateway contact after a route has been selected and authenticated?
 \end{enumerate}
 
-\subsection{Scope and reading guide}
+The first question is answered by bounded graph discovery. The second is answered after route activation by a one-time capability delivered through a separately obtained private descriptor. This arrangement follows the general architectural lesson of rendezvous systems: service identity, introduction, and connection joining need not be represented by the same network-visible object. Tor onion services likewise separate descriptors, introduction points, and rendezvous points~\cite{toroverview,torrendezvous,torintro}. \ProtoName{} does not implement the Tor protocol and does not inherit its anonymity analysis; those specifications are cited as an operational precedent for separating discovery from endpoint rendezvous.
 
-\begin{claimbox}[Scope of this document]
-\ProtoName{} discovers one or more eligible responders within a bounded graph radius and establishes hop-local bidirectional forwarding state to one selected responder. It does not define global name resolution, inter-domain routing policy, application-data congestion control, economic incentives, a new physical or link layer, or a replacement for IP.
-\end{claimbox}
+The protocol makes the following contributions.
 
-\Cref{sec:background} relates the design to anonymity and cryptographic mechanisms. \Cref{sec:model} states the network and adversary models. \Cref{sec:notation} fixes the notation and key roles. \Cref{sec:overview} explains the complete protocol before formal cryptography. \Cref{sec:crypto,sec:forward,sec:reverse,sec:lifecycle,sec:messages} define the cryptographic, operational, logical-message, cell-framing, and reassembly mechanisms. \Cref{sec:unlinkability,sec:resources} state the privacy and abuse boundaries. \Cref{sec:evaluation} reports deterministic evidence. The appendices summarize normative requirements and conformance values.
+\begin{enumerate}
+  \item It defines branch-local discovery without a network-wide discovery identifier or a transmitted source route.
+  \item It removes endpoint-specific cryptographic material from active forward discovery.
+  \item It defines a one-time rendezvous capability that is revealed only after authenticated route activation.
+  \item It replaces each adjacent branch token, query nonce, reply key, message identifier, padding region, and link ciphertext at every honest forwarding step.
+  \item It returns candidates through a nested reverse-encryption chain that permits the initiator to reconstruct the reply-key sequence without exposing it to relays.
+  \item It separates tentative route creation from explicit \textsc{Commit} and \textsc{Ready} authorization.
+  \item It separates canonical variable-length messages from fixed-size encrypted wire cells.
+  \item It specifies finite reassembly, route-state, work, time, queue, registration, and redemption limits.
+  \item It distinguishes structural per-hop unlinkability, conditional batch-local unlinkability, active tagging, and traffic-flow privacy.
+  \item It preserves failed cryptographic candidates as explicit negative controls instead of silently relying upon them.
+\end{enumerate}
 
-\section{Related work and cryptographic context}
+The remainder of this paper first places the design in relation to anonymity systems, universal re-encryption, and rendezvous protocols. It then defines the system model, notation, profiles, algorithms, codecs, state machines, security boundaries, and deterministic evidence.
+
+\section{Related work and design context}
 \label{sec:background}
 
-\subsection{Network-layer anonymity and mix packets}
+\subsection{Anonymous forwarding and traffic analysis}
 
-HORNET demonstrates high-speed anonymous forwarding with symmetric cryptography on the data-plane fast path and no per-flow forwarding state in intermediate routers~\cite{hornet}. TARANET adds setup mixing and coordinated constant-rate transmission to resist traffic analysis at the network layer~\cite{taranet}. Sphinx provides a compact mix packet format with per-hop transformation, path-length hiding, reply support, and formal security goals~\cite{sphinx}. Loopix combines Sphinx packets with stochastic mixing and cover traffic~\cite{loopix}.
+HORNET demonstrates high-speed anonymous forwarding with symmetric cryptography on the data-plane fast path and no per-flow forwarding state in intermediate routers~\cite{hornet}. TARANET combines setup mixing with coordinated constant-rate transmission to resist traffic analysis at the network layer~\cite{taranet}. Sphinx defines a compact mix packet with per-hop transformation, path-length hiding, reply support, and formal security goals~\cite{sphinx}. Loopix combines Sphinx packets with stochastic mixing and cover traffic~\cite{loopix}.
 
-These systems begin with a route or layered packet structure already selected by the sender or supplied by another mechanism. \ProtoName{} addresses a prior problem: the sender initially knows the endpoint descriptor but not the path. The protocol must explore a branching graph while avoiding a stable cross-hop identifier. Consequently, techniques designed for a single precomputed onion cannot be copied without modification.
+Those systems assume that a path or layered packet structure has already been selected. \ProtoName{} considers the earlier stage in which the initiator knows a destination descriptor but does not yet know a usable gateway path. Consequently, source-routed onion construction cannot be applied directly: exploration branches, converges, expires, and returns candidates before one path is selected.
 
-\subsection{Universal re-encryption and active security}
+\subsection{Universal re-encryption and active relations}
 
-Universal re-encryption (URE) augments public-key encryption with a transformation that does not require the recipient public key and preserves the encrypted plaintext. Golle, Jakobsson, Juels, and Syverson introduced this mechanism for mixnets by adding an auxiliary encryption of the identity to an ElGamal-style ciphertext~\cite{gjjs}. This property is relevant to \ProtoName{} because forwarding the destination public key beside every discovery branch would create a stable recipient selector.
+Golle, Jakobsson, Juels, and Syverson introduced universal re-encryption so that a mixer could rerandomize a public-key ciphertext without receiving the recipient key~\cite{gjjs}. The construction is attractive for discovery because a stable destination public key need not accompany the ciphertext. Rerandomization alone is not sufficient, however. Banfi, Maurer, and Ritsch show that security definitions for universal re-encryption must capture both anonymity and unlinkability, and they give a composable application-level treatment for mix networks~\cite{ure2023}.
 
-Rerandomization correctness alone is not an adequate anonymity definition. Banfi, Maurer, and Ritsch distinguish the minimal secrecy and unlinkability properties of URE and formulate a composable application-level notion for mixnet use~\cite{ure2023}. Their analysis reinforces the protocol distinction between byte-changing rerandomization, recipient anonymity, and resistance to active relations that survive an honest transform.
+Replayable chosen-ciphertext security permits transformations that preserve the plaintext while protecting against other chosen-ciphertext modifications~\cite{rcca2003}. Receiver anonymity additionally requires that a ciphertext not disclose which admissible public key was used; the closely related key-privacy objective was formalized by Bellare et al.~\cite{keyprivacy2001}. Prabhakaran and Rosulek combined rerandomization with RCCA security but did not realize their stronger receiver-anonymity objective in the concrete scheme~\cite{rcca2007}. Wang et al. present a receiver-anonymous rerandomizable RCCA framework and a concrete construction based on rerandomizable tag smooth-projective hash functions~\cite{anonrcca2021}. The source is important to the security target discussed in \cref{sec:researchcrypto}, but the literal finite-field transcription audited for this project remains disabled.
 
-Replayable chosen-ciphertext security (RCCA) was introduced by Canetti, Krawczyk, and Nielsen as a relaxation of CCA security that permits transformations yielding the same plaintext while retaining chosen-ciphertext protection against other modifications~\cite{rcca2003}. Key privacy, introduced for public-key encryption by Bellare et al., asks that a ciphertext not reveal which admissible public key was used~\cite{keyprivacy2001}. Prabhakaran and Rosulek combined perfect rerandomization with RCCA security and formulated the stronger receiver-anonymity objective, but their concrete scheme did not realize that objective~\cite{rcca2007}.
+Dowling et al. construct updatable and randomizable public-key encryption as a component of strongly anonymous ratcheted key exchange~\cite{urpke2022}. Their randomization interface updates an encryption key and a ciphertext together. That is useful in its intended ratcheting setting, but it is not the ciphertext-only, same-recipient, public transform needed by the earlier endpoint-specific discovery design. The paper is therefore treated as a related primitive rather than a drop-in replacement.
 
-Wang et al. subsequently constructed the first receiver-anonymous rerandomizable RCCA-secure public-key encryption framework. Their construction extends the smooth projective hash-function paradigm of Cramer and Shoup~\cite{sphf2002} with rerandomizable tag-SPHFs and supplies a concrete $k$-linear instantiation~\cite{anonrcca2021}. \Ctwo{} adopts that combined security contract as the eligibility target. The protocol also uses the paper's concrete construction as the subject of the byte-level audit in \cref{sec:c2audit}; the audit is not treated as a proof or as deployment approval.
+\subsection{Rendezvous architectures}
 
-\subsection{HPKE and the custom reply KEM}
+Tor onion services publish short-lived service descriptors containing introduction points. A client contacts an introduction point, while client and service establish separate circuits to a rendezvous point that joins the circuits~\cite{toroverview,torrendezvous,torintro}. The Tor specifications also discuss replay resistance, fixed-size padding for introduction messages, and the resource impact of replayed requests~\cite{torintro}.
 
-HPKE standardizes hybrid public-key encryption from a KEM, KDF, and AEAD and gives precise context binding and test vectors~\cite{hpke}. The C1 reply construction follows that discipline but requires a public key that can be additively tweaked at each hop and whose corresponding secret can later be reconstructed by the initiator. RFC~9180 does not register a \code{ristretto255} KEM with this property. C1 therefore defines an HPKE-inspired custom KEM and explicitly refrains from claiming RFC~9180 interoperability.
+\Rone{} adopts only the architectural separation: the route-discovery message selects a generic gateway; endpoint-specific capability material is sent later over the selected active route. Unlike Tor, \Rone{} does not yet specify a directory consensus, descriptor encryption system, introduction circuit, or complete rendezvous handshake. These missing parts are explicit dependencies.
 
-\section{System model, adversary, and claims}
+\subsection{Standard cryptographic components}
+
+HPKE defines hybrid public-key encryption from a KEM, KDF, and AEAD with explicit context binding~\cite{hpke}. The retained reply construction follows this discipline but uses an additive \code{ristretto255} public-key tweak not registered by HPKE, and is therefore described as HPKE-inspired rather than RFC~9180 compatible. Group encodings follow RFC~9496~\cite{ristretto}; key derivation uses HKDF-SHA-256~\cite{hkdf}; authenticated encryption uses ChaCha20-Poly1305~\cite{chacha}; and responder authentication uses Ed25519~\cite{eddsa}.
+
+\section{System model, roles, and claims}
 \label{sec:model}
 
-\subsection{Network model}
+\subsection{Graph and route model}
 
 Let the communication substrate be an undirected graph
 \begin{equation}
 G=(V,E),
 \label{eq:graph}
 \end{equation}
-where a node $n\in V$ may act as initiator, relay, responder, or any combination of these roles. An edge $(u,v)\in E$ denotes an authenticated adjacent-link association. A route of length $d$ is a sequence
+where each node may act as an initiator, ordinary relay, rendezvous gateway, or combination of those roles. An edge $(u,v)\in E$ denotes an authenticated adjacent-link association. A route of length $d$ is
 \begin{equation}
 \rho=(n_0,n_1,\ldots,n_d), \qquad (n_i,n_{i+1})\in E.
 \label{eq:route}
 \end{equation}
-The initiator is $n_0$ and the responder is $n_d$. The protocol never transmits $\rho$ as one object.
+The route is a conceptual object used in the analysis; it is never transmitted as one message.
 
-The adjacent-link transport supplies peer authentication, confidentiality and integrity, exact cell-record boundaries, a directional link epoch, a monotonically managed sequence, and notification of connection failure. W2 fixes the complete cell-record length while M2 remains a variable-length logical representation. A separate scheduling profile defines cell batching, fragment interleaving, release delay, cell-count padding, and cover traffic. Adjacent-link protection prevents an external observer from reading or modifying an honest-to-honest edge; it does not make a compromised relay honest or constrain the content of new cells emitted by that relay.
+The adjacent-link transport supplies confidentiality, integrity, exact record boundaries, a directional epoch, replay sequence management, and connection-state notification. \Wtwo{} fixes the complete cell length. It does not hide cell direction, count, or timing. A separate scheduler is required for batching, release delay, fragment interleaving, count padding, and cover traffic.
+
+\subsection{Rendezvous roles}
+
+The active rendezvous profile uses five logical roles:
+
+\begin{itemize}
+  \item $D$: destination endpoint;
+  \item $Q$: private directory or capability-distribution service;
+  \item $G$: rendezvous gateway;
+  \item $S$: route initiator;
+  \item $R$: ordinary route relay.
+\end{itemize}
+
+Roles are logical rather than necessarily distinct machines. The directory distributes a private descriptor to an authorized initiator. The gateway stores capability commitments and, after redemption, receives a local endpoint handle. The core route protocol does not define how the directory hides queries, authenticates recipients, distributes records, or reaches consensus.
 
 \subsection{Adversary}
 
-The adversary may:
+The adversary may observe links outside the declared adjacent-link protection profile; compromise a bounded set of nodes; inspect their keys, state, queues, and local timing; inject, drop, delay, duplicate, reorder, redirect, or replace messages at compromised nodes; generate fresh branches; collude across separated relays; steal capabilities from compromised initiators; and attempt state, queue, registration, or cryptographic-work exhaustion.
 
-\begin{itemize}
-  \item observe links not protected by the stated underlay profile;
-  \item compromise a bounded set of nodes and inspect their keys, state, queues, and local timing;
-  \item inject, drop, delay, duplicate, reorder, redirect, or modify records at compromised nodes;
-  \item generate fresh syntactically valid branches rather than only replaying old records;
-  \item coordinate observations from multiple compromised relays;
-  \item attempt resource exhaustion, candidate spam, and active ciphertext tagging.
-\end{itemize}
+The adversary cannot forge uncompromised adjacent-link authentication or break the assumptions assigned to the retained standard primitives. No cryptographic assumption is assigned to the symbolic C2 oracle or the disabled C2 transcription. A malicious directory and a malicious gateway may correlate descriptor delivery with redemption; the active profile does not claim to prevent this.
 
-The adversary cannot break the cryptographic assumptions explicitly assigned to a concrete profile, forge uncompromised adjacent-link authentication, or read an honest-to-honest protected link. The symbolic C2 functionality is an idealized test oracle and is not included among such assumptions. Traffic-flow claims require a separate observation and scheduling profile; neither C2 nor W2 alone conceals timing.
-
-\subsection{Separated properties}
+\subsection{Claim classes}
 
 \begin{definition}[Per-cell length equality]
-Every W2 adjacent-link cell has the same complete length, independently of logical message type, candidate depth, fragment position, protected-body length, or chaff status.
+Every \Wtwo{} transmission has the same complete length independently of logical message type, fragment position, protected-body length, or chaff status.
 \end{definition}
 
-\begin{definition}[Canonical logical-message representation]
-For every accepted semantic control message and selected cryptographic suite, M2 admits exactly one byte representation. Length integers are minimal, the suite and capsule length are explicit, fragmentation metadata is absent from the logical message, and no trailing bytes or semantic padding are permitted.
+\begin{definition}[Endpoint-independent forward field]
+A forward-discovery field is endpoint-independent if, conditioned on public protocol parameters and local branch state, its distribution does not depend on the selected destination descriptor.
 \end{definition}
 
-\begin{definition}[Passive wire-image unlinkability]
-For passively observed messages processed by at least one honest relay, protocol fields exposed after adjacent-link decryption do not provide a deterministic equality test linking an incoming representation to a non-adjacent outgoing representation.
+\begin{definition}[Passive structural unlinkability]
+After at least one honest forwarding step, no protocol field available after adjacent-link decryption provides a deterministic equality test that links a designated incoming branch to a non-adjacent outgoing branch.
 \end{definition}
 
-\begin{definition}[Batch-local message unlinkability]
-After an honest per-hop cryptographic transformation and a mixing boundary containing $k\ge2$ cells with the same observable treatment, a passive observer cannot match a designated input logical message to its output with advantage exceeding the relevant cryptographic advantage and information exposed by cell count and scheduling.
+\begin{definition}[Batch-local unlinkability]
+After an honest transformation and an explicitly defined mixing boundary containing at least two identically treated cells, a passive observer cannot match an input to its output beyond the advantage induced by the retained cryptographic components and remaining cell-count, timing, and topology leakage.
 \end{definition}
 
 \begin{definition}[Lifecycle correctness]
-Every accepted control event produces one deterministic state transition or rejection, every state has a finite local deadline, and loss of any cleanup message cannot create permanent state.
-\end{definition}
-
-\begin{definition}[Reassembly safety]
-An adversarial stream of authenticated or unauthenticated fragments cannot make a node allocate route-semantic state before complete canonical M2 decoding and M2/W2 suite agreement, and incomplete-message memory is bounded by explicit context, byte, fragment, and time limits.
-\end{definition}
-
-\begin{definition}[Active-adversary unlinkability]
-Compromised relays cannot install a persistent recognizable relation, selective-failure marker, or other active tag that links non-adjacent representations of one branch with non-negligible advantage.
+Every accepted event causes one deterministic state transition or rejection; every state has a finite half-open lifetime; and loss of advisory cleanup messages cannot create permanent state.
 \end{definition}
 
 \begin{definition}[Traffic-flow unlinkability]
-An observer cannot reliably correlate communication endpoints using timing, direction, volume, cell count, fragment bursts, queue behavior, topology, retries, or long-lived observation.
+An observer cannot correlate endpoints from direction, timing, volume, cell count, fragment bursts, retries, queue behavior, topology, or long-lived observation.
 \end{definition}
 
 \begin{table}[ht]
 \centering
-\caption{Protocol claim matrix}
+\caption{Claim matrix for the active protocol}
 \label{tab:claims}
-\begin{tabularx}{\textwidth}{@{}p{0.25\textwidth}p{0.19\textwidth}X@{}}
+\begin{tabularx}{\textwidth}{@{}p{0.27\textwidth}p{0.19\textwidth}X@{}}
 \toprule
-Property & Status & Required evidence or dependency \\
+Property & Status & Basis or missing dependency \\
 \midrule
-Per-cell length equality & Specified and tested & Every W2 transmission is one 1,052-byte adjacent-link record. \\
-Canonical M2 representation & Specified and tested & Minimal varints, exact body containment, explicit suite binding, no trailing bytes, and deterministic fragmentation. \\
-Passive wire-image unlinkability & Structural claim & No stable cross-hop field; per-hop token replacement, key tweak, suite-selected rerandomization, M2 reconstruction, fresh W2 identifiers, padding, and link encryption. \\
-Batch-local unlinkability & Conditional claim & A concrete C2 construction, retained reply-key assumptions, at least one honest transform, W2 cell equality, and a declared interleaving or mixing boundary. \\
-Lifecycle correctness & Model-supported claim & E1 state rules, integrated authentication, bounded event simulation, and zero final route state. \\
-Reassembly safety & Model-supported claim & Fixed maximum message and fragment count, bounded contexts and reserved bytes, conflict invalidation, and local timeout. \\
-Active-adversary unlinkability & Concrete claim not made & C1 provides a failing ratio-tag control; symbolic C2 rejects mutation before a separated colluder, but the concrete C2 gate remains open. \\
-Traffic-flow unlinkability & Not claimed & A scheduling profile, cell-count padding, cover traffic, and correlation experiments are required. \\
-Production cryptographic security & Not claimed & Independent review, proof alignment, side-channel analysis, and implementation audit are absent. \\
+Fixed cell length & Specified and tested & Every \Wtwo{} record is 1,052 bytes. \\
+Canonical message encoding & Specified and tested & Minimal lengths, exact containment, no trailing bytes, deterministic fragmentation. \\
+Endpoint-independent \textsc{Discover} field & Specified and tested & The \Rone{} service-query nonce is random, non-semantic, and replaced at every honest child transform. \\
+Passive structural unlinkability & Structural claim & Per-hop replacement of branch tokens, nonces, reply keys, message identifiers, padding, and link ciphertext. \\
+Batch-local unlinkability & Conditional claim & Requires an honest transform and a declared mixing/scheduling profile. \\
+Lifecycle correctness & Model-supported claim & \Eone{} transitions, deadlines, and zero residual state in evaluated runs. \\
+Capability replay resistance & Model-supported claim & Atomic, single-use redemption with finite expiry. \\
+Private destination lookup & Not claimed & Requires a separate private-directory profile. \\
+Directory/gateway collusion resistance & Not claimed & \Rone{} introduces an explicit operational trust boundary. \\
+Traffic-flow unlinkability & Not claimed & Scheduler, cover traffic, count padding, and correlation experiments are absent. \\
+Production security & Not claimed & Independent cryptographic, implementation, and side-channel review is absent. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 \FloatBarrier
 
-\section{Terms and notation}
+\section{Profiles and notation}
 \label{sec:notation}
 
-The notation assigns each key role and capability a distinct alphabet. The graph-edge symbol $E$ is never used for a cryptographic value, and a capability symbol denotes only one direction and one adjacent scope.
+\subsection{Bound profiles}
 
-\begin{table}[H]
-\centering
-\caption{Principal notation}
-\label{tab:notation}
-{\small
-\begin{tabularx}{\textwidth}{@{}p{0.18\textwidth}p{0.25\textwidth}X@{}}
+The protocol binds the following profiles:
+
+\begin{itemize}
+  \item \Uone{}: branch-local representation replacement and conditional batch-local unlinkability;
+  \item \Eone{}: deterministic event ordering, route-state activation, cancellation, and expiry;
+  \item \Rone{}: generic gateway discovery followed by one-time endpoint-capability redemption;
+  \item \Mtwo{}: canonical variable-length logical messages without semantic padding;
+  \item \Wtwo{}: fixed-size authenticated link cells with canonical fragmentation and bounded reassembly.
+\end{itemize}
+
+The profiles are composed rather than substituted for one another. \Rone{} removes endpoint-specific material from forward discovery; \Uone{} replaces branch-local representations; \Mtwo{} and \Wtwo{} define encoding; and \Eone{} defines state evolution.
+
+\subsection{Principal notation}
+
+\begin{longtable}{@{}p{0.18\textwidth}p{0.24\textwidth}p{0.51\textwidth}@{}}
+\caption{Principal notation}\label{tab:notation}\\
 \toprule
 Symbol & Class & Meaning \\
 \midrule
-$G=(V,E)$ & network & Undirected graph, nodes, and authenticated adjacent associations. \\
+\endfirsthead
+\toprule
+Symbol & Class & Meaning \\
+\midrule
+\endhead
+$G=(V,E)$ & network & Graph of nodes and authenticated adjacent associations. \\
 $\rho=(n_0,\ldots,n_d)$ & route & Conceptual route; never transmitted as a complete object. \\
-$\Group,q,B,\Identity$ & retained C1 group & Prime-order \code{ristretto255} group, order, generator, and identity used by reply and authentication components. \\
-$(sk_D,pk_D)$ & C2 eligibility & Long-term receiver-anonymous eligibility key pair used only by \textsf{Enc} and \textsf{Dec}. \\
-$(sk_S,vk_S)$ & endpoint signing & Ed25519 pair used to authenticate responder candidate transcripts. \\
-$(x_i,X_i=x_iB)$ & branch reply & Ephemeral reply key at depth $i$ on one branch. \\
-$\delta_i$ & reply tweak & Relay scalar satisfying $X_{i+1}=X_i+\delta_iB$. \\
-$Q_i$ & eligibility capsule & Suite-selected ciphertext after $i$ transformations; opaque to M2 except for its canonical length. \\
-$\sigma$ & suite & Immutable two-byte cryptographic-suite identifier bound in M2 and every W2 fragment. \\
-$\tau_i$ & branch capability & Fresh token meaningful only on one adjacent link and epoch. \\
-$\gamma_i$ & candidate capability & Fresh reverse candidate token meaningful only on one adjacent link. \\
-$\lambda_i^{\rightarrow}$ & route capability & Parent-facing forward label for \textsc{Commit} and data. \\
-$\lambda_i^{\leftarrow}$ & route capability & Child-facing reverse label for \textsc{Ready} and reverse data. \\
-$C_i$ & reverse capsule & Candidate capsule encrypted to reply key $X_i$. \\
-$M$ and $|M|$ & M2 message & Canonical suite-agile logical-message byte string and its length, $1\le |M|\le16{,}384$. \\
-$P_C=992$ & W2 payload & Maximum M2 fragment bytes in one cell. \\
-$h_C=32$ & W2 header & Encrypted per-cell fragmentation header length. \\
-$L_C=1052$ & W2 record & Complete adjacent-link cell-record length, $12+1024+16$ bytes. \\
-$\mu$ & W2 local ID & Fresh 128-bit identifier scoped to one message on one directional link epoch. \\
-$q(M)$ & cell count & Canonical value $\lceil |M|/992\rceil$, with $1\le q(M)\le17$. \\
+$D,Q,G,S,R$ & role & Destination, directory, gateway, initiator, and ordinary relay. \\
+$\tau$ & rendezvous secret & Uniform non-zero 32-byte single-use capability. \\
+$h_\tau$ & gateway record & $\Hash(\text{domain}\concat\tau)$, stored instead of $\tau$. \\
+$\mathsf{RDesc}$ & private descriptor & Capability, expiry, acceptable gateway pseudonyms, and endpoint authentication material. \\
+$\nu_i$ & query nonce & Non-semantic 32-byte value on branch hop $i$, replaced at each honest child transform. \\
+$\pi_G$ & gateway pseudonym & Short-lived identifier returned only inside the protected candidate payload. \\
+$\Group,q,B,\Identity$ & reply group & Prime-order \code{ristretto255} group, order, generator, and identity. \\
+$(x_i,X_i=x_iB)$ & reply key & Ephemeral branch reply secret and public key at depth $i$. \\
+$\delta_i$ & reply tweak & Relay scalar such that $X_{i+1}=X_i+\delta_iB$. \\
+$\beta_i$ & branch token & Fresh capability meaningful only on one adjacent direction and link epoch. \\
+$\gamma_i$ & candidate token & Fresh reverse capability meaningful only on one adjacent direction. \\
+$\lambda_i^{\rightarrow}$ & route label & Parent-facing forward capability used by \textsc{Commit} and forward data. \\
+$\lambda_i^{\leftarrow}$ & route label & Child-facing reverse capability used by \textsc{Ready} and reverse data. \\
+$C_i$ & reverse capsule & Candidate layer encrypted to reply key $X_i$. \\
+$M$ & logical message & Canonical \Mtwo{} byte string, $1\le|M|\le16{,}384$. \\
+$P_C=992$ & cell payload & Maximum logical-message fragment bytes in one \Wtwo{} cell. \\
+$h_C=32$ & cell header & Encrypted fragmentation-header length. \\
+$L_C=1052$ & record length & Complete adjacent-link cell length. \\
+$\mu$ & local message ID & Fresh 128-bit identifier scoped to one directional link epoch. \\
+$q(M)$ & cell count & $\lceil |M|/992\rceil$, bounded by 17. \\
 $R[\ell,\mu]$ & reassembly & Context for authenticated link scope $\ell$ and local identifier $\mu$. \\
-$[t_c,t_e)$ & lifetime & Half-open local validity interval under E1. \\
-$\mathcal B$ & budget & Limits for messages, cells, state, bytes, reassembly, cryptographic work, and time. \\
-$(e_\ell,s_\ell)$ & link scope & Public directional epoch and sequence in the 12-byte cell-record header. \\
+$[t_c,t_e)$ & lifetime & Half-open local validity interval. \\
+$\mathcal B$ & budget & Limits for state, messages, cells, bytes, work, queues, registrations, and time. \\
 \bottomrule
-\end{tabularx}}
-\end{table}
+\end{longtable}
+
+\subsection{Key-role separation}
 
 \begin{table}[ht]
 \centering
-\caption{Key-role and primitive separation}
+\caption{Key and capability separation}
 \label{tab:keyroles}
-\begin{tabularx}{\textwidth}{@{}p{0.19\textwidth}p{0.20\textwidth}p{0.24\textwidth}X@{}}
+\begin{tabularx}{\textwidth}{@{}p{0.22\textwidth}p{0.21\textwidth}p{0.24\textwidth}X@{}}
 \toprule
-Key & Lifetime & Known by & Prohibited reuse \\
+Object & Lifetime & Known by & Prohibited reuse \\
 \midrule
-C2 eligibility $(sk_D,pk_D)$ & Long-term endpoint & Endpoint holds $sk_D$; descriptor binds $pk_D$ without placing it in DISCOVER & Signing, reply encryption, link encryption. \\
-Signing $(sk_S,vk_S)$ & Long-term endpoint & Endpoint; descriptor exposes $vk_S$ & Group scalar or eligibility secret. \\
-Reply $(x_i,X_i)$ & One branch setup & Initiator eventually; $X_i$ on one branch hop & Another first-hop branch or another logical discovery. \\
-Link traffic key & One link epoch & Adjacent peers & End-to-end responder authentication. \\
+Rendezvous capability $\tau$ & One descriptor/one redemption & Destination and authorized initiator; gateway stores only commitment & Discovery field, log identifier, retry after success. \\
+Gateway pseudonym $\pi_G$ & Short descriptor epoch & Directory, gateway, authorized initiator & Long-term gateway identity or branch token. \\
+Signing key $(sk_G,vk_G)$ & Descriptor epoch or shorter & Gateway; descriptor authenticates $vk_G$ & Link encryption or reply-key derivation. \\
+Reply key $(x_i,X_i)$ & One branch setup & Initiator eventually; public value on one hop & Another first-hop branch or logical discovery. \\
+Link traffic key & One directional link epoch & Adjacent peers & End-to-end responder authentication. \\
 \bottomrule
 \end{tabularx}
 \end{table}
+
+\section{R1 rendezvous capability profile}
+\label{sec:r1}
+
+\subsection{Capability issuance}
+
+For each descriptor epoch, destination $D$ selects one or more gateways and samples
+\begin{equation}
+\tau \sample \{0,1\}^{256}\setminus\{0^{256}\}.
+\label{eq:capability}
+\end{equation}
+For each selected gateway $G$, the destination registers
+\begin{equation}
+\left(h_\tau,t_{\mathrm{exp}},e_D,\pi_G\right),\qquad
+h_\tau=\Hash(\code{Trahens-R1-capability-v1}\concat\tau),
+\label{eq:registration}
+\end{equation}
+where $e_D$ is an ephemeral endpoint handle meaningful only to the gateway's local rendezvous process. The gateway MUST store $h_\tau$ rather than $\tau$. The record has a finite half-open lifetime and is atomically deleted upon successful redemption.
+
+The directory privately supplies an authorized initiator with
+\begin{equation}
+\mathsf{RDesc}=\left(t_{\mathrm{epoch}},t_{\mathrm{exp}},\tau,
+\{\pi_{G_1},\ldots,\pi_{G_k}\},\mathsf{auth}_D\right).
+\label{eq:rdesc}
+\end{equation}
+The descriptor distribution protocol is deliberately outside Core. A deployment must specify client authentication, query privacy, record replication, enumeration resistance, and revocation.
+
+\begin{warningbox}[Trust boundary]
+Removing endpoint-specific cryptography from \textsc{Discover} does not remove trust; it relocates it. A directory can observe descriptor delivery, and a gateway can observe capability redemption. A colluding directory and gateway may correlate those events unless a separate private-directory and gateway-separation profile prevents it.
+\end{warningbox}
+
+\subsection{Discovery field}
+
+An \Rone{} \textsc{Discover} message contains a service-query nonce
+\begin{equation}
+\nu_i\in\{0,1\}^{256}\setminus\{0^{256}\}.
+\end{equation}
+The nonce carries no endpoint key, address, capability, commitment, or selector. Every honest relay samples an independent value $\nu_{i+1}$ for each forwarded child. A gateway responds because it locally provides the rendezvous service, not because the nonce matches an endpoint record.
+
+\begin{proposition}[Endpoint independence of the forward field]
+Assume the random generator is independent of the destination descriptor. For any two descriptors $r_0,r_1$ and any fixed public branch parameters,
+\begin{equation}
+\Pr[\nu_i=v\mid\mathsf{RDesc}=r_0]
+=
+\Pr[\nu_i=v\mid\mathsf{RDesc}=r_1]
+=2^{-256}+\varepsilon_0,
+\end{equation}
+where $\varepsilon_0$ accounts only for rejection of the all-zero value.
+\end{proposition}
+
+\begin{proof}
+The generation algorithm receives no descriptor input. It samples uniformly and repeats only when the sampled value is zero. Therefore its distribution is independent of descriptor choice.
+\end{proof}
+
+\begin{proposition}[Literal nonce tags do not survive an honest transform]
+Let a compromised upstream relay place any chosen value $v$ in the nonce field. An honest relay replaces it by an independent non-zero sample $v'$. A downstream relay can test equality with $v$, but succeeds only with probability at most $(2^{256}-1)^{-1}$.
+\end{proposition}
+
+\subsection{Candidate filtering}
+
+A gateway candidate contains $\pi_G$ only inside the end-to-end authenticated candidate payload. The initiator accepts the candidate only when
+\begin{equation}
+\pi_G\in\mathsf{RDesc}.\mathsf{acceptable\_gateways}
+\quad\text{and}\quad t_{\mathrm{now}}<t_{\mathrm{exp}}.
+\end{equation}
+Ordinary relays do not learn the pseudonym or the destination descriptor.
+
+\subsection{Post-activation redemption}
+
+After the route reaches \textsc{Ready}, the initiator sends an end-to-end protected operation
+\begin{equation}
+\mathsf{RENDEZVOUS\_OPEN}=
+\left(\tau,n_S,t_{\mathrm{exp}},\mathsf{handshake}_D\right).
+\label{eq:open}
+\end{equation}
+The gateway computes $h_\tau$, locates a live record, verifies the interval and local policy, atomically deletes the record, and only then releases $e_D$ to its local rendezvous process. Repeated, expired, malformed, or wrong-gateway attempts produce the same externally observable failure class.
+
+\begin{algorithm}[ht]
+\caption{Atomic \Rone{} redemption at gateway $G$}
+\label{alg:redemption}
+\begin{algorithmic}[1]
+\Require protected request $(\tau,n_S,t_{\mathrm{exp}},\mathsf{handshake}_D)$
+\State $h\gets\Hash(\code{Trahens-R1-capability-v1}\concat\tau)$
+\State $r\gets\mathsf{LookupAndLock}(h)$
+\If{$r=\bot$ or $\tau=0^{256}$ or $t_{\mathrm{now}}\notin[r.t_c,r.t_e)$}
+  \State \Return $\mathsf{generic\_failure}$
+\EndIf
+\If{$r.t_e\ne t_{\mathrm{exp}}$ or local policy rejects $\mathsf{handshake}_D$}
+  \State \Return $\mathsf{generic\_failure}$
+\EndIf
+\State $\mathsf{DeleteAtomically}(r)$
+\State \Return $\mathsf{OpenLocalRendezvous}(r.e_D,n_S,\mathsf{handshake}_D)$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{property}[Single successful redemption]
+Under atomic lookup-and-delete semantics, at most one concurrent request for one capability commitment can obtain the endpoint handle.
+\end{property}
 
 \section{Protocol overview}
 \label{sec:overview}
 
 \subsection{Phase structure}
 
-\Cref{fig:phases} separates route discovery from route activation. The initiator may start several local expanding rings, but ring identity is never transmitted. A responder returns a candidate through stored branch contexts. Candidate return installs only tentative route state. The selected route becomes usable only after \textsc{Commit} travels forward and \textsc{Ready} returns.
+\Cref{fig:phases} separates route discovery from route activation and endpoint rendezvous. A candidate installs tentative state. \textsc{Commit} reserves the selected path, \textsc{Ready} activates it, and \textsc{Rendezvous-Open} is the first operation that contains the destination capability.
 
 \begin{figure}[ht]
 \centering
 \begin{tikzpicture}[
-  node distance=7.5mm and 7mm,
-  box/.style={draw=accent,rounded corners=1.4mm,fill=softaccent,minimum height=8mm,minimum width=27mm,align=center,font=\small\bfseries},
-  smallbox/.style={draw=accenttwo,rounded corners=1.2mm,fill=softblue,minimum height=7mm,minimum width=25mm,align=center,font=\small},
+  node distance=7mm and 5.5mm,
+  box/.style={draw=accent,rounded corners=1.4mm,fill=softaccent,minimum height=8mm,minimum width=24mm,align=center,font=\small\bfseries},
+  smallbox/.style={draw=accenttwo,rounded corners=1.2mm,fill=softblue,minimum height=7mm,minimum width=23mm,align=center,font=\small},
   arr/.style={-{Latex[length=2.2mm]},thick,color=accenttwo}
 ]
 \node[box] (discover) {DISCOVER\\branch expansion};
 \node[box,right=of discover] (candidate) {CANDIDATE\\tentative return};
-\node[box,right=of candidate] (commit) {COMMIT\\capacity reserve};
-\node[box,right=of commit] (ready) {READY\\route activation};
+\node[box,right=of candidate] (commit) {COMMIT\\reserve};
+\node[box,right=of commit] (ready) {READY\\activate};
+\node[box,right=of ready] (open) {RENDEZVOUS\\OPEN};
 \draw[arr] (discover) -- (candidate);
 \draw[arr] (candidate) -- (commit);
 \draw[arr] (commit) -- (ready);
-\node[smallbox,below=10mm of discover] (branch) {Branch state};
-\node[smallbox,below=10mm of candidate] (tentative) {Tentative route};
-\node[smallbox,below=10mm of commit] (pending) {Pending-ready};
-\node[smallbox,below=10mm of ready] (active) {Active route};
+\draw[arr] (ready) -- (open);
+\node[smallbox,below=9mm of discover] (branch) {Branch state};
+\node[smallbox,below=9mm of candidate] (tentative) {Tentative route};
+\node[smallbox,below=9mm of commit] (pending) {Pending-ready};
+\node[smallbox,below=9mm of ready] (active) {Active route};
+\node[smallbox,below=9mm of open] (redeemed) {Capability consumed};
 \draw[arr] (branch) -- (tentative);
 \draw[arr] (tentative) -- (pending);
 \draw[arr] (pending) -- (active);
+\draw[arr] (active) -- (redeemed);
 \end{tikzpicture}
-\caption{Protocol phases and the corresponding relay-state progression. Every state also has an independent expiry path not shown in the diagram.}
+\caption{Protocol phases and principal state. Every state also has an independent expiry path.}
 \label{fig:phases}
 \end{figure}
 
-\subsection{Local state versus wire state}
+\subsection{Local discovery state}
 
-The initiator maintains a \emph{logical discovery}: application request, destination descriptor, ring schedule, cumulative budget, candidate set, and selection deadline. None of its identity fields appears on the wire. The only relay-visible discovery object is a \emph{branch context}, bound to one ingress peer, one branch token, one link epoch, one incoming reply public key, one suite-selected eligibility capsule, a finite expiry, and bounded child mappings.
+The initiator maintains an application request, private descriptor, expanding-ring schedule, cumulative budget, candidate set, and selection deadline. These values are local. The relay-visible object is a branch context bound to one ingress peer, one branch token, one incoming reply public key, one service-query nonce, finite expiry, and bounded child mappings.
 
-This distinction permits retries without a network-wide attempt identifier. It also creates a cost: a relay cannot collapse two converging branches merely because they belong to the same logical discovery. That loss of global duplicate suppression is deliberate and is bounded by explicit quotas.
+The absence of a global attempt identifier prevents network-wide equality tests but also prevents perfect duplicate suppression when independently transformed branches converge. The resource model therefore treats each branch context as separately chargeable.
 
-\subsection{One branch in plain language}
+\section{Forward discovery and U1 transformation}
+\label{sec:forward}
 
-For one outgoing branch, the initiator generates a random link-local token, an ephemeral reply key, and an eligibility capsule under the selected suite. A relay admits the branch only after complete W2 reassembly, canonical M2 decoding, and suite agreement. For each selected child it generates a new token, adds a random scalar multiple of the group generator to the reply key, applies the suite's public rerandomization algorithm, reconstructs the M2 message, assigns a new link-local W2 message identifier, fragments the message canonically, and sends freshly padded adjacent-link cells. The child cannot compare a stable token, reply key, destination ciphertext, message identifier, or received padding with the parent's input.
+\subsection{Initiator behavior}
 
-An eligible endpoint decrypts the capsule to a fixed marker using the suite's secret key. It signs a candidate transcript and encrypts the candidate to the final reply key. On the reverse path each relay encrypts its stored key tweak and the child capsule to the prior reply key. The initiator opens one layer, learns the tweak, derives the next secret key, and repeats until it verifies the responder.
-
-\section{Cryptographic profiles and active-security contract}
-\label{sec:crypto}
-
-\subsection{Primitive separation and status}
-
-\begin{table}[ht]
-\centering
-\caption{Eligibility target and retained executable components}
-\label{tab:c1suite}
-\begin{tabularx}{\textwidth}{@{}p{0.25\textwidth}p{0.31\textwidth}X@{}}
-\toprule
-Function & Primitive & Rationale and status \\
-\midrule
-Eligibility target & Anonymous rerandomizable RCCA PKE & C2 contract: receiver anonymity, public rerandomization, replay equivalence, chosen-ciphertext robustness, and cross-hop tag resistance~\cite{anonrcca2021}. \\
-Eligibility model & Executable ideal functionality & Opaque symbolic ciphertext registry used only to test composition and failure paths; not cryptography. \\
-Concrete audit & Figure 6, $k=2$, related QR groups & Canonical 412-byte transcription and deterministic equation audit; reserved suite \code{7f02}; full rerandomization fail-closed~\cite{anonrcca2021}. \\
-Prime-order group & \code{ristretto255}, RFC~9496 & Retained C1 group for reply-key and negative-control operations~\cite{ristretto}. \\
-Hash and KDF & SHA-256, SHA-512, HKDF-SHA-256 & Domain-separated transcript hashes and extract-and-expand derivation~\cite{hkdf}. \\
-AEAD & ChaCha20-Poly1305 & 256-bit key, 96-bit nonce, full 128-bit tag~\cite{chacha}. \\
-Signature & Ed25519 & Responder authentication with standard raw key and signature encodings~\cite{eddsa}. \\
-Negative-control eligibility & GJJS-style URE & Executable counterexample construction whose persistent ratio tag is retained for regression testing~\cite{gjjs,ure2023}. \\
-Reply KEM & \code{TR-KEM-R255} & HPKE-inspired custom KEM with additive public-key tweaks; research use only. \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\begin{warningbox}[Cryptographic gate]
-The protocol has selected the C2 security contract and transcribed the cited $k=2$ construction, but it has not completed a reviewed concrete anonymous rerandomizable RCCA implementation. The symbolic backend cannot justify deployment, and the concrete audit remains disabled because the literal finite-field tag map is non-homomorphic. In addition, the retained reply KEM is custom and unregistered, and the executable component set is classical rather than post-quantum.
-\end{warningbox}
-
-\subsection{Canonical encodings and domain separation}
-
-Every C1 group element has the canonical 32-byte encoding defined by RFC~9496. Scalars are canonical 32-byte little-endian integers less than $q$; zero is rejected where a secret, tweak, or ephemeral scalar is required. Public keys and KEM encapsulations reject the identity element.
-
-Let \code{LP16(x)} be a two-byte unsigned big-endian length followed by $x$. C1 defines
-\begin{equation}
-\operatorname{EF}(\ell;x_1,\ldots,x_m)
- = \code{``Trahens-C1-v1''}\concat \operatorname{LP16}(\ell)
-   \concat \operatorname{LP16}(x_1)\concat\cdots\concat\operatorname{LP16}(x_m).
-\label{eq:encodefields}
-\end{equation}
-All KDF and transcript labels use \cref{eq:encodefields}. Implicit concatenation, JSON serialization, locale-dependent text, and alternate integer encodings are non-conforming.
-
-\subsection{Endpoint descriptor and address}
-
-An endpoint has independent eligibility and signing key pairs:
-\begin{equation}
-(sk_D,pk_D)\sample\mathsf{C2.KeyGen}(1^\lambda),
-\qquad (sk_S,vk_S)\sample\mathsf{Ed25519.KeyGen}().
-\end{equation}
-The canonical descriptor is suite-specific and has the generic form
-\begin{equation}
-D=\code{version}_{1}\concat\code{suite}_{2}\concat
-  \operatorname{LP16}(\Encode(pk_D))\concat\operatorname{LP16}(vk_S),
-\label{eq:descriptor}
-\end{equation}
-and its address is
-\begin{equation}
-\mathsf{addr}=\operatorname{SHA256}(\operatorname{EF}(\code{endpoint-address};D)).
-\label{eq:address}
-\end{equation}
-A discovery initiator needs the descriptor, not merely the address hash, because it must encrypt the eligibility marker to $pk_D$ and later verify signatures under $vk_S$. Any directory supplying $D$ must authenticate the binding in \cref{eq:address}. The public key $pk_D$ is used only at initiation; it is not copied into \textsc{Discover}.
-
-\subsection{C2 eligibility syntax and security contract}
-\label{sec:c2}
-
-Following the receiver-anonymous rerandomizable RCCA syntax of Wang et al.~\cite{anonrcca2021}, C2 defines four algorithms:
-\begin{align}
-\mathsf{KeyGen}(1^\lambda)&\rightarrow(pk,sk),\\
-\mathsf{Enc}(pk,m;r)&\rightarrow Q,\\
-\mathsf{ReRand}(Q;\rho)&\rightarrow Q',\\
-\mathsf{Dec}(sk,Q)&\rightarrow m\mid\mathsf{replay}\mid\bot.
-\end{align}
-The only eligibility plaintext is a fixed domain-separated marker $m_\star$. A destination is eligible exactly when decryption returns $m_\star$. The rerandomization algorithm receives neither $pk$ nor $sk$. For an honestly generated $Q$, every honest rerandomization decrypts to the same marker and belongs to the scheme-defined replay-equivalence class.
-
-\begin{definition}[Receiver anonymity]
-Given two admissible public keys and one equal-length marker, an adaptive adversary with the decryption access permitted by the selected RCCA definition cannot determine which key was used with non-negligible advantage. This extends the key-privacy objective of Bellare et al.~\cite{keyprivacy2001} to the RCCA setting formalized by Canetti et al.~\cite{rcca2003} and used by the selected construction~\cite{anonrcca2021}.
-\end{definition}
-
-\begin{definition}[Protocol tag resistance]
-Let two compromised relays be separated by at least one honest transforming relay. After the upstream relay replaces a valid capsule by arbitrary same-profile bytes, the honest relay either rejects or emits a canonical rerandomization. Conditioned on emission, the downstream relay cannot identify the upstream branch from capsule contents with non-negligible advantage beyond replay-equivalence information allowed by the construction.
-\end{definition}
-
-C2 also requires that no stable recipient selector, ciphertext digest, proof identifier, or rerandomization counter be placed beside the capsule. Detailed failures are local only. A malformed input, wrong recipient, invalid proof, non-replay-equivalent mutation, and marker mismatch all use the same externally visible rejection behavior.
-
-\subsection{Executable C2 ideal functionality}
-
-The reference model represents a valid C2 capsule by an opaque 640-byte string stored in a process-local semantic registry. \textsf{ReRand} returns a fresh independently distributed string associated with the same hidden recipient, marker, and replay-equivalence class. Arbitrary byte mutation is absent from the registry and is rejected before an honest relay emits a child branch. The 640-byte length is a planning budget, not a canonical encoding of the selected construction.
-
-This ideal functionality tests suite agility, state-machine composition, generic failure, and the active-tag game. It cannot test group or ring encodings, proof verification, concrete receiver anonymity, hardness assumptions, side channels, or real computational cost. A conforming implementation must replace it with exact algorithms, canonical encodings, deterministic vectors, negative tests, and an independently reviewed security mapping.
-
-\subsection{Concrete \texorpdfstring{$k=2$}{k=2} transcription and finite-field audit}
-\label{sec:c2audit}
-
-The concrete audit targets the $k$-linear public-key encryption construction given in Section~6.3 and Figure~6 of Wang et al.~\cite{anonrcca2021}. The source construction combines two outer strands carrying the eligibility plaintext with an inner malleable encryption of a random mask. Its security analysis uses rerandomizable tag-SPHFs; the smoothness results needed by the instantiation require $k\geq2$~\cite{anonrcca2021}. The audit therefore selects the smallest admissible value,
-\begin{equation}
-k=2.
-\end{equation}
-
-The source proposes two related quadratic-residue groups obtained from a Cunningham chain of the first kind of length three~\cite{anonrcca2021}. For the deterministic audit, let
-\begin{equation}
-\begin{aligned}
-q &= 175513086009046434629810696245711941989,\\
-p &= 2q+1,\\
-r &= 2p+1=4q+3,
-\end{aligned}
-\label{eq:c2chain}
-\end{equation}
-where $q,p,r$ are prime. Define the inner group $\overline{\Group}=\operatorname{QR}^{*}_{p}$ of order $q$ and the outer group $\Group=\operatorname{QR}^{*}_{r}$ of order $p$. The chain in \cref{eq:c2chain} is a fast conformance parameter set only; it is not proposed as a production security parameter.
-
-The finite-field explanation in the source uses the integer representative of an inner-group element as an exponent modulo $q$. In particular, it identifies the relevant exponent with $u\bmod q$ and states that modular reduction supplies the homomorphism required by rerandomization~\cite{anonrcca2021}. The literal map under audit is therefore
-\begin{equation}
-\mu:\operatorname{QR}^{*}_{p}\longrightarrow \mathbb{Z}_{q},
-\qquad \mu(u)=u\bmod q.
-\label{eq:tagmap}
-\end{equation}
-For a rerandomization multiplier $v\in\operatorname{QR}^{*}_{p}$, the source-shaped inner proof update requires the multiplicative compatibility condition
-\begin{equation}
-\mu(vu\bmod p)=\mu(v)\mu(u)\bmod q.
-\label{eq:taghom}
-\end{equation}
-
-\begin{proposition}[The literal reduction is not multiplicative]
-The map in \cref{eq:tagmap} is not, in general, a multiplicative group homomorphism from $\operatorname{QR}^{*}_{p}$ to $\mathbb{Z}_{q}$ when $p=2q+1$ and group multiplication is taken modulo $p$.
-\end{proposition}
-
-\begin{proof}
-Take $q=5$ and $p=11$. Both $3$ and $4$ are elements of $\operatorname{QR}^{*}_{11}$. Their group product is $3\cdot4\bmod11=1$, hence $\mu(3\cdot4\bmod11)=1$. By contrast, $\mu(3)\mu(4)\bmod5=3\cdot4\bmod5=2$. Thus \cref{eq:taghom} fails. The same failure occurs for the deterministic conformance parameters and is recorded with the exact operands in the machine-readable audit report.
-\end{proof}
-
-This proposition is deliberately narrow. It blocks the literal finite-field action described above and explains the failed full-rerandomization test. It does not invalidate the generic rerandomizable tag-SPHF framework, an author-confirmed corrected action, or a different instantiation of that framework~\cite{anonrcca2021}.
-
-For $k=2$, each language vector contains three group elements. The transcription maps Figure~6 to four strands: two outer strands $(x_1,e_1,\pi^b_1)$ and $(x_2,\pi_2,\pi^e_2)$, and two inner strands $(x_3,e_3,\pi^b_3)$ and $(x_4,\pi_4,\pi^e_4)$. The complete ciphertext contains the components summarized in \cref{tab:c2auditshape}.
-
-\begin{table}[ht]
-\centering
-\caption{Canonical shape of the $k=2$ transcription audit}
-\label{tab:c2auditshape}
-\begin{tabularx}{\textwidth}{@{}p{0.22\textwidth}p{0.18\textwidth}X@{}}
-\toprule
-Region & Elements & Contents \\
-\midrule
-Audit header & 4 bytes & Version, reserved local suite \code{7f02}, and parameter-set identifier. \\
-Outer ciphertext & 12 elements & Two three-element language vectors, $e_1$, $\pi_2$, and four tag-SPHF hash values. \\
-Inner ciphertext & 12 elements & Two three-element language vectors, $e_3$, $\pi_4$, and four inner tag-SPHF hash values. \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-Every element is encoded as a canonical unsigned 17-byte big-endian representative after range and subgroup validation. Thus the audit ciphertext length is
-\begin{equation}
-4+12\cdot17+12\cdot17=412\ \text{bytes}.
-\label{eq:c2auditbytes}
-\end{equation}
-The reserved value \code{7f02} is not an M2/W2 network suite. It prevents a partially validated arithmetic transcription from being selected accidentally as route cryptography.
-
-The audit implements deterministic key generation, encryption, canonical decoding, decryption, wrong-recipient rejection, component-wise mutation rejection, and the linear strand-combination equations of Figure~6~\cite{anonrcca2021}. These operations pass the deterministic tests. The full rerandomization procedure additionally samples a non-identity mask multiplier, updates the outer proof values, applies the source malleable-encryption multiplication to the inner mask ciphertext, and rerandomizes the two inner strands~\cite{anonrcca2021}.
-
-\begin{table}[ht]
-\centering
-\caption{Result of the concrete-transcription audit}
-\label{tab:c2auditresult}
-\begin{tabularx}{\textwidth}{@{}p{0.45\textwidth}p{0.18\textwidth}X@{}}
-\toprule
-Check & Result & Interpretation \\
-\midrule
-Key generation and public projections & Pass & Dimensions and projective-key equations are executable. \\
-Encrypt/decrypt eligibility marker & Pass & Outer and inner verification equations accept the original ciphertext. \\
-Canonical 412-byte round trip & Pass & All 24 elements are range- and subgroup-checked. \\
-Wrong-recipient and selected component mutations & Reject & Invalid inputs converge on the generic local failure. \\
-Linear strand combination with identity tag multiplier & Pass & The independently testable strand equations preserve the plaintext. \\
-Literal map $\mu(u)=u\bmod q$ is multiplicative & Fail & A minimal exact counterexample and the deterministic parameter witness violate the required equation. \\
-M2/W2 deployment eligibility & Disabled & Full rerandomization fails closed. \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-The failed row is an exact algebraic result for the literal finite-field interpretation. The source states both that the groups must be related through the Cunningham chain and that the integer reduction $u\bmod q$ supplies the required homomorphism~\cite{anonrcca2021}. The counterexample above shows that ordinary group multiplication followed by integer reduction does not have that property. Consequently, multiplying the inner mask as a group element and reusing its reduced representative in the tag-SPHF exponents cannot preserve the source-shaped inner validation equations in general. A deployable profile now requires either an author-confirmed corrected action or a different independently reviewed construction.
-
-\begin{warningbox}[Fail-closed concrete status]
-The public concrete \textsf{ReRand} entry point is disabled and raises a conformance-gap error. The exact arithmetic, counterexample, and byte representation are retained so that an author-confirmed correction or independently reviewed replacement can be compared field by field. Until a valid action, modern parameters, proof mapping, and independent implementation agree, the symbolic C2 functionality remains the only protocol-facing C2 model and no concrete active-security claim is made.
-\end{warningbox}
-
-\subsection{C1 negative-control eligibility capsule}
-\label{sec:ure}
-
-C1 represents eligibility by one fixed group element $M_\star$, derived from a domain-separated 64-byte hash using the RFC~9496 element-derivation interface. Its two-pair construction follows the universal re-encryption pattern of Golle et al.~\cite{gjjs}. It remains implemented because its equations are useful as a passive-rerandomization baseline and because its active ratio tag is a mandatory negative test. It is not the active-security eligibility profile.
-
-\subsubsection{Encryption}
-
-For public key $A=aB$, sample $r_0,r_1\sample\Zq^*$ and compute
-\begin{equation}
-\begin{aligned}
-U_0 &= M_\star+r_0A, & V_0 &= r_0B,\\
-U_1 &= r_1A,         & V_1 &= r_1B.
-\end{aligned}
-\label{eq:ureenc}
-\end{equation}
-The capsule is
-\begin{equation}
-Q=((U_0,V_0),(U_1,V_1)),
-\end{equation}
-encoded as four consecutive 32-byte group elements. It is therefore exactly 128 bytes.
-
-\subsubsection{Public-key-free rerandomization}
-
-A relay samples $s_0\sample\Zq^*$ and $s_1\sample(\Zq^*\setminus\{1\})$, then computes
-\begin{equation}
-\begin{aligned}
-U'_0 &= U_0+s_0U_1, & V'_0 &= V_0+s_0V_1,\\
-U'_1 &= s_1U_1,     & V'_1 &= s_1V_1.
-\end{aligned}
-\label{eq:urerand}
-\end{equation}
-The relay does not need $A$. For a valid input, the effective randomness becomes $r'_0=r_0+s_0r_1$ and $r'_1=s_1r_1$. The restrictions $s_0\ne0$ and $s_1\ne1$ ensure that all four point encodings change; an implementation rejects an unchanged result.
-
-\begin{proposition}[URE correctness]
-For every valid C1 capsule $Q$ encrypted under $A=aB$, decryption of any rerandomization $Q'$ produced by \cref{eq:urerand} yields the same marker $M_\star$ and passes the consistency check.
-\end{proposition}
-
-\begin{proof}
-Using $U'_1=s_1r_1A$ and $V'_1=s_1r_1B$,
-$U'_1-aV'_1=s_1r_1(aB)-a(s_1r_1B)=\Identity$.
-Similarly,
-$U'_0-aV'_0=M_\star+(r_0+s_0r_1)A-a(r_0+s_0r_1)B=M_\star$.
-\end{proof}
-
-\subsubsection{Decryption}
-
-The endpoint computes
-\begin{equation}
-T=U_1-aV_1
-\end{equation}
-and rejects unless $T=\Identity$. It then computes $M=U_0-aV_0$ and declares itself eligible only if $M=M_\star$. Invalid encodings, consistency failure, marker mismatch, and wrong-key failure all map to the same local result.
+The initiator performs bounded expanding-ring discovery. The ring schedule, candidate threshold, retry policy, and cumulative budget remain local. For each selected first-hop peer, it creates an independent branch token $\beta_0$, reply key pair $(x_0,X_0)$, and service-query nonce $\nu_0$.
 
 \begin{algorithm}[ht]
-\caption{C1 eligibility processing at a potential responder}
-\label{alg:eligibility}
+\caption{Initiator creates one first-hop branch}
+\label{alg:initbranch}
 \begin{algorithmic}[1]
-\Require eligibility secret $a$, encoded capsule $Q$
-\If{any of the four group elements fails canonical decoding}
-  \State \Return \textsc{Invalid-Crypto}
-\EndIf
-\State $T\gets U_1-aV_1$
-\If{$T\ne\Identity$}
-  \State \Return \textsc{Not-Eligible}
-\EndIf
-\State $M\gets U_0-aV_0$
-\If{$M\ne M_\star$}
-  \State \Return \textsc{Not-Eligible}
-\EndIf
-\State \Return \textsc{Eligible}
+\Require first-hop peer $p$, hop limit $d_{\max}$, local budget $\mathcal B$
+\State $\beta_0\sample\{0,1\}^{128}\setminus\{0^{128}\}$
+\State $x_0\sample\Zq\setminus\{0\}$; $X_0\gets x_0B$
+\State $\nu_0\sample\{0,1\}^{256}\setminus\{0^{256}\}$
+\State $m\gets\mathsf{Discover}(\beta_0,X_0,\nu_0,d_{\max},\mathcal B.\mathsf{propagation})$
+\State $M\gets\Encode_{\Mtwo}(m,\code{0101})$
+\State send $\mathsf{W2FragmentAndSeal}(p,M)$
+\State record $(p,\beta_0,x_0,t_e)$ in local discovery state
 \end{algorithmic}
 \end{algorithm}
 
-\subsection{Reply-key tweaking}
-\label{sec:tweak}
+\subsection{Receive and validation order}
 
-For every first-hop branch, the initiator samples $x_0\sample\Zq^*$ and publishes $X_0=x_0B$. A relay forwarding to a child samples $\delta_i\sample\Zq^*$ and computes
+A relay processes input in the following order:
+
+\begin{enumerate}
+  \item parse the public \Wtwo{} link header;
+  \item perform a non-mutating preliminary replay-window check;
+  \item authenticate and decrypt the cell;
+  \item advance replay state only after successful authentication;
+  \item validate the encrypted fragment header and suite;
+  \item reserve bounded reassembly resources;
+  \item complete and canonically validate the fragment set;
+  \item decode one \Mtwo{} message and verify suite agreement;
+  \item apply per-peer and global admission limits;
+  \item allocate branch or route-semantic state;
+  \item execute the message-specific transition.
+\end{enumerate}
+
+This order prevents unauthenticated traffic from reserving a future sequence number or allocating route-semantic state.
+
+\subsection{Per-child transformation}
+
+For each admitted child, an honest relay creates a representation independent of both the incoming branch and its other children.
+
+\begin{algorithm}[ht]
+\caption{Relay forwards one admitted \Rone{} child branch}
+\label{alg:forwardchild}
+\begin{algorithmic}[1]
+\Require decoded branch $(\beta_i,X_i,\nu_i,d)$ and child peer $c$
+\State enforce branch, peer, node, cell, byte, work, and time limits
+\State $\beta_{i+1}\sample\{0,1\}^{128}\setminus\{0^{128}\}$
+\State $\delta_i\sample\Zq\setminus\{0\}$
+\State $X_{i+1}\gets X_i+\delta_iB$
+\State $\nu_{i+1}\sample\{0,1\}^{256}\setminus\{0^{256}\}$
+\State store child mapping $(\beta_i,c,\beta_{i+1},\delta_i,X_i,X_{i+1},t_e)$
+\State $m'\gets\mathsf{Discover}(\beta_{i+1},X_{i+1},\nu_{i+1},d-1,\ldots)$
+\State $M'\gets\Encode_{\Mtwo}(m',\code{0101})$
+\State $\mu'\sample\{0,1\}^{128}\setminus\{0^{128}\}$
+\State fragment $M'$ canonically and emit fresh \Wtwo{} cells to $c$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Loops and convergence}
+
+A relay rejects exact reuse of a live ingress token from the same peer and link epoch. It does not assume that two different tokens identify different logical discoveries. Immediate edge reversal is prohibited, and a relay MAY use bounded adjacent-local loop hints that do not cross a link boundary. Every accepted context is independently limited and expires locally.
+
+\begin{proposition}[No explicit cross-hop equality handle]
+In the active \Rone{} forward transform, the outgoing branch token, service nonce, reply public key, logical-message bytes, local wire message identifier, padding, AEAD nonce, and ciphertext differ from the incoming representation except with negligible collision probability.
+\end{proposition}
+
+\begin{proof}
+Tokens, nonces, message identifiers, padding, and link nonces are freshly sampled. The reply key is additively changed by a non-zero random scalar. The logical message is reconstructed and fragmented under a new local identifier. Adjacent-link ciphertext is produced under the outgoing link key. The only intentionally preserved values are bounded semantic controls such as remaining hop limit and profile identifiers.
+\end{proof}
+
+\section{Candidate return and route activation}
+\label{sec:reverse}
+
+\subsection{Gateway candidate}
+
+A gateway that admits the branch constructs
+\begin{equation}
+P_G=(\pi_G,t_{\mathrm{offer}},X_d,c_G,n_G,\mathsf{params}),
+\label{eq:candidatepayload}
+\end{equation}
+where $c_G$ is a commit challenge and $n_G$ is a fresh nonce. It signs the domain-separated transcript with its descriptor-authenticated Ed25519 key and seals the result to $X_d$ using the retained reply KEM.
+
+The gateway pseudonym is protected inside the sealed payload. Relays learn only that a candidate is returning on a live branch.
+
+\subsection{Nested reverse layers}
+
+At relay $n_i$, the reverse layer contains the stored tweak, adjacent route labels, child candidate token, expiry, and child capsule:
+\begin{equation}
+L_i=(\delta_i,\lambda_i^{\rightarrow},\lambda_i^{\leftarrow},
+\gamma_i,t_e,C_{i+1}).
+\end{equation}
+The relay seals $L_i$ to $X_i$ and forwards the resulting capsule to its parent under a fresh reverse token.
+
+\subsection{Initiator opening}
+
+Starting with $x_0$, the initiator opens the outer layer, obtains $\delta_0$, derives $x_1=x_0+\delta_0\bmod q$, and repeats until it reaches the gateway payload.
+
+\begin{algorithm}[ht]
+\caption{Initiator validates one nested candidate}
+\label{alg:opencandidate}
+\begin{algorithmic}[1]
+\Require root reply secret $x_0$, capsule $C_0$, private descriptor $\mathsf{RDesc}$
+\State $x\gets x_0$; $C\gets C_0$; $\mathsf{path}\gets[\ ]$
+\Loop
+  \State $P\gets\Open_{\mathsf{TRKEM}}(x,C,\mathsf{context})$
+  \If{$P$ is a relay layer $(\delta,\lambda^{\rightarrow},\lambda^{\leftarrow},\gamma,t_e,C')$}
+    \State reject if expired or non-canonical
+    \State append local route material to $\mathsf{path}$
+    \State $x\gets x+\delta\bmod q$; $C\gets C'$
+  \ElsIf{$P$ is a signed gateway payload}
+    \State verify transcript, descriptor key, offer deadline, and final reply key
+    \State reject unless $P.\pi_G\in\mathsf{RDesc}.\mathsf{acceptable\_gateways}$
+    \State \Return validated candidate and $\mathsf{path}$
+  \Else
+    \State \Return $\bot$
+  \EndIf
+\EndLoop
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Commit and readiness}
+
+Candidate return creates only tentative route mappings. The initiator selects one candidate and sends \textsc{Commit} using the first forward route label. Each relay verifies the expected parent label and challenge, reserves bounded capacity, moves the selected mapping to \code{PENDING\_READY}, and forwards under the next local label. The gateway returns \textsc{Ready}; each relay authenticates the reverse transition and moves the mapping to \code{ACTIVE}.
+
+Application data and \textsc{Rendezvous-Open} MUST NOT be forwarded before the initiator authenticates final \textsc{Ready}. This separates discovery success from route authorization.
+
+\section{E1 event lifecycle}
+\label{sec:lifecycle}
+
+\subsection{Half-open deadlines}
+
+Every state created at $t_c$ with expiry $t_e$ is valid only on
+\begin{equation}
+[t_c,t_e)=\{t\mid t_c\le t<t_e\}.
+\end{equation}
+An event at exactly $t_e$ observes the state as expired. Timer rescheduling may extend a state only through an explicit transition; an older timer cannot shorten a later deadline.
+
+\subsection{Equal-time precedence}
+
+When events share one timestamp, an implementation applies this order:
+
+\begin{enumerate}
+  \item authenticated cell receipt and completion of already admitted reassembly;
+  \item message-specific transition whose preconditions were valid immediately before the timestamp;
+  \item local cancellation or selection decision;
+  \item expiry and resource reclamation;
+  \item advisory outbound cleanup.
+\end{enumerate}
+
+This order is deterministic but does not guarantee delivery. A candidate received after the local candidate window is closed is rejected even if remote branch state remains live.
+
+\subsection{State progression}
+
+\begin{table}[ht]
+\centering
+\caption{Principal relay-state transitions}
+\label{tab:states}
+\begin{tabularx}{\textwidth}{@{}p{0.19\textwidth}p{0.23\textwidth}p{0.23\textwidth}X@{}}
+\toprule
+Current state & Event & Next state & Effect \\
+\midrule
+None & valid \textsc{Discover} & Branch & Store parent/child branch mappings and expiry. \\
+Branch & valid \textsc{Candidate} & Tentative & Store local route labels; branch may remain for other children. \\
+Tentative & selected \textsc{Commit} & Pending-ready & Reserve capacity and forward commit. \\
+Pending-ready & valid \textsc{Ready} & Active & Authorize route forwarding. \\
+Any live state & expiry & None & Reclaim locally; optional advisory cleanup. \\
+Tentative/pending & \textsc{Cancel}/\textsc{Abort} & None & Best-effort early cleanup. \\
+Active & \textsc{Close} or expiry & None & Reclaim active mapping. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Delayed candidates from earlier expanding rings MAY be accepted while the same logical candidate window remains open. They do not reopen a closed window and do not expand the cumulative budget.
+
+\section{M2 logical messages and W2 wire cells}
+\label{sec:messages}
+
+\subsection{Layer separation}
+
+A logical protocol message and an observable transmission unit solve different problems. \Mtwo{} therefore defines a compact canonical message, while \Wtwo{} defines fixed-size cells. A short message normally occupies one cell; a deeply nested candidate may occupy several. This removes the former artificial route-depth limit caused by requiring every logical message to fit in one record.
+
+\subsection{M2 envelope}
+
+Every \Mtwo{} message has the canonical form
+\begin{equation}
+M=\mathsf{version}\concat\mathsf{type}\concat\mathsf{suite}
+\concat\mathsf{body\_length}\concat\mathsf{body}.
+\label{eq:m2}
+\end{equation}
+Version, type, and suite are fixed width. Variable lengths use minimal unsigned base-128 LEB128. A decoder rejects overlong encodings, unterminated values, trailing bytes, inconsistent nested lengths, and suite-specific field lengths outside their bounds.
+
+The active suite identifier is \code{0101}. In an \Rone{} \textsc{Discover}, the suite-specific field is exactly 32 bytes and contains $\nu_i$. The raw capability $\tau$, its hash, gateway pseudonym, endpoint handle, and destination authentication material are prohibited from this message class.
+
+\subsection{W2 cell}
+
+A \Wtwo{} record has length
+\begin{equation}
+L_C=12+1024+16=1052\ \text{bytes}.
+\end{equation}
+The 12-byte public header contains a directional link epoch and sequence number. The encrypted 1,024-byte plaintext contains a 32-byte fragment header, up to 992 message bytes, and fresh random padding. ChaCha20-Poly1305 contributes the 16-byte authentication tag~\cite{chacha}.
+
+The encrypted fragment header contains the local message identifier $\mu$, suite, fragment index, fragment count, total logical length, and current fragment length. It is authenticated together with the public link header as associated data.
+
+\subsection{Canonical fragmentation}
+
+For a logical message of length $L$,
+\begin{equation}
+q(M)=\left\lceil\frac{L}{992}\right\rceil,
+\qquad 1\le L\le16{,}384,
+\qquad 1\le q(M)\le17.
+\label{eq:fragmentcount}
+\end{equation}
+Every non-final fragment contains exactly 992 message bytes. The final fragment contains the remainder. Alternative short-fragment decompositions are invalid.
+
+\subsection{Bounded reassembly}
+
+A context is keyed by authenticated directional link scope and local message identifier. It reserves the declared total logical length, accepts out-of-order fragments, treats exact duplicates idempotently, invalidates the whole context on conflicting duplicate bytes or metadata, and expires after a finite deadline.
+
+\begin{algorithm}[ht]
+\caption{Bounded \Wtwo{} receive pipeline}
+\label{alg:reassembly}
+\begin{algorithmic}[1]
+\Require cell record $w$ from authenticated peer scope $\ell$
+\State parse public epoch and sequence; perform non-mutating replay precheck
+\State authenticate and decrypt $w$; on failure return generic reject
+\State advance replay state
+\State decode and validate fragment header $f$
+\State reject if suite disabled, lengths non-canonical, or bounds exceeded
+\State obtain or allocate bounded context $R[\ell,f.\mu]$
+\State reject and invalidate context on metadata conflict
+\State store fragment or accept exact duplicate idempotently
+\If{all canonical fragments are present}
+  \State concatenate exactly $f.L$ bytes and delete reassembly context
+  \State decode one canonical \Mtwo{} message
+  \State require \Mtwo{}/\Wtwo{} suite agreement
+  \State only now invoke route-semantic processing
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+\begin{property}[No route state before complete decoding]
+A partial, unauthenticated, non-canonical, or cross-suite fragment set cannot allocate branch, candidate, tentative, pending, or active route state.
+\end{property}
+
+\section{Retained cryptographic components}
+\label{sec:crypto}
+
+\subsection{Reply-key transformation}
+
+For one branch, the initiator samples $x_0\in\Zq\setminus\{0\}$ and publishes $X_0=x_0B$. Relay $i$ samples $\delta_i\in\Zq\setminus\{0\}$ and computes
 \begin{equation}
 X_{i+1}=X_i+\delta_iB.
-\label{eq:tweakpublic}
+\label{eq:tweak}
 \end{equation}
-The relay stores $\delta_i$ only in the corresponding child context. It resamples if the result is the identity. The initiator later computes
+The initiator later reconstructs
 \begin{equation}
 x_{i+1}=x_i+\delta_i\pmod q.
 \label{eq:tweaksecret}
 \end{equation}
 
 \begin{proposition}[Tweak consistency]
-The secret update in \cref{eq:tweaksecret} corresponds to the public update in \cref{eq:tweakpublic}.
+If $X_i=x_iB$, then the public and secret transformations in \cref{eq:tweak,eq:tweaksecret} satisfy $X_{i+1}=x_{i+1}B$.
 \end{proposition}
+
 \begin{proof}
-$(x_i+\delta_i)B=x_iB+\delta_iB=X_i+\delta_iB=X_{i+1}$.
+By distributivity in the prime-order group,
+$(x_i+\delta_i)B=x_iB+\delta_iB=X_i+\delta_iB$.
 \end{proof}
 
-\subsection{TR-KEM-R255 and reply encryption}
-\label{sec:replykem}
+Each first-hop branch uses an independent root key. Relays reject the identity encoding and non-canonical points according to RFC~9496~\cite{ristretto}.
 
-To encrypt to $X=xB$, the sender samples $e\sample\Zq^*$ and computes
+\subsection{Reply KEM and nested encryption}
+
+The reply construction is HPKE-inspired: it combines ephemeral group agreement, domain-separated HKDF-SHA-256, and ChaCha20-Poly1305~\cite{hpke,hkdf,chacha}. It is not RFC~9180 HPKE because the public key is deliberately tweakable and no registered HPKE KEM provides the same interface. Context binds protocol version, message class, suite, direction, route stage, and the exact public keys used.
+
+Fresh encapsulation randomness and AEAD nonce are required for every layer. Decryption, point-validation, transcript, and authentication failures map to one externally visible rejection class.
+
+\subsection{Gateway authentication}
+
+The signed candidate transcript includes, in fixed order, the protocol domain, version, suite, gateway pseudonym, offer deadline, final reply public key, commit challenge, candidate nonce, and selected parameter digest. Ed25519 verification follows RFC~8032~\cite{eddsa}. The descriptor must bind the verification key to the accepted short-lived pseudonym.
+
+\subsection{Adjacent-link protection}
+
+Link keys are distinct from reply and signing keys. Each directional link epoch provides unique nonces or sequence-derived nonce material. The replay window advances only after successful AEAD verification, preventing unauthenticated input from reserving future sequence numbers.
+
+\section{Research cryptographic profiles and citations}
+\label{sec:researchcrypto}
+
+\subsection{C1 negative control}
+
+The repository retains a GJJS-style universal-re-encryption capsule as a negative control~\cite{gjjs}. Its components can be rerandomized without a recipient key, but a compromised relay can multiply selected components by a related factor. The ratio between those components survives the honest rerandomization relation and is recognizable by a colluding downstream relay. This experiment demonstrates why byte-level freshness and passive rerandomization correctness do not imply resistance to active cross-hop tags, consistent with the stronger security distinctions discussed by Banfi, Maurer, and Ritsch~\cite{ure2023}.
+
+C1 is not network enabled and MUST NOT be cited as evidence for active unlinkability.
+
+\subsection{Receiver-anonymous rerandomizable RCCA target}
+
+Wang et al. define receiver-anonymous rerandomizable RCCA-secure public-key encryption and give a generic construction based on rerandomizable tag smooth-projective hash functions~\cite{anonrcca2021}. Their result is directly relevant to an endpoint-specific discovery ciphertext because the desired transform must preserve both plaintext and recipient while hiding the recipient and resisting non-replay modifications.
+
+The protocol-facing security target was expressed independently as correctness, message confidentiality, receiver anonymity, public ciphertext-only rerandomization, transformed-ciphertext unlinkability, replay-equivalence handling, active-tag resistance, canonical encoding, and composition with the relay transform. The application-level URE treatment of Banfi et al. motivates separating these properties rather than relying on one syntactic rerandomization equation~\cite{ure2023}.
+
+\subsection{Concrete k=2 audit}
+
+A deterministic transcription implements the cited paper's $k=2$ key generation, encryption, decryption, canonical encoding, mutation rejection, and linear strand equations~\cite{anonrcca2021}. The literal finite-field interpretation uses the map
 \begin{equation}
-R=eB, \qquad Z=eX.
-\label{eq:kemdh}
+\mu(u)=u\bmod q
 \end{equation}
-The receiver computes the same $Z=xR$. The KEM context binds the suite, encapsulated element, recipient public key, and a caller-provided \code{info} value:
-\begin{align}
-\mathsf{ctx} &= \operatorname{EF}(\code{reply-kem-context};\code{suite},\bytes R,\bytes X,\mathsf{info}),\\
-\mathsf{prk} &= \operatorname{HKDFExtract}(0^{32},\operatorname{EF}(\code{reply-kem-dh};\bytes Z)),\\
-\mathsf{ss} &= \operatorname{HKDFExpand}(\mathsf{prk},\operatorname{EF}(\code{reply-kem-secret};\mathsf{ctx}),32).
-\end{align}
-The AEAD key and nonce are independently labeled HKDF expansions of $\mathsf{ss}$ and $\mathsf{ctx}$. The output is $\bytes R$ followed by a ChaCha20-Poly1305 ciphertext with the complete 16-byte tag.
+from a quadratic-residue group modulo $p=2q+1$ into the field modulo $q$.
 
-The nonce is deterministic under the encapsulation-derived secret. This is safe only if $e$ is fresh. Reusing $e$ for the same recipient and \code{info} repeats both key and nonce and is prohibited. Deterministic ephemerals appear only in published test vectors.
+\begin{proposition}[Literal reduction is not generally multiplicative]
+Under ordinary multiplication in $\operatorname{QR}^{*}_{p}$, the map $\mu(u)=u\bmod q$ is not a group homomorphism in general.
+\end{proposition}
 
-\subsection{Responder authentication and transcript binding}
+\begin{proof}
+For the valid small chain $q=5$, $p=11$, and $r=23$, choose $u=3$ and $v=4$, both in $\operatorname{QR}^{*}_{11}$. Then $uv\bmod p=1$, hence $\mu(uv\bmod p)=1$, while
+$\mu(u)\mu(v)\bmod q=3\cdot4\bmod5=2$.
+\end{proof}
 
-The responder signs
-\begin{equation}
-\mathsf{CandidateTH}=
-\operatorname{SHA256}(\operatorname{EF}(\code{candidate-transcript};\mathcal F)),
-\label{eq:candidateth}
-\end{equation}
-where the ordered field list $\mathcal F$ includes protocol and profile versions, endpoint address and descriptor, final reply public key, offer class, route limits, offer expiry, commit challenge, and responder nonce. The Ed25519 key must equal $vk_S$ in the descriptor, and the descriptor must hash to the requested endpoint address.
+An exhaustive checker repeats this test over every admissible pair in several small Cunningham chains and finds a counterexample in every nontrivial chain examined. This is a narrow audit of the literal implementation path. It does not refute the paper's generic framework, an unrecorded embedding, or an author-confirmed correction. The corresponding suite identifier remains disabled and every network operation fails closed.
 
-The response includes a random commit challenge. Later, \textsc{Commit} and \textsc{Ready} carry end-to-end HMAC proofs over domain-separated transcript hashes. Relays treat those protected bodies as opaque and route them using local labels.
+\subsection{Updatable and randomizable PKE}
+
+Dowling et al. define updatable and randomizable signatures and public-key encryption for strongly anonymous ratcheted key exchange~\cite{urpke2022}. Their randomization operation transforms an encryption key and ciphertext together. The earlier \ProtoName{} endpoint-specific design required a relay that knows neither recipient key nor secret to transform only the ciphertext while preserving the same recipient. The interfaces are therefore different, and the cited construction is not enabled as an eligibility suite.
+
+\subsection{Gate decision}
+
+Because no reviewed concrete endpoint-specific primitive currently satisfies the complete protocol interface, the active design adopts \Rone{}. This is a security-engineering decision rather than a claim that rendezvous capabilities dominate receiver-anonymous rerandomizable encryption. It trades a difficult cryptographic dependency for a directory-and-gateway trust boundary that can be specified, measured, and replaced independently.
+
+\section{Security analysis}
+\label{sec:security}
+
+\subsection{Endpoint material absent from discovery}
+
+The active \textsc{Discover} grammar contains no $\tau$, $h_\tau$, destination address, destination key, gateway pseudonym, or endpoint handle. The suite-specific field is the random non-semantic nonce $\nu_i$. A byte-search conformance test verifies that an issued capability does not occur in the encoded discovery message.
+
+This property is stronger than merely encrypting a destination selector against passive observation: compromised ordinary relays also receive no endpoint-specific selector from the protocol. They may still infer destination information from topology, timing, gateway choice, or external knowledge.
+
+\subsection{Per-hop replacement argument}
+
+At an honest relay, all adjacent capabilities and wire representations are replaced. The reply key is algebraically related because the initiator must reconstruct it, but the public point changes by an independently sampled group element. A passive downstream relay lacks the prior point unless it colludes with an upstream relay. The active protocol makes no claim that the custom reply-key relation alone resists every malicious algebraic tag; candidate authentication and failure normalization limit accepted modifications, while the explicit active-tag experiment focuses on the discovery field.
+
+\subsection{Capability confidentiality and replay}
+
+The capability is absent from discovery and candidate traffic. It is sent only after \textsc{Ready} inside end-to-end route protection. Atomic commitment lookup and deletion enforce at most one successful redemption. This does not protect a capability stolen from an initiator before first use; the attacker may race the legitimate user. A production descriptor profile should bind redemption to an authenticated client handshake and use short expiries.
+
+\subsection{Gateway and directory exposure}
+
+A gateway learns the registration commitment and observes successful redemption. The directory learns which descriptor it delivers unless private information retrieval, oblivious access, replication, or another privacy mechanism is specified. The active protocol therefore provides no unlinkability guarantee against directory--gateway collusion. Multiple gateways, short-lived pseudonyms, descriptor rotation, and separated operators may reduce exposure but are not proofs.
+
+\subsection{Cell-length and fragmentation leakage}
+
+Fixed cell length prevents exact per-cell length classification. Multi-cell messages still reveal a fragment burst unless scheduling hides it. A candidate's cell count can correlate with reverse-layer depth. \Wtwo{} therefore supports but does not itself provide message-count or timing privacy.
 
 \subsection{Failure normalization}
 
-The protocol exposes one state-machine outcome, \textsc{Invalid-Crypto}, for C2 decryption or proof failure, recipient mismatch, non-replay-equivalent mutation, invalid C1 points, identity public keys, non-canonical scalars, negative-control URE failure, AEAD failure, AAD or \code{info} mismatch, invalid signatures, and transcript mismatch. The detailed reason may be logged locally but is never sent as a differentiated response. Cell length and rate checks precede adjacent-link authentication. A receiver may perform a non-mutating replay-window precheck from the public link header, but it commits replay state only after authentication; an unauthenticated record cannot reserve a sequence number. Authenticated replay rejection, W2 fragmentation checks, M2 syntax and suite agreement, and capacity admission all precede expensive route cryptography.
-
-This rule limits explicit oracles; it does not prove constant-time behavior. Production code would require side-channel review, constant-time group and comparison operations, memory-clearing policy, and a uniform scheduling analysis.
-
-\section{Forward discovery}
-\label{sec:forward}
-
-\subsection{Initiator behavior}
-
-A logical discovery selects a local expanding-ring policy
-\begin{equation}
-\mathcal R_r=(d_r,f_r^{(0)},f_r,\Delta_r),
-\end{equation}
-where $d_r$ is the hop limit, $f_r^{(0)}$ the first-hop fan-out, $f_r$ the relay fan-out, and $\Delta_r$ the local candidate window. Neither $r$ nor the tuple is transmitted directly; only bounded propagation and fan-out classes required by the relay appear in the branch record.
-
-For every first-hop peer, the initiator creates independent state. It does not reuse a branch token, root reply key, eligibility encryption randomness, padding, M2 message identifier, or adjacent-link ciphertext.
-
-\begin{algorithm}[ht]
-\caption{Initiator: create one suite-bound DISCOVER branch}
-\label{alg:init}
-\begin{algorithmic}[1]
-\Require first-hop peer $n_1$, destination descriptor $D$, local budget $\mathcal B$
-\If{$\mathcal B$ cannot reserve one branch and the required cell transmissions}
-  \State \Return failure
-\EndIf
-\State parse and validate $(\sigma,pk_D,vk_S)$ from $D$; verify the requested address
-\State $x_0\sample\Zq^*$; $X_0\gets x_0B$
-\State $\tau_0\sample\{0,1\}^{128}$
-\State $Q_0\gets\mathsf{C2.Enc}(pk_D,m_\star)$
-\State $M_0\gets\Encode_{\mathsf{M2}}(\sigma,\textsc{Discover},\tau_0,X_0,Q_0,\mathsf{bounds},\mathsf{expiry})$
-\State fragment $M_0$ canonically into W2 cells with fresh local identifier and padding
-\State store $(n_1,\tau_0,x_0,\mathsf{expiry})$ in initiator-local branch state
-\State enqueue fresh adjacent-link encryption of every W2 cell
-\end{algorithmic}
-\end{algorithm}
-
-\subsection{Relay validation order}
-
-The relay processes cheap and local checks before expensive group operations:
-
-\begin{enumerate}
-  \item record-class length, byte rate, and adjacent-link replay;
-  \item adjacent-link authentication and protocol/profile identifiers;
-  \item canonical framing, lifetime class, and branch-token replay;
-  \item ingress-peer token bucket and node-global work budget;
-  \item provisional state reservation;
-  \item M2/W2 suite agreement, suite-selected eligibility validation and rerandomization, and reply-key processing;
-  \item full state allocation and bounded outgoing work.
-\end{enumerate}
-
-A failure at one stage does not consume resources reserved for a later stage. W2 reassembly state is accounted separately and does not imply route-semantic admission. No invalid branch generates an amplified error response.
-
-\subsection{Per-child transformation}
-
-For each selected child, the relay performs all transformations independently. Reusing one tweak or rerandomization across several children would allow sibling equality tests and is prohibited.
-
-\begin{algorithm}[ht]
-\caption{Relay: transform one admitted DISCOVER branch}
-\label{alg:relay}
-\begin{algorithmic}[1]
-\Require ingress peer $p$, token $\tau_i$, key $X_i$, capsule $Q_i$, bounds
-\State allocate branch context $b\gets\BranchT[p,\tau_i]$
-\State $S\gets\mathsf{SelectChildren}(N(n_i)\setminus\{p\},f)$
-\ForAll{$c\in S$}
-  \State $\tau_c\sample\{0,1\}^{128}$
-  \Repeat
-    \State $\delta_c\sample\Zq^*$; $X_c\gets X_i+\delta_cB$
-  \Until{$X_c\ne\Identity$}
-  \State $\rho_c\sample\mathsf{Coins}_{\sigma}$
-  \State $Q_c\gets\mathsf{ReRand}_{\sigma}(Q_i;\rho_c)$
-  \State store $(c,\tau_c,\delta_c,X_c)$ in $b$
-  \State reconstruct one canonical M2 message and assign a fresh W2 local identifier
-  \State fragment canonically, generate fresh cell padding, and enqueue fresh adjacent-link ciphertexts
-\EndFor
-\end{algorithmic}
-\end{algorithm}
-
-\subsection{Loops and converging branches}
-
-Immediate backtracking to the ingress peer is excluded. Exact duplicates on the same link epoch are rejected. A branch arriving over another peer or under another token is a different branch context, even if it belongs to the same initiator-local discovery. Longer cycles and converging branches therefore cause repeated state. The hop limit, fan-out, per-peer token bucket, per-node context ceiling, cumulative transmission budget, and expiry bound the amplification.
-
-Attempt-wide first-parent suppression would reduce cost but requires an equality domain shared across hops. The current protocol chooses the privacy structure and measures the resulting cost rather than hiding it.
-
-\section{Candidate return and route activation}
-\label{sec:reverse}
-
-\subsection{Responder candidate}
-
-A node first evaluates the eligibility capsule using the M2-bound suite. If C2 decryption returns the fixed marker and the node is willing to respond, it constructs a candidate payload containing the endpoint descriptor, offer and limit classes, expiry, commit challenge, responder nonce, final reply key, and Ed25519 signature over \cref{eq:candidateth}. It encrypts the payload to $X_d$ using the retained \code{TR-KEM-R255} reply component.
-
-The responder does not reveal its identity to intermediate relays. Those relays see only a fixed-class candidate record, local capabilities, and an opaque reverse capsule.
-
-\subsection{Relay reverse layer}
-
-Suppose relay $n_i$ previously transformed $X_i$ into $X_{i+1}=X_i+\delta_iB$ for the selected child. On receiving the child candidate capsule $C_{i+1}$, the relay creates a fresh parent candidate token $\gamma_i$ and forward label $\lambda_i^{\rightarrow}$, then computes
-\begin{equation}
-C_i=\Seal_{X_i}\left(
-\Encode(\delta_i,C_{i+1},\lambda_i^{\rightarrow},\mathsf{limits},\mathsf{padding});
-\mathsf{info}_i,\mathsf{aad}_i
-\right).
-\label{eq:reversewrap}
-\end{equation}
-The \code{info} and AAD bind the protocol version, suite, depth class, parent token, parent label, record class, link epoch, and offer expiry. A mutation of those fields causes AEAD failure.
-
-The relay stores a tentative mapping from the parent-facing candidate capability and forward label to the child branch. It does not learn the responder payload or the contents of $C_{i+1}$.
-
-\subsection{Initiator opening procedure}
-
-The initiator begins with $x_0$. After opening $C_0$, it obtains $\delta_0$ and $C_1$, computes $x_1=x_0+\delta_0\bmod q$, and continues. At the innermost layer it verifies the endpoint descriptor, address, Ed25519 signature, final reply key, responder nonce, offer limits, and expiry.
-
-\begin{algorithm}[ht]
-\caption{Initiator: open the C1 candidate chain}
-\label{alg:open}
-\begin{algorithmic}[1]
-\Require root secret $x_0$, outer capsule $C_0$, maximum depth $d_{\max}$
-\State $i\gets0$
-\While{$i\le d_{\max}$}
-  \State $Y\gets\Open_{x_i}(C_i;\mathsf{info}_i,\mathsf{aad}_i)$
-  \If{$Y$ is a responder candidate}
-    \State verify descriptor, address, signature, final $X_i$, nonce, limits, and expiry
-    \State \Return authenticated candidate
-  \ElsIf{$Y=\Encode(\delta_i,C_{i+1},\Lambda_i)$}
-    \State validate canonical non-zero $\delta_i$ and local transcript context
-    \State $x_{i+1}\gets x_i+\delta_i\pmod q$
-    \State $i\gets i+1$
-  \Else
-    \State \Return \textsc{Invalid-Crypto}
-  \EndIf
-\EndWhile
-\State \Return \textsc{Invalid-Crypto}
-\end{algorithmic}
-\end{algorithm}
-
-\subsection{Worked three-hop example}
-\label{sec:workedexample}
-
-Consider $n_0\rightarrow n_1\rightarrow n_2\rightarrow n_3$, where $n_3$ is the responder. The initiator creates $(x_0,X_0)$. Relay $n_1$ chooses $\delta_0$ and sends $X_1=X_0+\delta_0B$. Relay $n_2$ chooses $\delta_1$ and sends $X_2=X_1+\delta_1B$. The responder encrypts its candidate to $X_2$.
-
-On the reverse path, $n_2$ seals $(\delta_1,C_2)$ to $X_1$ and $n_1$ seals $(\delta_0,C_1)$ to $X_0$. The initiator opens $C_0$ with $x_0$, derives $x_1=x_0+\delta_0$, opens $C_1$, derives $x_2=x_1+\delta_1$, and finally opens the responder candidate. Neither relay learns $x_0$, any later secret, or the responder payload.
-
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[
-  n/.style={draw=accent,rounded corners,fill=softaccent,minimum width=18mm,minimum height=8mm,font=\small\bfseries},
-  arr/.style={-{Latex[length=2mm]},thick,color=accenttwo},
-  rev/.style={{Latex[length=2mm]}-,thick,color=warning},
-  lab/.style={font=\scriptsize,align=center,fill=white,inner sep=1.2pt}
-]
-\node[n] (n0) {$n_0$};
-\node[n,right=24mm of n0] (n1) {$n_1$};
-\node[n,right=24mm of n1] (n2) {$n_2$};
-\node[n,right=24mm of n2] (n3) {$n_3$};
-\draw[arr] (n0) -- node[lab,above] {$X_0,Q_0$} (n1);
-\draw[arr] (n1) -- node[lab,above] {$X_1,Q_1$\\$X_1=X_0+\delta_0B$} (n2);
-\draw[arr] (n2) -- node[lab,above] {$X_2,Q_2$\\$X_2=X_1+\delta_1B$} (n3);
-\draw[rev] ([yshift=-9mm]n0.east) -- node[lab,below] {$C_0=\Seal_{X_0}(\delta_0,C_1)$} ([yshift=-9mm]n1.west);
-\draw[rev] ([yshift=-9mm]n1.east) -- node[lab,below] {$C_1=\Seal_{X_1}(\delta_1,C_2)$} ([yshift=-9mm]n2.west);
-\draw[rev] ([yshift=-9mm]n2.east) -- node[lab,below] {$C_2=\Seal_{X_2}(\mathsf{candidate})$} ([yshift=-9mm]n3.west);
-\end{tikzpicture}
-\caption{Reply-key evolution and nested candidate return on a three-edge route. Link-local tokens and route labels are omitted for clarity.}
-\label{fig:keychain}
-\end{figure}
-
-\subsection{Commit and readiness}
-
-A candidate creates only tentative state. The initiator selects at most one candidate and sends \textsc{Commit} through its first-hop forward label. Each relay validates the peer, label, route generation, local transcript digest, and capacity class; reserves route capacity; changes the mapping to \textsc{Pending-Ready}; assigns a finite deadline; and forwards the opaque end-to-end commit body.
-
-The responder verifies the commit HMAC derived from the challenge embedded in the signed candidate. It returns \textsc{Ready} through reverse labels. Relays change the matching pending mapping to \textsc{Active}. The initiator exposes the route to the data plane only after verifying the final ready proof. If either control message is lost, all partial state expires locally.
-
-\section{Event lifecycle profile E1}
-\label{sec:lifecycle}
-
-\subsection{Half-open deadlines}
-
-A local state created at $t_c$ with deadline $t_e$ is valid exactly on
-\begin{equation}
-[t_c,t_e)=\{t\mid t_c\le t<t_e\}.
-\label{eq:halfopen}
-\end{equation}
-It is invalid at $t=t_e$ and cannot be revived. Received lifetime classes are converted to local deadlines; synchronized clocks are unnecessary. If a valid transition replaces a deadline, an old timer is associated with the previous state generation and cannot shorten the new state.
-
-\subsection{Equal-time precedence}
-
-Events assigned the same local timestamp follow the strict order
-\begin{equation}
-\mathsf{Expire}\prec\mathsf{Cancel}\prec\mathsf{RouteControl}
-\prec\mathsf{Candidate}\prec\mathsf{Discover}\prec\mathsf{WindowClose}.
-\label{eq:precedence}
-\end{equation}
-A message at its state deadline therefore fails, but a candidate at the exact window boundary remains eligible because candidate processing precedes window closure.
-
-\subsection{Candidate windows and delayed responses}
-
-A ring begins at local time $a_r$ and closes at $w_r=a_r+\Delta_r$. A candidate from any already-started ring is eligible at $w_r$ if no route has been selected, its signed offer has not expired, and every required tentative mapping survived the reverse traversal. Thus a delayed candidate from an earlier ring may win during a later ring without exposing a ring identifier on the wire.
-
-Selection is immutable. After choosing one candidate, the initiator sends \textsc{Commit} on the selected path and sends transformed \textsc{Cancel} messages through stored adjacent mappings into maximal off-route subtrees that belong to its own discovery. Cancel is an optimization; expiry remains authoritative.
-
-\subsection{Race examples}
-
-\begin{table}[ht]
-\centering
-\caption{Representative E1 races}
-\label{tab:races}
-\begin{tabularx}{\textwidth}{@{}p{0.27\textwidth}p{0.23\textwidth}X@{}}
-\toprule
-Race & Winner & Result \\
-\midrule
-Candidate at window boundary & Candidate & Candidate is evaluated before the boundary closes. \\
-State expiry and candidate & Expiry & State is invalid at the deadline; candidate is discarded. \\
-Cancel before candidate at relay & Cancel & Branch context is removed; later candidate is discarded. \\
-Candidate before cancel & Candidate transition & Tentative state survives under its own deadline or later abort. \\
-Old tentative timer after COMMIT & New generation & Stale timer cannot shorten the pending-ready deadline. \\
-Lost READY & Local expiry & Partial pending or active state is reclaimed without remote cooperation. \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\section{Logical messages M2, wire cells W2, and relay state}
-\label{sec:messages}
-
-\subsection{Why the protocol separates messages from cells}
-
-A cryptographic ciphertext normally reveals its complete byte length even when its contents are confidential. For an authenticated-encryption scheme with a fixed tag length $t$,
-\begin{equation}
-  |C|=|P_{\mathrm{padded}}|+t.
-  \label{eq:cipher-length}
-\end{equation}
-Consequently, encrypting a variable-length message after adding a variable or random quantity of padding does not remove length leakage: the observer still learns the resulting padded length. Padding to one fixed maximum would hide length, but it would also make the logical-message grammar dependent on one transport allocation and would impose a hard maximum on nested candidates.
-
-\ProtoName{} therefore uses two distinct encodings. M2 defines one canonical, variable-length byte string for each logical control message. M2 contains no semantic padding and no fragmentation metadata. W2 carries an M2 byte string in one or more equal-length adjacent-link cells. Fixed size belongs to the cell layer; logical structure belongs to the message layer.
-
-\begin{property}[Layer separation]
-Reassembly of a complete M2 message and verification of M2/W2 suite agreement precede message-type dispatch, suite-specific processing, and route-state allocation. A relay never cryptographically transforms a fragment in isolation and never forwards received fragment bytes or padding in place.
-\end{property}
-
-\subsection{M2 canonical logical-message envelope}
-
-Let $M$ denote an M2 byte string and $B_M$ its message-specific body. The common envelope is shown in \Cref{tab:m2-envelope}. Profile identifiers and the message type remain inside adjacent-link encryption.
-
-\begin{table}[ht]
-\centering
-\caption{M2 common logical-message envelope}
-\label{tab:m2-envelope}
-\begin{tabularx}{\textwidth}{@{}p{0.24\textwidth}p{0.14\textwidth}X@{}}
-\toprule
-Field & Length & Meaning \\
-\midrule
-Message type & 1 byte & \textsc{Chaff}, \textsc{Discover}, \textsc{Candidate}, \textsc{Commit}, \textsc{Ready}, \textsc{Cancel}, \textsc{Abort}, or \textsc{Close}. \\
-Protocol version & 1 byte & Current protocol grammar. \\
-Privacy profile & 1 byte & U1 identifier. \\
-Lifecycle profile & 1 byte & E1 identifier. \\
-Cryptographic suite & 2 bytes & C1 negative control is \code{0x0001}; C2 is \code{0x0002}; network byte order. \\
-Message profile & 1 byte & M2 is \code{0x02}. \\
-Reserved & 1 byte & MUST be zero. \\
-Body length & VarUInt & Minimal unsigned base-128 LEB128 encoding. \\
-Body & Variable & Exactly the declared bytes; no trailing bytes and no semantic padding. \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-If $\ell_v(x)$ denotes the number of octets in the minimal VarUInt encoding of $x$, then
-\begin{equation}
-  |M|=8+\ell_v(|B_M|)+|B_M|,
-  \qquad 1\le |M|\le16{,}384.
-  \label{eq:m2-length}
-\end{equation}
-The M2 decoder rejects non-minimal integers, unterminated integers, declared lengths beyond the containing message, trailing bytes, unknown mandatory profiles, and messages above the maximum. For example, zero is encoded as \code{00}; \code{80 00} is rejected as a second representation of the same value.
-
-\begin{table}[ht]
-\centering
-\caption{Principal M2 message bodies}
-\label{tab:m2-bodies}
-\begin{tabularx}{\textwidth}{@{}p{0.17\textwidth}p{0.35\textwidth}X@{}}
-\toprule
-Message & Body fields & Size behavior \\
-\midrule
-\textsc{Chaff} & Empty & Nine-byte M2 message; one W2 cell. \\
-\textsc{Discover} & Branch token, hop remaining, fan-out class, expiry class, options, reply public key, canonical capsule length, suite-selected eligibility capsule & Variable by suite; current C1 and symbolic C2 encodings each occupy one W2 cell. \\
-\textsc{Candidate} & Candidate token, expiry class, layer count, nested-capsule length, nested C1 capsule & Variable; grows as reverse relays add authenticated layers. \\
-Route control & Local label, four-byte generation, expiry class, protected-body length, protected body & Variable; protected body is bounded by 8,192 bytes. \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\subsection{W2 fixed-size adjacent-link cell}
-
-W2 uses one complete adjacent-link record length. Let $H_C$ be the public link header, $P_C$ the encrypted cell plaintext, and $T_C$ the authentication tag:
-\begin{equation}
-  \underbrace{H_C}_{12}
-  \concat
-  \underbrace{\operatorname{AEAD.Enc}_{K_\ell}(H_C,P_C)}_{1024+16}
-  \quad\Longrightarrow\quad
-  L_C=1052\ \text{bytes}.
-  \label{eq:w2-record}
-\end{equation}
-The public header is $H_C=e_\ell\concat s_\ell$, where the epoch is a four-byte unsigned integer and the sequence is an eight-byte unsigned integer, both in network byte order. The 12 bytes are used as nonce and associated data. A link key and nonce pair MUST NOT be reused.
-
-The first 32 plaintext bytes form the W2 fragment header; the remaining 992 bytes are fragment data followed by fresh random padding.
-
-\begin{table}[ht]
-\centering
-\caption{W2 encrypted fragment header}
-\label{tab:w2-header}
-\begin{tabularx}{\textwidth}{@{}p{0.27\textwidth}p{0.13\textwidth}X@{}}
-\toprule
-Field & Length & Meaning \\
-\midrule
-W2, protocol, U1, E1 & 4 bytes & Wire and protocol profile identifiers. \\
-Cryptographic suite $\sigma$ & 2 bytes & Immutable suite identifier copied from the M2 envelope. \\
-Flags, reserved & 2 bytes & Both zero in this profile. \\
-Local message identifier $\mu$ & 16 bytes & Non-zero random value scoped to one message, direction, link, and epoch. \\
-Fragment index & 2 bytes & Zero-based index $j$. \\
-Fragment count & 2 bytes & Canonical total $q(M)$. \\
-Fragment length & 2 bytes & Number of M2 bytes in this cell. \\
-Total M2 length & 2 bytes & Complete $|M|$, at most 16,384. \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\subsection{Canonical fragmentation}
-
-Let $p=992$ be the fragment payload capacity. The only valid fragment count is
-\begin{equation}
-  q(M)=\left\lceil\frac{|M|}{p}\right\rceil,
-  \qquad 1\le q(M)\le17.
-  \label{eq:fragment-count}
-\end{equation}
-Every non-final fragment has length 992. The final fragment has length
-\begin{equation}
-  |M|-992\bigl(q(M)-1\bigr).
-  \label{eq:final-fragment}
-\end{equation}
-A sender MUST NOT express the same M2 message as additional short fragments. The receiver rejects a noncanonical count or size even when concatenation could produce the declared bytes. This rule gives one W2 fragmentation representation for a given M2 message length.
-
-A relay generates a new $\mu$ after reconstructing and transforming a logical message. The identifier is never copied across a hop and is never derived from a discovery, candidate, endpoint, route, or prior-hop field. Received padding is discarded; outgoing padding and link ciphertext are generated afresh for every cell.
-
-\subsection{Bounded out-of-order reassembly}
-
-A reassembly context is keyed by the authenticated directional link scope $\ell$ and local message identifier $\mu$. It stores the immutable suite identifier, total-length and fragment-count metadata, a fragment bitmap, received bytes, a creation time, a half-open expiry, and a reservation equal to the declared logical-message length.
-
-\begin{algorithm}[ht]
-\caption{W2 receive, reassembly, and M2 admission}
-\label{alg:reassembly}
-\begin{algorithmic}[1]
-\Require adjacent-link record $c$, peer/link scope $\ell$, local time $t$
-\If{$|c|\ne1052$} \State \Return \textsc{Drop} \EndIf
-\State authenticate and decrypt $c$ under $\ell$
-\State parse and validate the W2 header and canonical fragment tuple
-\State expire contexts whose deadline is $\le t$
-\State $k\gets(\ell,\mu)$
-\If{$k$ is absent}
-  \State reserve one context and \code{total\_message\_length} bytes
-  \State create $R[k]$ with immutable metadata and finite deadline
-\ElsIf{metadata conflicts with $R[k]$}
-  \State delete $R[k]$, release all reservations, \Return \textsc{Drop}
-\EndIf
-\If{fragment index already contains identical bytes}
-  \State \Return \textsc{Duplicate}
-\ElsIf{fragment index already contains different bytes}
-  \State delete $R[k]$, release all reservations, \Return \textsc{Drop}
-\EndIf
-\State store the fragment
-\If{some canonical index is absent} \State \Return \textsc{Collecting} \EndIf
-\State $M\gets$ concatenation of fragments in index order
-\State delete $R[k]$ and release fragment reservations
-\State decode exactly one canonical M2 message from $M$
-\If{M2 decoding, M2/W2 suite agreement, or message-class admission fails} \State \Return \textsc{Drop} \EndIf
-\State \Return the parsed message to its E1 and suite-specific state machine
-\end{algorithmic}
-\end{algorithm}
-
-An exact duplicate fragment is idempotent and consumes no new reservation. A conflicting duplicate or inconsistent metadata invalidates the entire context. An incomplete context expires locally without a response. Implementations MUST bound concurrent contexts, aggregate reserved logical bytes, maximum fragments per message, maximum message length, and timeout. Route-semantic state is not allocated while the message remains incomplete.
-
-\subsection{Receive pipeline and control-message roles}
-
-The normative receive order is:
-\begin{enumerate}
-  \item exact 1,052-byte cell-record length;
-  \item public link epoch and sequence parsing, with an optional non-mutating replay-window precheck;
-  \item adjacent-link AEAD authentication followed by replay-state commitment and authenticated exact-duplicate rejection;
-  \item canonical W2 header and fragment validation;
-  \item bounded reassembly, duplicate handling, and timeout;
-  \item canonical M2 envelope and message-specific syntax;
-  \item M2/W2 suite agreement and E1 lifetime, peer-rate, byte, state, and cryptographic-work admission;
-  \item suite-selected eligibility processing plus required reply-KEM, AEAD, signature, and transcript validation;
-  \item branch or route-state transition;
-  \item reconstruction of outgoing M2 messages and fresh W2 cells.
-\end{enumerate}
-A failure cannot consume resources reserved for a later stage. Detailed failure remains local and maps to bounded silent discard unless a separately specified non-amplifying response is required.
-
-\begin{table}[ht]
-\centering
-\caption{Control-message role and state effect}
-\label{tab:message-role}
-\begin{tabularx}{\textwidth}{@{}p{0.16\textwidth}p{0.28\textwidth}X@{}}
-\toprule
-Message & Principal state effect & Privacy treatment \\
-\midrule
-\textsc{Discover} & Creates one bounded branch context & New branch token, reply-key tweak, suite-selected rerandomization, reconstructed M2, fresh W2 ID and cells. \\
-\textsc{Candidate} & Creates one tentative reverse mapping & New candidate token and label; nested authenticated C1 layer; canonical refragmentation. \\
-\textsc{Commit} & Moves tentative state to \textsc{Pending-Ready} & Local labels and opaque end-to-end proof; no global candidate handle. \\
-\textsc{Ready} & Activates the selected route & Reverse local label and opaque ready proof. \\
-\textsc{Cancel} & Removes one off-route subtree context & Per-hop cancellation capability; no global route identifier. \\
-\textsc{Abort}/\textsc{Close} & Reclaims setup or active state & Local route capability and bounded protected reason class. \\
-\textsc{Chaff} & No route allocation & Ordinary M2/W2 path and scheduler; one-cell bounded parsing cost. \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\subsection{Relay state}
-
-A branch context contains only local information: ingress peer and epoch, incoming branch capability, incoming reply key, eligibility capsule, expiry, bounded children, and the key material necessary for candidate return. It does not contain a source address, complete route, ring index, or logical-discovery identifier.
-
-A tentative route mapping is separate from the branch context. It binds one parent candidate capability, one child candidate capability, one parent-facing forward label, one child-facing reverse label, one transcript digest, one generation, and one deadline. A valid \textsc{Commit} replaces the tentative deadline with a pending-ready deadline; a stale timer for the former generation cannot reclaim the new state. Only authenticated \textsc{Ready} changes it to active.
-
-A W2 reassembly context is a third and strictly earlier state class. It is transport-local, contains no interpreted route semantics, and is deleted before the parsed M2 message is dispatched. This separation prevents an incomplete or conflicting fragment stream from manufacturing branch or route mappings.
-
-\section{Unlinkability analysis}
-\label{sec:unlinkability}
-
-\subsection{Elimination of explicit equality handles}
-
-Between an admitted incoming \textsc{Discover} and each outgoing child record, an honest relay changes:
-
-\begin{enumerate}
-  \item the branch token;
-  \item the reply public key;
-  \item the complete suite-selected eligibility capsule;
-  \item the bounded propagation representation;
-  \item the padding;
-  \item the adjacent-link nonce and ciphertext;
-  \item the output timing position within the declared batch policy.
-\end{enumerate}
-
-It also reconstructs the body rather than forwarding received bytes. Candidate tokens and route labels are likewise replaced on reverse and activation paths.
-
-\begin{proposition}[No explicit stable handle]
-Assume canonical suite-selected processing, independently sampled per-child randomness, and no implementation-added identifier. A conforming honest relay copies no protocol field unchanged from an incoming DISCOVER record into a non-adjacent outgoing DISCOVER record.
-\end{proposition}
-
-The proposition is syntactic. It does not imply that timing, topology, message scarcity, or maliciously chosen transformations cannot correlate the records.
-
-\subsection{Conditional batch-local argument}
-
-Let an honest relay release a batch of $k$ records with identical observable class and scheduling treatment. If the retained reply-key transformation and the concrete C2 rerandomization are unlinkable under their assumptions, link ciphertexts are fresh, and no hidden implementation field survives, then a passive observer's matching information is limited to cryptographic advantage and batch-policy information. In the ideal uniform batch, the baseline guessing probability is $1/k$.
-
-The argument fails when $k=1$, when one logical message has a distinguishable cell count or release pattern, when a stable logging or tracing field leaks, or when the observer uses end-to-end timing. Accordingly, U1 conformance is profile-specific rather than a property of one cryptographic primitive alone.
-
-\subsection{C1 persistent ratio tag as a negative control}
-\label{sec:active-tagging}
-
-The passive transformation argument does not extend to a compromised relay. In a valid C1 consistency pair,
-\begin{equation}
-(U_1,V_1)=(r_1A,r_1B), \qquad A=aB.
-\label{eq:validconsistency}
-\end{equation}
-A malicious relay chooses a known non-zero scalar $c$ and replaces the pair by
-\begin{equation}
-(\widetilde U_1,\widetilde V_1)=(cV_1,V_1).
-\label{eq:ratiotag}
-\end{equation}
-Both values remain canonical non-identity group elements. After an honest relay rerandomizes with non-zero scalar $s$, the pair becomes
-\begin{equation}
-(\widetilde U'_1,\widetilde V'_1)=(scV_1,sV_1).
-\end{equation}
-A colluding downstream relay tests
-\begin{equation}
-\widetilde U'_1\stackrel{?}=c\widetilde V'_1,
-\label{eq:tagtest}
-\end{equation}
-which always holds. The relation is therefore a deterministic cross-hop tag that survives the honest transformation.
-
-The destination computes the consistency value
-\begin{equation}
-T=\widetilde U'_1-a\widetilde V'_1=(c-a)sV_1.
-\label{eq:tagfailure}
-\end{equation}
-Except when $c=a$, the destination rejects the capsule and returns no candidate. The attack combines linkability and denial of service; observation of the missing candidate or missing route activation may also provide confirmation.
-
-\begin{proposition}[C1 active-unlinkability counterexample]
-Under the C1 negative-control eligibility construction, two colluding compromised relays separated by any number of honest rerandomizing relays can link a tagged branch by the test in \Cref{eq:tagtest}. Consequently, C1 cannot satisfy the active-adversary eligibility requirement.
-\end{proposition}
-
-Adjacent-link authentication does not prevent the attack. It rejects modification by a third party on an edge, but a compromised relay can originate new syntactically valid outgoing M2/W2 traffic containing the tagged pair. Fixed cell length, canonical M2 and point encoding, non-identity checks, fresh link encryption, and generic endpoint failure are necessary controls but do not erase the algebraic relation.
-
-\subsection{C2 tag game and symbolic behavior}
-
-The C2-TAG experiment places an upstream compromised relay and a downstream compromised relay around at least one honest transforming relay. The upstream relay may replace a valid capsule by arbitrary same-suite bytes. The honest relay validates and applies \textsf{ReRand}, or rejects. The downstream relay receives an output only after successful honest processing. It wins when capsule contents identify the selected upstream branch with non-negligible advantage, excluding timing, topology, direction, and cell-count information that belongs to a traffic profile.
-
-An acceptable active-security outcome is not necessarily continued delivery: a non-replay-equivalent mutation may be rejected at the first honest relay. Such rejection is still a denial of service, but it prevents a separated colluder from receiving a persistent transformed tag. Alternatively, a construction may normalize an allowed replay-equivalent transformation so that it is computationally indistinguishable from honest rerandomization.
-
-The executable C2 ideal functionality realizes the rejection case by construction. A valid opaque capsule can be rerandomized to a fresh opaque capsule in the same hidden replay class. An attacker-controlled marker mutation is not registered as a valid class member, so the honest transformation fails and emits no child capsule. This validates the protocol state transition, suite binding, failure normalization, and measurement points. It is not a security argument for a concrete anonymous Rand-RCCA construction.
-
-The concrete active-security gate remains closed until C2 has exact algorithms and encodings, a reviewed security mapping, bounded verification cost, and negative tests for algebraic, substitution, public-key, replay, truncation, composition, and selective-failure attacks.
-
-\subsection{Timing limitation}
-
-Fixed record sizes and per-hop cryptographic changes do not hide timing. TARANET's coordinated constant-rate approach and Loopix's stochastic mixing with cover traffic represent different latency--bandwidth trade-offs~\cite{taranet,loopix}. \ProtoName{} treats batching, release cadence, and cover traffic as separate scheduling profiles. Each profile must state its observer, latency, bandwidth cost, minimum anonymity set, and measured matching success.
+Malformed capability, wrong gateway, expiry, replay, signature failure, nested decryption failure, disabled suite, cross-suite fragment, non-canonical message, and invalid route label all map to a generic protocol rejection at their observation boundary. Implementations must also normalize timing and logging sufficiently to avoid turning internal diagnostics into an oracle.
 
 \section{Resource and denial-of-service model}
 \label{sec:resources}
 
-\subsection{Why privacy increases state}
+\subsection{Why privacy consumes state}
 
-Without a shared attempt identifier, a relay cannot recognize all converging copies of one logical discovery. In a tree approximation with relay fan-out $f$ and depth $d$, the number of branch transmissions can approach
-\begin{equation}
-T(f,d)=\sum_{i=1}^{d}f^i=\frac{f^{d+1}-f}{f-1}, \qquad f>1.
-\label{eq:treegrowth}
-\end{equation}
-Cycles and duplicate graph paths can increase repeated visits further. Privacy therefore requires hard limits rather than optimistic assumptions about deduplication.
+A stable attempt identifier allows broad duplicate suppression but creates a correlation handle. \Uone{} removes that handle, so converging branches may allocate separate contexts. The protocol therefore treats resource bounds as normative security properties rather than implementation suggestions.
 
-\subsection{Required limits}
+\subsection{Required bounds}
 
-Every node defines finite limits for:
+An implementation MUST define finite limits for:
 
 \begin{itemize}
-  \item accepted branch contexts per ingress peer and globally;
-  \item fresh branches per peer and time window;
-  \item outgoing children per branch and total queued W2 cells;
-  \item complete M2 message length, protected-body length, and fragments per message;
-  \item concurrent W2 reassembly contexts and aggregate reserved logical bytes;
-  \item fragment residence time, duplicate processing, and conflicting-fragment cleanup;
-  \item suite-selected eligibility validation and rerandomization, group operations, KEM operations, and signature checks;
-  \item candidate responses per branch and per endpoint identity;
-  \item tentative, pending-ready, and active route capacity;
-  \item logical-message count, cell transmissions, setup duration, retries, and cleanup retention.
+  \item authenticated cells per peer, direction, and time window;
+  \item concurrent reassembly contexts and aggregate reserved bytes;
+  \item message length, fragment count, and reassembly duration;
+  \item branch contexts per ingress peer, per node, and globally;
+  \item fan-out, hop limit, expanding-ring attempts, and cumulative transmissions;
+  \item candidate, tentative, pending-ready, and active route mappings;
+  \item cryptographic operations and queue entries;
+  \item gateway registration records, failed redemptions, and endpoint-handle lifetime;
+  \item logical discovery time and all state deadlines.
 \end{itemize}
 
+\subsection{Admission order}
 
-Authenticated exact cell replay rejection occurs before route-level token-bucket consumption. A receiver may reject obviously stale public sequence values provisionally, but it advances the replay window only after link authentication. A fresh valid branch token is not a replay and consumes an ingress token before expensive route cryptography. Reassembly admission is bounded separately and occurs before route-semantic or public-key work. Per-peer buckets mitigate concentrated sources but do not provide Sybil or distributed-denial resistance.
+Cheap syntactic and authenticated-link checks precede expensive group, signature, or nested-decryption operations. Per-peer token buckets limit fresh-branch creation. Global and per-node caps remain necessary because an adversary can distribute traffic across peers. A failed stage does not consume resources reserved for later stages.
 
-\subsection{Amplification condition}
+\subsection{Amplification}
 
-For one admitted branch $b$, define
+Let $f$ be fan-out, $d$ hop limit, and $a_i$ the fraction of branches admitted at depth $i$. An upper bound on forward branch transmissions is
 \begin{equation}
-\alpha_b=\frac{W_{\mathrm{out}}(b)+W_{\mathrm{state}}(b)+W_{\mathrm{crypto}}(b)}{W_{\mathrm{in}}(b)},
+T\le \sum_{i=1}^{d} f^i\prod_{j=1}^{i}a_j.
+\label{eq:amplification}
 \end{equation}
-where the numerator represents normalized outgoing, state, and cryptographic work. A profile must bound each component independently. A small response byte count does not compensate for unbounded group operations or retained state.
+This bound ignores convergence and early responder termination, but shows why broad fixed flooding is unsuitable. Expanding rings and cumulative budgets reduce expected cost when gateways are sufficiently dense.
 
 \section{Deterministic evaluation}
 \label{sec:evaluation}
 
-\subsection{Method}
+\subsection{Method and scope}
 
-The evaluation uses deterministic graph and event models rather than a packet-level network benchmark. The experiments use reproducible seeds, explicit topology size and average degree, responder density, fan-out, hop limits, state and transmission budgets, link delay, loss, exact duplication, and attacker generation. Results quantify design behavior under the model; they do not estimate Internet latency or prove security.
+The repository contains deterministic event models and exact conformance vectors. The results are regression and falsification evidence, not production benchmarks, cryptographic proofs, or measurements of a deployed network. Each scenario fixes seeds, topology parameters, timers, budgets, and attacker actions.
 
-The retained C1 component implementation uses \code{libsodium} for group operations. Ed25519 and ChaCha20-Poly1305 use the Python \code{cryptography} package. Deterministic vectors cover the negative-control URE, wrong-key rejection, reply-key tweak consistency, KEM/AEAD opening, tamper and context mismatch, descriptor/address derivation, and candidate signature binding.
+\subsection{Expanding-ring discovery}
 
-The C2 ideal functionality has a separate deterministic vector set covering opaque encryption, repeated rerandomization, replay equivalence, wrong-recipient rejection, arbitrary mutation, and suite integration. Those symbolic vectors are state-machine conformance data, not cryptographic interoperability data.\par
+On 500-node random graphs with average degree eight and 100 runs per responder density, expanding rings reduced transmissions relative to a fixed broad flood while retaining high discovery success. At two percent responder density, success was 100 percent and mean transmissions fell from 895.12 to 157.65, an 82.39 percent reduction. State allocations fell by 72.28 percent. These figures justify an expanding-ring default, not a universal parameter choice.
 
-A third deterministic artifact transcribes the $k=2$ construction of Wang et al.~\cite{anonrcca2021}. It executes the source key-generation, encryption, decryption, public-projection, canonical-encoding, mutation-rejection, and linear strand equations over a small related-group conformance parameter set. The audit additionally evaluates the literal full-rerandomization formula and records both a minimal counterexample and a large deterministic witness to the non-homomorphism of $u\mapsto u\bmod q$. The concrete public entry point therefore fails closed. This artifact is an equation and finite-field audit, not evidence for the receiver-anonymity or RCCA reductions of the cited construction.
+\subsection{U1 state cost}
 
-\subsection{U1 branch-local cost}
+Removing a stable identifier increases branch-context state because converging branches cannot be globally merged. With hop limit four and fan-out three, the model observed an 85 percent success rate, 118.34 mean transmissions, and 15.60 percent state overhead relative to the identifier-bearing control. With hop limit five and fan-out four, 91 percent of runs exhausted the configured budget. Privacy and scalability therefore depend on conservative fan-out and strict cumulative limits.
 
-\begin{table}[ht]
-\centering
-\caption{Identifier-based discovery versus U1 branch-local processing on 500-node graphs}
-\label{tab:u1cost}
-{\small
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.19\textwidth}>{\centering\arraybackslash}p{0.105\textwidth}>{\centering\arraybackslash}p{0.115\textwidth}>{\centering\arraybackslash}p{0.085\textwidth}>{\centering\arraybackslash}p{0.105\textwidth}X@{}}
-\toprule
-Parameters & Tx ovh. & State ovh. & Success & Budget hit & Reading \\
-\midrule
-Hop 3, fan-out 2 & 0.43\% & 1.60\% & 23\% & 0\% & Low cost; insufficient reach. \\
-Hop 4, fan-out 3 & 4.26\% & 15.60\% & 85\% & 0\% & Conservative baseline. \\
-Hop 4, fan-out 4 & 8.95\% & 42.78\% & 100\% & 0\% & Full success with higher state. \\
-Hop 5, fan-out 4 & 31.90\% & 180.88\% & 100\% & 91\% & Broad flooding is unsuitable. \\
-\bottomrule
-\end{tabularx}}
-\end{table}
+\subsection{Lifecycle and attack admission}
 
-The result supports expanding rings: begin with a narrow branch budget and expand only when the candidate set remains insufficient. It also shows why the unlinkability mechanism cannot be evaluated only by successful route probability.
+The event-driven model evaluates delayed candidates, loss, duplication, cancellation, and fresh-branch attack traffic. In the fresh-branch attack scenario, a per-ingress token bucket increased route success from 32 to 76 percent and reduced mean total transmissions from 1,440.33 to 1,176.56. Every evaluated run reclaimed all route state.
 
-\subsection{E1 lifecycle model}
+\subsection{Message and cell capacity}
 
-The tracked event experiment uses 100 deterministic 500-node graphs with average degree eight and two-percent responders. The ring schedule is $(2,2,18\,\mathrm{ms})$, $(3,2,24\,\mathrm{ms})$, and $(4,3,32\,\mathrm{ms})$, where each tuple is maximum depth, fan-out, and candidate-window duration. Branch capacity is 1,200 and the total transmission budget is 2,000.
+A six-layer candidate encoded to 909 logical bytes and fit in one cell. Seven layers encoded to 1,024 bytes and required two cells. Twelve layers required 1,599 bytes and two cells; sixteen layers required 2,059 bytes and three cells. Variable-length messages over fixed cells therefore remove the single-record route-depth limit.
+
+Under independent two percent cell loss and no retransmission, clean route success decreased with hop count: 80 percent at two hops, 65 percent at five, 50 percent at eight, and 30 percent at twelve. This result identifies bounded reliability as a required later profile.
+
+\subsection{R1 and cryptographic controls}
 
 \begin{table}[ht]
 \centering
-\caption{Event-lifecycle comparison on 500-node graphs}
-\label{tab:lifecycle}
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}Xrrrrrr@{}}
+\caption{R1 active-tag comparison, 100 deterministic runs per scenario}
+\label{tab:r1results}
+\begin{tabularx}{\textwidth}{@{}p{0.33\textwidth}rrrrX@{}}
 \toprule
-Scenario & Success & Setup ms & Total tx & Attack tx & Peak branch & Cleanup \\
+Scenario & Success & Mean tx & Mean bytes & Crypto failures & Downstream tag observations \\
 \midrule
-Clean & 0.89 & 72.60 & 212.77 & 0.00 & 103.92 & 1.00 \\
-2\% loss, 5\% duplicate & 0.80 & 72.89 & 207.68 & 0.00 & 96.92 & 1.00 \\
-Fresh-branch attack, open & 0.32 & 55.13 & 1440.33 & 1389.94 & 1140.38 & 1.00 \\
-Fresh-branch attack, bucket & 0.76 & 66.93 & 1176.56 & 1037.09 & 904.67 & 1.00 \\
+R1 clean & 1.00 & 16 & 16,832 & 0 & 0 \\
+R1 literal nonce marker & 1.00 & 16 & 16,832 & 0 & 0 \\
+C1 ratio-tag negative control & 0.00 & 8 & 8,416 & 1 & 1 \\
+Symbolic C2 marker control & 0.00 & 4 & 4,208 & 1 & 0 \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-The token bucket raises attack-scenario success from 32\% to 76\%, reduces attack transmissions by 25.4\%, and reduces peak branch state by 20.7\%. It does not restore clean behavior. The lower conditional setup latency in the unrestricted attack is survivor bias: only easier successful routes contribute to the mean. Every scenario reaches zero final branch, offer, candidate, tentative, pending, and active state.
+The \Rone{} marker is erased by honest replacement, so the downstream colluder receives no recognizable descendant. This test covers only a literal field marker under the modeled transform. It does not establish traffic-flow unlinkability or security against tagging through delays, selective forwarding, topology, or other fields. The C1 row remains a known-failing control, while the symbolic C2 row tests failure placement rather than cryptography.
 
-\subsection{Cryptographic and codec conformance evidence}
+\subsection{Capability conformance}
 
-\begin{table}[ht]
-\centering
-\caption{Executable component and security-game checks}
-\label{tab:c1tests}
-\begin{tabularx}{\textwidth}{@{}p{0.30\textwidth}X p{0.13\textwidth}@{}}
-\toprule
-Check & Expected property & Result \\
-\midrule
-URE rerandomization & Ciphertext bytes change; decrypted marker remains identical. & Pass \\
-Wrong eligibility key & Wrong endpoint does not recognize the marker. & Pass \\
-C2 symbolic rerandomization & Opaque ciphertext changes while recipient, marker, and replay class remain hidden in the oracle. & Pass \\
-C2 arbitrary mutation & A marker mutation is invalid and cannot be rerandomized by an honest C2 interface. & Pass \\
-C2-$k=2$ key generation, encryption, and decryption & The literal Figure~6 transcription accepts a canonical original ciphertext under the intended key and rejects wrong-recipient and selected component mutations~\cite{anonrcca2021}. & Pass \\
-C2-$k=2$ canonical encoding & Twenty-four validated group elements and a four-byte audit header round-trip to exactly 412 bytes. & Pass \\
-C2-$k=2$ full rerandomization & The literal finite-field tag map must satisfy the multiplicative compatibility equation. & Failed; disabled \\
-M2/W2 suite binding & Cross-suite fragments invalidate reassembly; the M2 suite must equal the W2 suite. & Pass \\
-Reply public/secret tweak & $(x+\delta)B=X+\delta B$. & Pass \\
-Reply KEM and AEAD & Correct context opens; tamper, AAD, and info mismatch fail generically. & Pass \\
-Candidate signature & Any transcript-field change invalidates the Ed25519 signature. & Pass \\
-Vector reproducibility & Generated JSON equals each tracked canonical vector and audit file. & Pass \\
-Complete deterministic suite & 83 unit, lifecycle, message, cell, reassembly, cryptographic, transcription-audit, and tagging tests. & Pass \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\subsection{Concrete C2 transcription audit}
-
-The concrete audit uses the exact algorithmic structure in Section~6.3 and Figure~6 of Wang et al.~\cite{anonrcca2021}. The source requires related quadratic-residue groups obtained from a length-three Cunningham chain and proves the relevant tag-SPHF smoothness properties for $k\geq2$~\cite{anonrcca2021}. The audit fixes $k=2$ and a small deterministic prime chain solely to make byte-level tests reproducible. It does not claim that the parameter set has a modern security level.
-
-The original ciphertext decrypts to the eligibility marker, a canonical encode/decode cycle preserves all 24 group elements, the wrong recipient rejects, and selected component mutations reject. Restricting the tag multiplier to the identity also validates the two linear strand-combination paths. The full source rerandomization, however, includes a non-identity multiplier that simultaneously changes the outer tag-SPHF values and the inner malleable encryption~\cite{anonrcca2021}. Under the literal finite-field map tested here, the required multiplicative equation fails before any security interpretation is considered. The audit therefore returns the machine-readable status \code{finite-field-tag-reduction-nonhomomorphic}, and the callable concrete \textsf{ReRand} interface raises a conformance-gap error.
-
-\begin{claimbox}[Interpretation of the audit]
-The result identifies an algebraic blocker in the literal finite-field instantiation. It does not refute the generic security framework, establish an attack on a corrected construction, or justify substituting an ad hoc coercion. A network suite can be assigned only after an author-confirmed correction or independently reviewed replacement is specified, full nontrivial rerandomization validates over randomized test populations, modern parameters are selected, and a second implementation reproduces the vectors.
-\end{claimbox}
-
-\Cref{tab:c2auditresult} gives the equation-level result; the tracked audit artifact additionally fixes the public-key hash, original ciphertext hash, strand-only rerandomized hash, mutation hash, complete 412-byte ciphertext, and exact prime parameters. Keeping this artifact separate from the symbolic C2 vectors prevents a protocol oracle from being mistaken for concrete cryptographic interoperability evidence.
-
-\subsection{M2 logical size and W2 cell capacity}
-
-The capacity experiment constructs actual retained C1 candidate chains and measures their canonical M2 length and W2 cell count. The responder contributes one innermost layer; every reverse relay adds one 115-byte authenticated wrapper in the current reply encoding. The DISCOVER size depends on the selected eligibility suite. \Cref{tab:capacity} shows representative boundaries.
-
-\begin{table}[ht]
-\centering
-\caption{Selected M2/W2 capacity boundaries for nested candidates}
-\label{tab:capacity}
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}Xrrrr@{}}
-\toprule
-Message & Relay wrappers & C1 layers & M2 bytes & W2 cells \\
-\midrule
-\textsc{Discover}, C1 control & 0 & -- & 192 & 1 \\
-\textsc{Discover}, symbolic C2 & 0 & -- & 704 & 1 \\
-\textsc{Candidate} & 0 & 1 & 334 & 1 \\
-\textsc{Candidate} & 5 & 6 & 909 & 1 \\
-\textsc{Candidate} & 6 & 7 & 1,024 & 2 \\
-\textsc{Candidate} & 11 & 12 & 1,599 & 2 \\
-\textsc{Candidate} & 15 & 16 & 2,059 & 3 \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-The transition at seven candidate layers illustrates the reason for separating messages from cells. The candidate is a valid 1,024-byte logical message, but only 992 message bytes fit in one W2 cell after the encrypted fragmentation header. W2 therefore emits two equal-size cells rather than rejecting the route or introducing a second public record length. The protocol maximum of 16,384 M2 bytes and 17 cells remains an explicit implementation and resource bound, not an implicit consequence of one record layout.
-
-\subsection{Integrated fragmentation and cell-loss experiment}
-
-A second experiment uses deterministic line topologies with one eligible responder at the far endpoint. Every scenario executes suite-selected eligibility transformations, retained C1 reply and authentication operations, M2 encoding, W2 link authentication, out-of-order reassembly, \textsc{Candidate}, \textsc{Commit}, \textsc{Ready}, expiry, and final cleanup. Forty runs are performed for each route depth and transport condition.
-
-\begin{table}[ht]
-\centering
-\caption{Route depth, fragmentation, and independent two-percent cell loss}
-\label{tab:fragment-life}
-{\small
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.16\textwidth}rrrrrr@{}}
-\toprule
-Condition & Hops & Success & Logical msgs & W2 cells & Fragmented msgs & Cleanup \\
-\midrule
-Clean & 2 & 1.00 & 8.00 & 8.00 & 0.00 & 1.00 \\
-Clean & 5 & 1.00 & 20.00 & 20.00 & 0.00 & 1.00 \\
-Clean & 8 & 1.00 & 32.00 & 34.00 & 2.00 & 1.00 \\
-Clean & 12 & 1.00 & 48.00 & 54.00 & 6.00 & 1.00 \\
-2\% cell loss & 2 & 0.80 & 7.53 & 7.53 & 0.00 & 1.00 \\
-2\% cell loss & 5 & 0.65 & 16.43 & 16.43 & 0.00 & 1.00 \\
-2\% cell loss & 8 & 0.50 & 25.55 & 27.15 & 1.60 & 1.00 \\
-2\% cell loss & 12 & 0.30 & 30.83 & 34.30 & 3.48 & 1.00 \\
-\bottomrule
-\end{tabularx}}
-\end{table}
-
-In clean transport, fragmentation removes the former setup-depth discontinuity: all evaluated routes activate and later reclaim every branch, reassembly, tentative, pending, and active state. At eight hops the protocol sends two additional cells for two fragmented messages; at twelve hops it sends six additional cells. Under independent cell loss, success falls with both route length and cell count because completion requires every indispensable fragment and route-control cell. The model intentionally contains no retransmission profile. The result therefore identifies the next reliability question rather than measuring a final deployment.
-
-Peak reserved reassembly bytes grow from 449 bytes at two hops to 1,599 bytes at twelve hops in clean runs. The value is the largest declared M2 message concurrently retained in this line experiment, not the profile maximum. All evaluated runs finish with zero reassembly contexts, including the loss cases. This confirms bounded cleanup under the modeled timeout but does not establish resistance to a coordinated fragment-spray attacker.
-
-\subsection{C1 negative control and symbolic C2 tag experiment}
-
-A separate five-node line gives every transformation an unambiguous expected count. One hundred deterministic runs are executed per scenario. A clean route emits 16 W2 cells, corresponding to 16,832 complete wire bytes; performs three forward eligibility/reply-key transformations; opens four nested candidate layers; authenticates \textsc{Commit} and \textsc{Ready}; and finishes with zero residual state.
-
-\begin{table}[ht]
-\centering
-\caption{C1 negative-control and symbolic C2 active-mutation comparison}
-\label{tab:integrated}
-{\small
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}Xrrrrr@{}}
-\toprule
-Scenario & Success & Mean cells & Mean wire bytes & Crypto fail & Downstream observations \\
-\midrule
-C1 clean & 1.000 & 16.000 & 16,832.0 & 0.000 & 0.000 \\
-C1 ratio tag & 0.000 & 8.000 & 8,416.0 & 1.000 & 1.000 \\
-C2 symbolic clean & 1.000 & 16.000 & 16,832.0 & 0.000 & 0.000 \\
-C2 symbolic marker tag & 0.000 & 4.000 & 4,208.0 & 1.000 & 0.000 \\
-\bottomrule
-\end{tabularx}}
-\end{table}
-
-The C1 tag survives the intervening honest C1 transformation, so the downstream compromised relay records one observation per run before destination rejection. In the C2 symbolic scenario, the first honest transformation rejects the altered opaque capsule and emits no child capsule; the separated colluder therefore records zero observations. Both attack scenarios prevent route activation and all scenarios clean up. The comparison demonstrates the attack harness, honest-relay rejection point, and lifecycle effects. It does not show that a concrete C2 construction satisfies receiver anonymity, RCCA security, or the tag game.
+Tests establish that the raw capability does not occur in encoded \textsc{Discover} bytes; every relay replacement changes the query nonce; the correct gateway redeems once; replay, expiry, wrong gateway, duplicate registration, and the all-zero token fail; and failed redemption does not preserve a live record beyond the defined deadline. A tracked deterministic vector set binds the suite identifier, service-class label, three successive nonce replacements, capability commitment, gateway-local registry hash, successful first redemption, and rejected wrong-gateway, replay, and expiry cases.
 
 \section{Limitations and open problems}
 \label{sec:limitations}
 
-\subsection{Concrete realization of the C2 contract}
+\subsection{Private descriptor distribution}
 
-C2 states the active-security contract that the eligibility capsule must satisfy: recipient anonymity, public rerandomization, rerandomizable RCCA security, resistance to persistent tagging, and bounded failure behavior. The symbolic C2 functionality used in the executable model enforces this contract as an oracle: an honest transform accepts only a valid equivalence-class member, emits an independently distributed member of the same class, and rejects arbitrary mutation before a downstream colluder can observe a descendant capsule. This is useful for protocol integration and falsification, but it is not a cryptographic construction and supplies no computational reduction.
+The largest new dependency is $Q$. A complete deployment needs a private lookup and descriptor distribution protocol. Possible mechanisms include replicated encrypted descriptors, authenticated access control, oblivious or private information retrieval, and gateway/operator separation. None is selected here.
 
-The selected construction is no longer unspecified: the repository contains a typed $k=2$ transcription of Section~6.3 and Figure~6 of Wang et al.~\cite{anonrcca2021}, an explicit related-group parameter set, canonical public-key and 412-byte ciphertext encodings, deterministic positive and negative vectors, and a fail-closed public interface. The audit validates the original-ciphertext path and proves that the literal integer-reduction tag map used by full rerandomization is non-homomorphic. The remaining gate is therefore an author-confirmed correction or independently reviewed replacement, followed by confirmation of the source-to-code mapping, reviewed modern parameters, and independent reproduction of all equations.
+\subsection{Gateway correlation}
 
-The ciphertext must continue to satisfy the M2/W2 resource bounds. The receiver-anonymity and rerandomizable-RCCA reductions of the cited construction must also remain applicable when the construction is composed with the surrounding protocol transcript. Until the complete rerandomization path is independently validated, the paper claims only the behavior of the symbolic functionality and the recorded arithmetic audit; it does not claim concrete active-adversary unlinkability.
+A gateway can correlate registration time, redemption time, endpoint handle, and route-local observations. Multiple gateways and short epochs limit concentration but do not remove this visibility. A gateway may also selectively refuse service or create distinguishing delays.
 
-\subsection{Independent cryptographic review}
+\subsection{Reliability and scheduling}
 
-Independent review must address both the selected C2 realization and the retained reply and candidate mechanisms. For C2, the review must examine recipient anonymity, equivalence-class handling, rerandomization soundness, chosen-ciphertext behavior, selective failure, active tagging, malformed group elements, composition with M2/W2, and side-channel behavior. For the retained components it must examine the additive related-key behavior of the custom reply KEM, CCA behavior of nested candidate layers, transcript and key privacy, point-encoding assumptions, failure timing, and implementation side channels. The custom reply construction is HPKE-inspired and is not an RFC~9180 HPKE suite.
+\Wtwo{} fragmentation requires bounded retransmission, acknowledgement, or erasure recovery. Retransmissions must use fresh link encryption and must not create a stable cross-hop identifier. A traffic scheduler must define interleaving, batch size, release distribution, count padding, chaff, and behavior under congestion. Until then, timing and fragment-count correlations remain outside the claim.
 
-\subsection{Fragmentation, reliability, and cell-count leakage}
+\subsection{Reply-key analysis}
 
-M2/W2 removes a hard one-record candidate-depth limit, but it does not make message size invisible. A passive adjacent-link observer can count the cells in a burst and may infer a range for candidate depth or protected-body size. A traffic-scheduling profile must decide whether to interleave fragments, pad cell counts to declared classes, delay completion to a release schedule, or accept this leakage explicitly.
-
-Multi-cell messages are also more exposed to loss. If a message uses $q$ indispensable cells and independent cell delivery succeeds with probability $p$, message delivery without retransmission is approximately $p^q$. Real losses are not independent, and a route setup contains several messages, but the expression explains the observed direction of the effect. Bounded retransmission, forward-error correction, or redundant scheduling must be designed without adding a stable cross-hop message identifier or an amplification channel.
-
-Reassembly creates a distinct denial-of-service surface. The fixed limits on complete message length, fragment count, concurrent contexts, aggregate reserved bytes, and timeout are normative. Further work must evaluate authenticated fragment sprays, peer rotation, deliberately missing final fragments, conflicting duplicates, and eviction fairness.
+The additive reply-key transform and custom KEM require an independent analysis for related-key behavior, malicious point selection, active tagging, transcript substitution, and side channels. Standard components do not automatically prove security of their composition.
 
 \subsection{Post-quantum migration}
 
-The retained reply, authentication, and negative-control components are classical, and the C2 contract does not by itself select a post-quantum realization. A hybrid KEM replacement is not enough because the eligibility selector must preserve destination-key privacy, public rerandomization, and active-tag resistance simultaneously. Post-quantum rerandomizable RCCA encryption, or a different private eligibility mechanism with equivalent protocol properties, is therefore a separate research problem.
+The active reply, signature, and link profiles are classical. Cryptographic agility is encoded, but a post-quantum suite must define exact key sizes, candidate expansion, cell impact, and transition rules. Merely adding an identifier is not a migration strategy.
 
-\subsection{Directory and descriptor distribution}
+\subsection{Network economics and policy}
 
-Long-range descriptor resolution is outside the protocol defined here. A future directory must provide authenticated descriptor binding, freshness, replication, poisoning resistance, selective-denial analysis, enumeration resistance, and private queries. Repeated deterministic hashing of an endpoint address is not sufficient query privacy.
-
-\subsection{Distributed abuse and fairness}
-
-Per-peer token buckets remain vulnerable to Sybil distribution. Candidate and responder spam require quotas independent of branch admission. Evaluation must vary attacker distribution, peer churn, adaptive refill, honest convergence, and fairness by ingress peer rather than report only aggregate success.
-
-\subsection{Traffic privacy}
-
-Timing, direction, volume, cell count, fragment spacing, and topology remain major correlation surfaces. A traffic-privacy profile must define batching, fragment interleaving, cell-count padding, release cadence, cover traffic, overflow behavior, and observable classes, then measure bandwidth, latency, reassembly reliability, and matching success against a named adversary. Encryption and fixed cell length alone do not imply logical-message or traffic-flow unlinkability.
+The protocol does not define transit incentives, inter-domain policy, Sybil resistance, gateway admission, reputation, or abuse adjudication. These concerns can dominate deployment viability even when the control-plane mechanics are sound.
 
 \section{Implementation and review strategy}
-\label{sec:strategy}
+\label{sec:implementation}
 
-Development should proceed through explicit gates:
+A staged implementation should preserve module boundaries:
 
 \begin{enumerate}
-  \item obtain an author-confirmed correction or select an independently reviewed replacement for the non-homomorphic literal finite-field tag map in the selected $k=2$ construction~\cite{anonrcca2021};
-  \item publish the confirmed algebraic mapping, modern parameter-generation procedure, canonical public-key and ciphertext encodings, validity relation, generic failure behavior, proof obligations, and deterministic interoperability vectors;
-  \item require a second implementation to reproduce encryption, decryption, full rerandomization, replay equivalence, wrong-recipient rejection, mutation rejection, and every tracked byte string before assigning a network suite;
-  \item obtain independent review of the C2 construction and the retained reply-key, nested-candidate, and signature mechanisms;
-  \item replace the symbolic C2 oracle in the simulator only after the concrete implementation passes the full tag, mutation, replay-equivalence, key-substitution, malformed-input, and selective-failure suite;
-  \item define M2 and W2 in a reviewed machine-readable schema and implement an independent second codec;
-  \item cross-check minimal VarUInt encodings, suite binding, message boundaries, canonical fragmentation, conflict handling, and cryptographic vectors across implementations;
-  \item fuzz malformed M2 lengths, W2 headers, fragment order, duplicate conflicts, message identifiers, eligibility capsules, nested candidate boundaries, point encodings, transcript substitutions, and state races;
-  \item model fragment-spray attacks and verify hard limits on contexts, bytes, fragments, cryptographic work, and expiry processing;
-  \item define bounded message repair or retransmission without stable cross-hop identifiers or unbounded amplification;
-  \item build a user-space overlay prototype over an existing authenticated transport;
-  \item test interoperability under loss, duplication, reordering, partial messages, link churn, malicious peers, and distributed resource pressure;
-  \item specify cell interleaving, cell-count padding, and traffic-scheduling profiles before making message-size, timing, or flow claims;
-  \item design long-range descriptor resolution as a separate protocol with its own threat model.
+  \item independent \Mtwo{} and \Wtwo{} codec implementations with differential tests and fuzzing;
+  \item a typed eligibility-provider boundary containing active \Rone{} and research-only controls;
+  \item a deterministic \Eone{} state machine separated from transport I/O;
+  \item constant-time or timing-normalized cryptographic failure paths;
+  \item a persistent, atomic gateway capability store with concurrency tests;
+  \item an independent implementation of the reply KEM and candidate transcript;
+  \item a reliability profile for multi-cell messages;
+  \item a scheduler and traffic-correlation experiment;
+  \item external cryptographic and protocol review before any production claim.
 \end{enumerate}
 
-The first overlay prototype should use ordinary IP connectivity only as an experimental transport. It should not require special routers or a new link technology. Protocol state, cryptographic transformations, message/cell interoperability, failure behavior, and resource limits should be evaluated before lower-layer integration is considered.
+The disabled C2 transcription should remain reproducible. An author query should identify the exact equation, parameter chain, interpretation, counterexample, and executable checker, and ask whether an omitted embedding, different group action, or erratum resolves the discrepancy. A correction may reopen an endpoint-specific suite, but must not silently change the active \Rone{} security model.
 
 \section{Conclusion}
 \label{sec:conclusion}
 
-\ProtoName{} defines a privacy-enabled route-discovery control plane rather than a replacement for IP or BGP. Its current form has a precise operational boundary. U1 removes explicit cross-hop equality handles under passive observation; E1 gives deterministic bounded route setup and cleanup; C2 states the receiver-anonymous, rerandomizable-RCCA active-security contract for endpoint eligibility; M2 gives each logical control operation one canonical suite-agile variable-length representation; and W2 carries those messages in independently authenticated fixed-size adjacent-link cells with bounded reassembly. The protocol-facing C2 realization remains symbolic. In parallel, a concrete $k=2$ transcription of the construction of Wang et al.~\cite{anonrcca2021} fixes dimensions, related groups, canonical bytes, and deterministic arithmetic tests, but deliberately refuses full rerandomization because the literal finite-field tag reduction is non-homomorphic. The reply KEM, nested candidate protection, signatures, and C1 negative control remain concrete classical components.
+\ProtoName{} defines bounded route discovery with no transmitted source route or network-wide discovery identifier. The current protocol removes endpoint-specific material from forward exploration, discovers generic rendezvous gateways, authenticates candidates through nested reverse encryption, activates one selected route through \textsc{Commit} and \textsc{Ready}, and presents a single-use capability only after activation.
 
-The separation between M2 and W2 resolves a layering defect. Fixed width is retained where it hides an observable transmission-unit length, while the protocol grammar remains compact and extensible. Deep candidates can span several cells instead of failing at a one-record boundary. The cost is explicit: cell count and timing may reveal a message-size class, multi-cell messages have greater loss exposure, and reassembly requires additional bounded state.
+The message and wire layers are separated: logical messages remain canonical and variable length, while every adjacent-link cell has fixed length and bounded reassembly. Route and reassembly state have explicit lifetimes and budgets. The security claims distinguish per-hop representation replacement from traffic-flow anonymity and expose the directory/gateway trust boundary introduced by the rendezvous design.
 
-The integrated model shows that cryptographic interfaces, canonical encoding, fragmentation, reassembly, and lifecycle can be exercised together. Clean routes activate only after authenticated candidate, \textsc{Commit}, and \textsc{Ready} processing; malformed or unauthenticated cells fail before route-state allocation; incomplete messages expire; and every evaluated scenario reclaims all state. The C1 negative control retains the known persistent ratio tag. Under the symbolic C2 contract, arbitrary mutation is rejected at the first honest transformation and no descendant tag observation is produced. The concrete audit separately demonstrates that key generation, encryption, decryption, canonical encoding, and linear strand recombination are executable, while proving that the literal finite-field tag reduction cannot support the full transformation. These results establish protocol behavior, a reproducible source-to-code map, and a falsification harness, not the security of a concrete cryptosystem.
-
-The protocol is therefore suitable as a falsifiable research specification and interoperability target, but not as a production anonymity system. The next gate is an author-confirmed correction or independently reviewed replacement for the failed literal finite-field C2 instantiation, followed by reviewed modern parameters and protocol integration vectors. Subsequent gates are an independent M2/W2 implementation with fuzzing, a bounded reliability profile for multi-cell messages, and a traffic scheduler that explicitly addresses cell-count and timing leakage.
+This revision resolves the active-protocol dependency on an unimplemented universal-rerandomization primitive without discarding the associated research. The failed C1 and C2 candidates remain cited, executable, and falsifiable. The resulting document is a coherent interoperability and review baseline, not a production-ready anonymity guarantee.
 
 \appendix
 \section{Normative requirement summary}
@@ -1498,84 +1023,84 @@ The protocol is therefore suitable as a falsifiable research specification and i
 
 The keywords ``MUST'', ``MUST NOT'', ``REQUIRED'', ``SHOULD'', ``SHOULD NOT'', and ``MAY'' are interpreted according to BCP~14~\cite{rfc2119,rfc8174}.
 
-An implementation claiming U1, E1, C2, M2, and W2 conformance MUST:
+An implementation claiming \Uone{}, \Eone{}, \Rone{}, \Mtwo{}, and \Wtwo{} conformance MUST:
 
 \begin{enumerate}
-  \item omit logical discovery, attempt, ring, global candidate, global route, and prior-hop W2 message identifiers from outgoing messages;
-  \item replace branch, candidate, cancellation, route, and W2 local-message capabilities at every hop;
-  \item select one eligibility suite for each message and bind the same suite identifier in the M2 envelope, every W2 fragment, and the complete reassembly context;
-  \item implement the C2 algorithms $\mathsf{KeyGen}$, $\mathsf{Enc}$, $\mathsf{ReRand}$, and $\mathsf{Dec}$ with canonical inputs and outputs and a finite declared ciphertext bound;
-  \item state the concrete assumptions and security definitions used to justify recipient anonymity, rerandomization correctness, rerandomizable RCCA security, replay-equivalence handling, and the C2 active-tag game;
-  \item reject any capsule that is malformed, outside the valid ciphertext language, or not admissible for honest rerandomization, without emitting a derived capsule;
-  \item emit an independently distributed equivalence-class member after every successful C2 rerandomization and expose no stable proof, key fingerprint, digest, or transformation metadata across hops;
-  \item use independent reply root keys for every first-hop branch and apply the exact retained reply-key tweak and \code{TR-KEM-R255} context derivation;
-  \item validate canonical RFC~9496 point encodings and scalar encodings used by retained classical components and reject identity public keys and KEM encapsulations;
-  \item bind candidate fields in the exact ordered transcript and verify Ed25519 under the descriptor key;
-  \item map eligibility, reply, signature, message, cell, and reassembly failures to one externally indistinguishable state-machine result;
-  \item encode every logical control operation as one canonical M2 message with a minimal body length, exact containment, no trailing bytes, and no semantic padding;
-  \item encode the selected suite and a minimal capsule length in \textsc{Discover}, reject lengths outside the suite-specific bound, and reject any M2/W2 suite mismatch before protocol-state allocation;
-  \item enforce $1\le |M|\le16{,}384$ and the 8,192-byte protected route-control bound;
-  \item fragment each M2 message canonically into $q(M)=\lceil |M|/992\rceil$ W2 cells, with at most 17 cells;
-  \item encode every W2 transmission as exactly 1,052 bytes, advance link replay state only after adjacent-link authentication, authenticate the fragment header, discard received padding, and use fresh padding, nonce, sequence, and link ciphertext for every outgoing cell;
-  \item bind reassembly to authenticated link direction, selected suite, and a fresh non-zero local message identifier;
-  \item accept out-of-order fragments, process exact duplicates idempotently, invalidate conflicting duplicates, and reject inconsistent metadata;
-  \item bound concurrent reassemblies, aggregate reserved logical bytes, fragment count, message length, and reassembly timeout;
-  \item allocate no branch, candidate, tentative, pending, or active route state before complete W2 reassembly, M2/W2 suite agreement, and canonical M2 decoding;
-  \item enforce finite per-peer, node-global, time, logical-byte, cell, state, queue, and cryptographic-work limits;
-  \item treat state lifetimes as half-open intervals and follow E1 equal-time precedence;
+  \item omit endpoint capabilities, endpoint keys, endpoint addresses, descriptor commitments, gateway pseudonyms, global discovery identifiers, and complete routes from \textsc{Discover};
+  \item encode the active suite as \code{0101} and require exactly one non-zero 32-byte service-query nonce;
+  \item replace branch token, query nonce, reply public key, logical-message encoding, wire message identifier, padding, and link ciphertext for every forwarded child;
+  \item use an independent root reply key for every first-hop branch;
+  \item verify the gateway pseudonym only inside the authenticated candidate payload and only against the private descriptor;
   \item create tentative state on \textsc{Candidate}, reserve pending state on \textsc{Commit}, and authorize data only after final \textsc{Ready};
-  \item reclaim all reassembly and setup state by local expiry without remote cooperation;
-  \item retain C1 only as an explicitly identified negative-control suite and never use its passive rerandomization behavior as evidence for C2 active security;
-  \item treat reserved audit suite \code{7f02} as non-network input, reject it in M2/W2, and keep concrete C2 full rerandomization fail-closed until the related-group action and independent vectors are approved;
-  \item make batch-local unlinkability claims only for a declared cell interleaving, batching, and observable cell-count profile;
-  \item refrain from concrete active-adversary, traffic-flow, post-quantum, or production-security claims until the selected C2 construction and the complete implementation have been independently reviewed and tested;
-  \item expose no detailed error behavior that distinguishes tagged eligibility failure from other invalid cryptographic, message, cell, or reassembly input.
+  \item transmit the rendezvous capability only inside an end-to-end protected active route;
+  \item store only the domain-separated capability commitment at a gateway and atomically delete the record on successful redemption;
+  \item reject replay, expiry, wrong gateway, all-zero capability, duplicate live registration, and malformed request through one generic failure class;
+  \item encode each logical operation as one canonical \Mtwo{} message with no semantic padding or trailing bytes;
+  \item enforce $1\le|M|\le16{,}384$ and canonical fragmentation into at most 17 \Wtwo{} cells;
+  \item encode every \Wtwo{} record as exactly 1,052 bytes and advance replay state only after adjacent-link authentication;
+  \item accept out-of-order fragments, process exact duplicates idempotently, invalidate conflicting duplicates, and bound contexts, bytes, fragments, and time;
+  \item allocate no route-semantic state before complete reassembly, suite agreement, and canonical message decoding;
+  \item enforce finite per-peer and global limits for cells, branches, candidates, routes, queues, cryptographic work, registrations, redemption failures, and setup time;
+  \item use half-open state lifetimes and the \Eone{} equal-time precedence order;
+  \item map disabled suite, cryptographic, message, cell, reassembly, route, and redemption failures to externally normalized rejection behavior;
+  \item keep C1, symbolic C2, and the C2-$k=2$ transcription disabled for operational network selection;
+  \item make batch-local unlinkability claims only for a declared scheduler and anonymity-set treatment;
+  \item refrain from private-directory, directory/gateway-collusion, traffic-flow, post-quantum, or production-security claims unless separately specified and reviewed.
 \end{enumerate}
 
-\section{Conformance artifact summary}
-\label{app:vectors}
-
-Three deterministic artifact sets support interoperability, audit, and regression testing. The C1 set fixes the retained classical and negative-control operations. The symbolic C2 set fixes the protocol-facing oracle behavior, suite binding, rerandomization transition, mutation rejection, and replay-equivalence metadata. The concrete C2-$k=2$ audit set fixes the exact related-group parameters, canonical public-key and 412-byte ciphertext encodings, successful original-ciphertext equations, restricted strand transformation, selected mutation, and fail-closed full-rerandomization status derived from Figure~6 of Wang et al.~\cite{anonrcca2021}. The symbolic set is not a concrete cryptographic test vector, and the audit set is not deployment approval; neither MUST be cited as evidence of computational security.
+\section{Message-class summary}
+\label{app:messages}
 
 \begin{table}[ht]
 \centering
-\caption{Selected deterministic conformance values}
-\label{tab:vectors}
-\begin{tabularx}{\textwidth}{@{}p{0.29\textwidth}X@{}}
+\caption{Logical control operations}
+\label{tab:messageclasses}
+\begin{tabularx}{\textwidth}{@{}p{0.19\textwidth}p{0.20\textwidth}X@{}}
 \toprule
-Field & Hexadecimal value \\
+Operation & Direction & Principal purpose \\
 \midrule
-C1 suite identifier & \code{0001} \\
-C1 endpoint address & {\ttfamily\small\seqsplit{7df7ebca17b539f1e08857046a44099f4eba764d670eed5ca84ff7a265d60deb}} \\
-C1 eligibility marker & {\ttfamily\small\seqsplit{72cffa1d9862e7f4f9b21445da83343808936f19972da0cdd41d422ca991de5e}} \\
-C1 root reply public key & {\ttfamily\small\seqsplit{befb53cee99672e930a9548a1666cf20aa218f314145c7474d609b19375eae16}} \\
-C1 tweaked reply public key & {\ttfamily\small\seqsplit{be63f1a19d7c1c1079ccc921b3a39957495e62c71c3e40531dd8095f08384055}} \\
-C1 candidate transcript hash & {\ttfamily\small\seqsplit{32703335d293a706b97a9beb49f4d89be00aace280a7cd1b085368a90d3bf833}} \\
-C2 symbolic suite identifier & \code{0002} \\
-C2 symbolic marker & {\ttfamily\small\seqsplit{2dd139b84bc859362a7887402411b0e5ed83b2c417b8823f84e0edede7d2a090}} \\
-C2 original-capsule SHA-256 & {\ttfamily\small\seqsplit{d2409fa73ac4180a584a3be0a2583fefe61430f6b2942fc1bc945811efb447c2}} \\
-C2 rerandomized-capsule SHA-256 & {\ttfamily\small\seqsplit{d78c2cea65e2997357632bf7c8831f8264bb64b601189ec7dc09eceaa5ecebbf}} \\
-C2-$k=2$ reserved audit suite & \code{7f02} \\
-C2-$k=2$ parameter set & $k=2$; $q=$ {\ttfamily\small\seqsplit{175513086009046434629810696245711941989}} \\
-C2-$k=2$ ciphertext length & 412 bytes \\
-C2-$k=2$ original-ciphertext SHA-256 & {\ttfamily\small\seqsplit{beb3a5b38457fff9f9714caaaa8facee82497d6f8f957663be093474aca13044}} \\
-C2-$k=2$ strand-rerandomized SHA-256 & {\ttfamily\small\seqsplit{835a3679f9661856caaaa70f38e7dcd8a6ba4ddf1cd8439e99009f58f68b09c8}} \\
-C2-$k=2$ tag-map status & \code{finite-field-tag-reduction-nonhomomorphic}; network use disabled \\
+\textsc{Discover} & outward & Create branch state; carries token, reply key, non-semantic query nonce, and bounded propagation controls. \\
+\textsc{Candidate} & inward & Return nested authenticated gateway offer and install tentative route labels. \\
+\textsc{Commit} & outward & Select one candidate, prove commit challenge, and reserve route capacity. \\
+\textsc{Ready} & inward & Confirm gateway activation and authorize route use. \\
+\textsc{Rendezvous-Open} & outward over active route & Redeem one-time endpoint capability and start local gateway rendezvous. \\
+\textsc{Cancel} & outward/inward advisory & Reclaim unselected tentative state early. \\
+\textsc{Abort} & either direction advisory & Reclaim failed pending state early. \\
+\textsc{Close} & either direction advisory & Reclaim active route early. \\
+\textsc{Chaff} & scheduler-defined & Occupy a fixed cell without route-semantic content. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-The generators use public deterministic labels to make results reproducible. These labels, derived scalars, oracle handles, and ciphertext bytes MUST NOT be used in an operational deployment.
+\section{Research-provider status}
+\label{app:providers}
 
-\section{Canonical message and cell encoding note}
+\begin{table}[ht]
+\centering
+\caption{Eligibility-provider boundary}
+\label{tab:providers}
+\begin{tabularx}{\textwidth}{@{}p{0.26\textwidth}p{0.14\textwidth}p{0.20\textwidth}X@{}}
+\toprule
+Provider & Suite & Network status & Purpose \\
+\midrule
+R1 rendezvous capability & \code{0101} & Active experimental & Generic gateway discovery; endpoint capability after \textsc{Ready}. \\
+C1 URE negative control & \code{0001} & Research only & Reproduce persistent algebraic ratio tagging. \\
+C2 symbolic oracle & \code{0002} & Research only & Exercise ideal replay-equivalence and mutation-rejection placement. \\
+C2 $k=2$ transcription & \code{7f02} & Disabled & Reproduce source equations and finite-field audit; fail closed. \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
-M2 uses minimal unsigned base-128 LEB128 for body, eligibility-capsule, and nested variable lengths. Every decoder MUST reject a longer encoding of a value, an unterminated integer, a value above its field-specific maximum, trailing bytes, or a nested length that exceeds its containing message. The M2 suite identifier selects the eligibility-capsule grammar and bound; fixed-width numeric fields declared by a selected suite or message body remain unsigned big-endian values.
+\section{Canonical encoding note}
 
-W2 uses fixed-width unsigned big-endian integers in the public 12-byte link header and encrypted 32-byte fragment header. The authenticated fragment header carries the same suite identifier as M2, and every fragment in one reassembly context MUST agree. The fragment count is not freely selected: it is the unique value $\lceil |M|/992\rceil$. Every non-final fragment carries exactly 992 M2 bytes and the final fragment carries exactly the remainder. Alternative short-fragment encodings of the same message are invalid.
+\Mtwo{} uses minimal unsigned base-128 LEB128 for variable lengths. Every decoder rejects a longer encoding, an unterminated value, a value above its field limit, trailing bytes, or a nested length exceeding its container. Fixed-width numeric fields are unsigned big-endian values.
 
-The fixed 1,052-byte W2 record length hides exact per-cell content length. It does not hide the number, direction, or timing of cells. These observables belong to a separately declared scheduling profile.
+\Wtwo{} uses fixed-width unsigned big-endian integers in the public 12-byte header and encrypted 32-byte fragment header. The suite identifier in every fragment must agree with the completed \Mtwo{} message. Every non-final fragment contains exactly 992 message bytes and the final fragment exactly the remainder. The 1,052-byte record length hides exact per-cell content length, but not cell count, direction, or timing.
 
+\begingroup
+\small
 \begin{thebibliography}{99}
+\setlength{\itemsep}{0.2\baselineskip}
 
 \bibitem{rfc2119}
 S. Bradner,
@@ -1590,12 +1115,12 @@ BCP 14, RFC 8174, May 2017.
 \bibitem{sphinx}
 G. Danezis and I. Goldberg,
 ``Sphinx: A Compact and Provably Secure Mix Format,''
-in \emph{IEEE Symposium on Security and Privacy}, 2009.
+in \emph{IEEE Symposium on Security and Privacy}, 2009, pp. 269--282.
 
 \bibitem{hornet}
 C. Chen, D. E. Asoni, D. Barrera, G. Danezis, and A. Perrig,
 ``HORNET: High-speed Onion Routing at the Network Layer,''
-arXiv:1507.05724, 2015.
+in \emph{22nd ACM Conference on Computer and Communications Security}, 2015, pp. 1441--1454.
 
 \bibitem{loopix}
 A. M. Piotrowska, J. Hayes, T. Elahi, S. Meiser, and G. Danezis,
@@ -1615,18 +1140,13 @@ in \emph{Topics in Cryptology -- CT-RSA 2004}, LNCS 2964, 2004, pp. 163--178.
 \bibitem{rcca2003}
 R. Canetti, H. Krawczyk, and J. B. Nielsen,
 ``Relaxing Chosen-Ciphertext Security,''
-in \emph{Advances in Cryptology -- CRYPTO 2003}, LNCS 2729, 2003.
+in \emph{Advances in Cryptology -- CRYPTO 2003}, LNCS 2729, 2003, pp. 565--582.
 
 \bibitem{keyprivacy2001}
 M. Bellare, A. Boldyreva, A. Desai, and D. Pointcheval,
 ``Key-Privacy in Public-Key Encryption,''
 in \emph{Advances in Cryptology -- ASIACRYPT 2001}, LNCS 2248, 2001, pp. 566--582,
 doi:10.1007/3-540-45682-1\_33.
-
-\bibitem{sphf2002}
-R. Cramer and V. Shoup,
-``Universal Hash Proofs and a Paradigm for Adaptive Chosen Ciphertext Secure Public-Key Encryption,''
-in \emph{Advances in Cryptology -- EUROCRYPT 2002}, LNCS 2332, 2002.
 
 \bibitem{rcca2007}
 M. Prabhakaran and M. Rosulek,
@@ -1643,6 +1163,26 @@ doi:10.1007/978-3-030-84259-8\_10; full version, IACR ePrint 2021/862.
 F. Banfi, U. Maurer, and S. Ritsch,
 ``On the Security of Universal Re-Encryption,''
 Cryptology ePrint Archive, Paper 2023/1165, 2023.
+
+\bibitem{urpke2022}
+B. Dowling, E. Hauck, D. Riepel, and P. R\"osler,
+``Strongly Anonymous Ratcheted Key Exchange,''
+in \emph{Advances in Cryptology -- ASIACRYPT 2022}; full version, IACR ePrint 2022/1187.
+
+\bibitem{toroverview}
+The Tor Project,
+``Tor Rendezvous Specification, Version 3: Protocol Overview,''
+Tor Specifications, section 13.2, accessed July 2026.
+
+\bibitem{torintro}
+The Tor Project,
+``Tor Rendezvous Specification, Version 3: The Introduction Protocol,''
+Tor Specifications, section 13.4, accessed July 2026.
+
+\bibitem{torrendezvous}
+The Tor Project,
+``Tor Rendezvous Specification, Version 3: The Rendezvous Protocol,''
+Tor Specifications, section 13.5, accessed July 2026.
 
 \bibitem{hpke}
 R. Barnes, K. Bhargavan, B. Lipp, and C. A. Wood,
@@ -1670,5 +1210,6 @@ S. Josefsson and I. Liusvaara,
 RFC 8032, January 2017.
 
 \end{thebibliography}
+\endgroup
 
 \end{document}

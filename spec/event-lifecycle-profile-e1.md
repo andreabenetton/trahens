@@ -1,7 +1,7 @@
 # Trahens event lifecycle profile E1
 
 - Status: Active research design
-- Applies to: Core v0.8 with U1, C2, M2, and W2; C1 reply/signature components remain bound
+- Applies to: Core v1.0 with U1, R1, M2, and W2; C1 reply/signature components remain bound
 - Purpose: Define event time, candidate windows, reverse setup, activation, cancellation, and deterministic cleanup
 
 ## 1. Time model
@@ -62,7 +62,7 @@ A ring number, retry number, previous-ring handle, or logical-discovery identifi
 
 ## 4. Candidate return
 
-A responder that opens the eligibility capsule and admits the request creates an endpoint offer with a finite offer deadline. It returns CANDIDATE through the reverse branch contexts.
+A rendezvous gateway that admits a canonical R1 discovery creates a gateway offer with a finite deadline. Eligibility is the local gateway role; the service-query nonce has no endpoint semantics. The gateway returns CANDIDATE through the reverse branch contexts.
 
 For every relay traversed by CANDIDATE, the relay MUST:
 
@@ -74,7 +74,7 @@ For every relay traversed by CANDIDATE, the relay MUST:
 6. replace the candidate capability and relevant labels;
 7. encode a fresh canonical M2 CANDIDATE and transmit it in one or more fixed-size W2 cells toward the parent.
 
-The responder's branch context is not a relay tentative mapping. Endpoint offer state is accounted separately.
+The gateway's branch context is not a relay tentative mapping. Gateway offer state is accounted separately.
 
 A candidate that cannot traverse one required reverse context is discarded. No recovery response is required.
 
@@ -84,7 +84,7 @@ Selection occurs only at a candidate-window boundary in E1. The default determin
 
 1. minimum hop count;
 2. earliest candidate arrival;
-3. responder identifier used only as a simulator tie-breaker;
+3. gateway identifier used only as a simulator tie-breaker;
 4. local candidate sequence used only as a final simulator tie-breaker.
 
 A production privacy profile MUST replace any externally meaningful tie-breaker with a policy that does not reveal stable endpoint identity to relays.
@@ -114,7 +114,7 @@ No race outcome may recreate expired state or change the selected route.
 
 ### 6.1 Forward commitment
 
-COMMIT travels from the initiator to the selected responder through local tentative mappings. At each relay, a valid COMMIT MUST:
+COMMIT travels from the initiator to the selected gateway through local tentative mappings. At each relay, a valid COMMIT MUST:
 
 1. match the incoming peer, label, route generation, and protected transcript;
 2. find one live tentative mapping;
@@ -129,7 +129,7 @@ If any relay cannot reserve route capacity or cannot find its tentative state, r
 
 ### 6.2 Reverse readiness
 
-After validating the commit challenge, the responder sends READY toward the initiator. At each relay, a valid READY transitions the matching `PENDING_READY` mapping to `ACTIVE` and forwards READY through the parent mapping.
+After validating the commit challenge, the gateway sends READY toward the initiator. At each relay, a valid READY transitions the matching `PENDING_READY` mapping to `ACTIVE` and forwards READY through the parent mapping.
 
 The initiator MUST NOT expose the route to the data plane until it authenticates the final READY transcript.
 
@@ -139,12 +139,26 @@ The existence of relay `ACTIVE` state before the initiator receives READY does n
 
 An exact duplicate COMMIT or READY on the same adjacent-link replay domain MUST be discarded or processed idempotently. A different protected transcript presented on the same local route capability MUST be rejected.
 
-## 7. Expiry and cleanup
+## 7. R1 post-READY redemption
+
+After the initiator authenticates final READY, it MAY send an end-to-end protected RENDEZVOUS_OPEN containing the private descriptor capability, client nonce, descriptor expiry, and endpoint handshake. Ordinary relays process only active-route labels.
+
+At the selected gateway:
+
+1. compute the domain-separated capability commitment;
+2. atomically lock and locate a live registration;
+3. verify gateway binding, half-open expiry, route state, and local handshake policy;
+4. delete the record before returning the local endpoint handle;
+5. map replay, expiry, wrong gateway, malformed input, and policy failure to one generic result.
+
+A failed or lost redemption does not revive expired route or registration state. The core does not define descriptor lookup or subsequent endpoint rendezvous transport.
+
+## 8. Expiry and cleanup
 
 The following states require independent finite deadlines:
 
 - branch context;
-- responder offer;
+- gateway offer;
 - relay tentative mapping;
 - pending-ready reservation;
 - active route mapping;
@@ -158,7 +172,7 @@ When a valid state transition replaces a deadline, an already queued timer for t
 
 At the end of a bounded E1 execution, all branch, tentative, pending, and active state eventually reaches zero unless retained by a separately specified data-plane renewal.
 
-## 8. Loss, duplication, and reordering
+## 9. Loss, duplication, and reordering
 
 E1 permits adjacent-link loss, exact duplication, and reordering.
 
@@ -169,7 +183,7 @@ E1 permits adjacent-link loss, exact duplication, and reordering.
 
 The sender MAY retransmit only under a bounded idempotent policy. The retransmission policy is part of a deployment profile and MUST NOT introduce a stable cross-hop identifier.
 
-## 9. Fresh-branch denial of service
+## 10. Fresh-branch denial of service
 
 An attacker may generate syntactically valid DISCOVER records with fresh link-local tokens. Exact replay protection does not stop this attack.
 
@@ -187,7 +201,7 @@ A token bucket is defined by capacity `b`, refill interval `r`, and refill amoun
 
 Per-peer admission limits a single-source or few-source flood but does not defeat a widely distributed attack. Node-global limits remain mandatory.
 
-## 10. Required measurements
+## 11. Required measurements
 
 An E1 evaluation MUST report at least:
 
@@ -198,12 +212,12 @@ An E1 evaluation MUST report at least:
 - COMMIT and READY failure counts;
 - legitimate and attack logical messages and W2 cells separately;
 - cumulative branch allocations by traffic class;
-- peak branch, responder-offer, initiator-candidate, tentative, pending, active, and reassembly state;
+- peak branch, gateway-offer, initiator-candidate, tentative, pending, active, and reassembly state;
 - replay, cell loss, reassembly timeout, reassembly capacity, token-bucket, and per-node drops;
 - final state counts and cleanup completion rate.
 
 A success result without final cleanup measurements is incomplete.
 
-## 11. Security scope
+## 12. Security scope
 
 E1 specifies lifecycle correctness and bounded cleanup. It does not strengthen U1 against global timing correlation or active cryptographic tagging. Event timing, W2 cell count, and fragment burst shape are observable unless a separate traffic-scheduling profile hides or quantizes them.

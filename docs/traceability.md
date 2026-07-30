@@ -1,20 +1,20 @@
-# Legacy-to-current traceability
+# Design traceability
 
-| Legacy concept | Current treatment | Location |
+| Earlier concept | Current treatment | Active location |
 |---|---|---|
-| Nexus secure adjacent links | Replaced by a minimal underlay contract plus named privacy profiles | `spec/core-v0.7.md`, ADR-0001, ADR-0005 |
-| T-FLOOD | Renamed DISCOVER with bounded propagation and complete per-hop transformation | `spec/core-v0.7.md`, `spec/messages-v0.7.md` |
-| T-ACK-L | Reframed as nested CANDIDATE reverse propagation installing tentative mappings | `spec/core-v0.7.md`, `spec/crypto-transcript-v0.2.md` |
-| T-ACK-R | Split into COMMIT and READY so selection, reservation, and activation are explicit | `spec/core-v0.7.md`, `spec/state-machines-v0.7.md` |
-| Left and right labels | Replaced by direction-, peer-, generation-, and deadline-bound random capabilities | `spec/core-v0.7.md`, `spec/invariants-v0.7.md` |
-| BIP32-like child keys | Replaced by an additive `ristretto255` reply-key chain and nested C1 return capsule | ADR-0003, ADR-0009, ADR-0014, `spec/crypto-profile-c1.md` |
-| Unchanged hidden destination selector | Replaced by a 128-byte universally rerandomizable C1 eligibility capsule | ADR-0010, ADR-0014, `spec/crypto-profile-c1.md` |
-| Abstract encryption/signature symbols | Replaced by exact C1 algorithms, encodings, transcripts, vectors, and generic failure | ADR-0014, ADR-0015, `spec/crypto-transcript-v0.2.md` |
-| Obfuscated degree | Removed as a Core dependency | Core fan-out classes and ADR-0006 |
-| One broad flood | Replaced by bounded initiator-local expanding rings | ADR-0006, Core v0.7 |
-| Stable discovery or attempt context | Removed from the wire; only peer-bound branch contexts remain | ADR-0008, Core v0.7 |
-| Gateway and Beacon discovery | Represented generically as eligible responders and service selectors | `spec/core-v0.7.md` |
-| Beacon and Authority directory | Deferred into a separate future protocol | ADR-0002 |
-| One padded control record | Replaced by canonical variable-length M1 logical messages carried in one or more fixed-size W2 encrypted cells with bounded reassembly | ADR-0019, ADR-0020, `spec/message-codec-m1.md`, `spec/wire-cell-w2.md` |
-| Batch mixing and chaff | Required by U1 for batch-local unlinkability; scheduling remains a separate profile | ADR-0005, `spec/unlinkability-profile-u1.md` |
-| Non-adjacent message unlinkability | Restored as a conditional U1 property; timing and active tagging are not claimed | `spec/unlinkability-profile-u1.md`, `docs/threat-model.md` |
+| Broad local flooding | Bounded initiator-local expanding rings | `spec/core-v1.0.md` |
+| Stable discovery context | Removed from the wire; peer-bound branch contexts only | U1, `spec/invariants-v1.0.md` |
+| Forward endpoint selector | Removed from active DISCOVER; replaced by non-semantic R1 nonce | `spec/rendezvous-capability-r1.md` |
+| Endpoint discovery ciphertext | Retained only in disabled/research C1 and C2 providers | `spec/eligibility-suite-interface-v1.md` |
+| Gateway or responder discovery | Generic rendezvous gateway candidates with protected short-lived pseudonyms | `spec/core-v1.0.md` |
+| Endpoint connection after discovery | Post-READY single-use capability redemption | `spec/rendezvous-capability-r1.md` |
+| Reverse acknowledgement | Nested CANDIDATE return installing tentative state | `spec/messages-v1.0.md` |
+| Final route acknowledgement | Split into COMMIT and READY | `spec/state-machines-v1.0.md` |
+| Directional labels | Peer-, direction-, epoch-, generation-, and deadline-bound random capabilities | `spec/invariants-v1.0.md` |
+| Deterministic child-key derivation | Additive `ristretto255` reply-key chain and nested return capsule | `spec/crypto-profile-c1.md` |
+| One fixed logical record | Canonical variable-length M2 message carried in fixed W2 cells | `spec/message-codec-m2.md`, `spec/wire-cell-w2.md` |
+| Padding inside semantic message | Removed; padding belongs to encrypted W2 cells | M2/W2 specs |
+| Best-effort cleanup only | Independent local expiry plus advisory CANCEL/ABORT/CLOSE | E1 and v1.0 state machines |
+| Unbounded convergence state | Explicit per-peer/global branch and reassembly budgets | `spec/resource-accounting-v1.0.md` |
+| Implicit directory | Explicitly separate private descriptor profile, not yet specified | R1 limitations and roadmap |
+| Unqualified unlinkability | Structural, batch-local, active-tag, directory, and traffic claims separated | `docs/threat-model.md`, paper |

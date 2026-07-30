@@ -1,7 +1,7 @@
 # Trahens W2 fixed-size adjacent-link cell profile
 
 - Status: Active research profile
-- Applies to: Trahens Core v0.8 with U1, E1, C2, and M2
+- Applies to: Trahens Core v1.0 with U1, E1, R1, and M2
 - Reference implementation: `simulator/trahens_codec/m2w2.py`
 
 ## 1. Purpose
@@ -67,8 +67,10 @@ Current values:
 - protocol version: `0x01`;
 - U1: `0x01`;
 - E1: `0x01`;
-- C1 negative-control suite: `0x0001`;
-- C2 active-security target: `0x0002`;
+- R1 active suite: `0x0101`;
+- C1 negative-control suite: `0x0001` (research only);
+- C2 symbolic suite: `0x0002` (research only);
+- C2 k=2 audit suite: `0x7f02` (rejected on the network);
 - flags and reserved: zero.
 
 All fields in this header are adjacent-link encrypted. `message_local_id` is a non-zero 128-bit identifier generated independently for one message on one authenticated link direction. It MUST be replaced after relay reassembly and semantic transformation. It MUST NOT be derived from a discovery, candidate, endpoint, route, or prior-hop identifier.
@@ -166,4 +168,4 @@ The protocol therefore distinguishes:
 
 ## 10. Security boundary
 
-W2 is cryptographically suite-neutral. It does not repair active weaknesses in an end-to-end eligibility primitive: a compromised relay can emit a new, correctly authenticated W2 representation containing attacker-selected logical bytes. W2 provides canonical framing, local identifier replacement, bounded reassembly, suite-consistency checks, and adjacent-link integrity. Active eligibility security is supplied by C2. The current repository integrates C2 through an executable ideal functionality; a concrete anonymous Rand-RCCA implementation remains a deployment gate.
+W2 is cryptographically suite-neutral. It does not repair active weaknesses in an end-to-end eligibility primitive: a compromised relay can emit a new, correctly authenticated W2 representation containing attacker-selected logical bytes. W2 provides canonical framing, local identifier replacement, bounded reassembly, suite-consistency checks, and adjacent-link integrity. Active discovery semantics are supplied by R1: the M2 field is a non-semantic per-hop nonce, and endpoint capability material is prohibited from DISCOVER. W2 does not provide private descriptor lookup, capability secrecy above the route layer, active timing-tag resistance, or traffic-flow unlinkability. C1 and C2 remain research-only providers.

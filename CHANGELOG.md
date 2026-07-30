@@ -1,5 +1,16 @@
 # Changelog
 
+## Core v1.0 - 2026-07-30
+
+- Adopted R1 rendezvous capabilities as the active eligibility profile and removed endpoint-specific material from operational DISCOVER messages.
+- Added an eligibility-provider boundary with active R1, C1 negative control, symbolic C2 control, and a disabled C2 k=2 audit provider.
+- Added one-time capability commitments, finite expiry, atomic redemption, wrong-gateway and replay rejection, and explicit directory/gateway trust boundaries.
+- Changed the event model default to R1 and added deterministic cross-hop literal-tag replacement tests and tracked R1 conformance vectors.
+- Added an exhaustive small Cunningham-chain checker for the literal C2 finite-field reduction.
+- Added an author-query note and a source-based assessment of the ASIACRYPT 2022 updatable/randomizable PKE interface.
+- Published active Core v1.0, R1, eligibility-interface, message, state-machine, invariant, and resource-accounting specifications.
+- Rewrote the formal paper as one current protocol draft with point-of-use citations, clear R1 notation, line numbers every five lines, and no watermark.
+
 ## Core v0.9 - 2026-07-30
 
 - Selected the exact `k`-linear construction in Wang et al., CRYPTO 2021, Section 6.3 and Figure 6, for a concrete C2 interoperability audit.

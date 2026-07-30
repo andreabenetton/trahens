@@ -23,6 +23,7 @@ from trahens_codec.m2w2 import (
 from trahens_crypto import ristretto as r255
 from trahens_crypto.c1 import C1_SUITE_ID, build_endpoint_keys, ure_encrypt
 from trahens_crypto.c2_ideal import C2IdealOracle, C2_SUITE_ID
+from trahens_crypto.eligibility import R1_SUITE_ID, R1_DISCOVERY_NONCE_BYTES
 
 
 class M2SuiteAgilityTests(unittest.TestCase):
@@ -66,6 +67,38 @@ class M2SuiteAgilityTests(unittest.TestCase):
         self.assertEqual(decoded_c2, c2)
         self.assertLess(len(encoded_c1), CELL_PAYLOAD_BYTES)
         self.assertLess(len(encoded_c2), CELL_PAYLOAD_BYTES)
+
+
+    def test_r1_discover_roundtrip_and_no_capability_bytes(self) -> None:
+        reply_public = r255.scalarmult_base(r255.scalar_from_label(b"m2-r1-reply"))
+        capability = b"private-capability-never-on-discover"[:32]
+        nonce = b"R" * R1_DISCOVERY_NONCE_BYTES
+        record = DiscoverRecord(
+            branch_token=b"F" * 16,
+            hop_remaining=4,
+            fanout_class=2,
+            expiry_class=1,
+            options=0,
+            reply_public_key=reply_public,
+            eligibility_capsule=nonce,
+            crypto_suite_id=R1_SUITE_ID,
+        )
+        encoded = encode_discover(record)
+        self.assertEqual(decode_message(encoded), record)
+        self.assertNotIn(capability, encoded)
+        with self.assertRaises(CodecError):
+            encode_discover(
+                DiscoverRecord(
+                    branch_token=b"F" * 16,
+                    hop_remaining=4,
+                    fanout_class=2,
+                    expiry_class=1,
+                    options=0,
+                    reply_public_key=reply_public,
+                    eligibility_capsule=b"short",
+                    crypto_suite_id=R1_SUITE_ID,
+                )
+            )
 
     def test_w2_preserves_suite_across_fragment_reassembly(self) -> None:
         candidate = CandidateRecord(

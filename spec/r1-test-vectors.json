@@ -1,0 +1,33 @@
+{
+  "capability": {
+    "commitment": "398db0666e5dc95e2236bc107c490e856c436f8590149b86247b66c87ac99485",
+    "created_at_ms": 1000,
+    "endpoint_handle": "64ea4a2254b55931d9f9feab0ff3d5bea6967fb4316e60ef24a52110f49cb0e3",
+    "expired_live_records": 0,
+    "expired_redemption": null,
+    "expires_at_ms": 6000,
+    "first_redemption": "64ea4a2254b55931d9f9feab0ff3d5bea6967fb4316e60ef24a52110f49cb0e3",
+    "gateway_id": 7,
+    "live_records_after_redemption": 0,
+    "registry_hash": "fd205567833c74d32833a51a539c239e5c01cccb456cbe13422ae33da0fd9cc2",
+    "replay_redemption": null,
+    "token": "ebbc699fc51909eea23b9ef2740070ec2d1211c6582e87beeb45644785f7f1b5",
+    "wrong_gateway_redemption": null
+  },
+  "discovery": {
+    "all_distinct": true,
+    "nonce_0": "2d7a96cf8020aa305f2faef675cd599001f06f16c7a109d6d92ca8a930934a46",
+    "nonce_1": "31bb0da256ea40d436b909a161fa2498e83345e44f9bda59f6c8cfe74eac93e6",
+    "nonce_2": "bdc2c4fd20c25583301cd78c71decf86b8dca6dfeda65685d7f33dbbceb6f409",
+    "tag_survives_replacement": false,
+    "tagged_prefix": "7461672d6d61726b6572"
+  },
+  "profile": "Trahens R1 rendezvous capability profile",
+  "service_class": "54726168656e732f52312f72656e64657a766f75732d67617465776179",
+  "sizes": {
+    "capability_bytes": 32,
+    "discovery_nonce_bytes": 32
+  },
+  "suite_id": "0101",
+  "version": 1
+}

@@ -1,60 +1,48 @@
 # Open questions
 
-## Cryptographic review
+## R1 descriptor and gateway design
 
-- Which exact modern URE security definition is sufficient for the C1 eligibility use case?
-- What replacement eligibility construction prevents the demonstrated persistent ratio tag and selective-failure linking?
-- Can `TR-KEM-R255` be proved secure under its additive related-key evolution, or should it be replaced?
-- How should malformed-ciphertext timing be equalized without creating a denial-of-service primitive?
-- What hybrid or post-quantum construction can preserve universal rerandomization?
-- Which independent implementation should cross-check the C1 vectors?
+- How are descriptors queried without revealing the destination to the directory?
+- How are clients authorized without making queries or descriptors linkable?
+- Should capability commitments be replicated, threshold-shared, or registered at multiple independent gateways?
+- How are gateway pseudonyms authenticated, rotated, revoked, and protected from enumeration?
+- Can a client-bound handshake reduce the race created by a stolen capability?
+- How can selective gateway denial be measured or audited without exposing users?
 
-## M1/W2 codec and reassembly
+## Retained cryptography
 
-- Which machine-readable schema can generate memory-safe M1 and W2 parsers in two independent implementations?
-- Should the 16,384-byte logical-message ceiling and 17-cell limit remain fixed or become negotiated profile parameters?
-- How should fragment retransmission work without introducing stable cross-hop identifiers or amplification?
-- Which timeout and aggregate-byte policy best resists fragment sprays without penalizing delayed links?
-- Should a conflicting duplicate invalidate the complete reassembly context or only the conflicting fragment?
-- How should version and suite negotiation avoid downgrade and fingerprinting?
+- Can the additive reply-key chain and custom KEM be proved secure under related-key evolution?
+- Which transcript fields and key-confirmation step are necessary to prevent substitution?
+- How should malformed-input and timing behavior be normalized without creating a denial-of-service primitive?
+- Does an author-confirmed interpretation repair the disabled C2 k=2 transcription?
+- Which future endpoint-specific primitive could satisfy the source-independent provider interface?
+- What post-quantum construction can preserve acceptable candidate size and route depth?
 
-## Cell-count and depth hiding
+## Reliability and W2
 
-- Which candidate depths map to one, two, or more W2 cells under realistic descriptors and application offers?
-- Should a scheduling profile pad message cell counts to powers of two, fixed transaction classes, or a probabilistic distribution?
-- Can fragments be interleaved with CHAFF and unrelated traffic without making reassembly deadlines or fairness impractical?
-- Can the nested candidate representation be made sublinear in route depth?
+- Which acknowledgement and retransmission scheme avoids stable cross-hop identifiers?
+- Should recovery operate per cell, per logical message, or through bounded erasure coding?
+- How should retry state interact with E1 deadlines and cancellation?
+- Should the 16,384-byte message ceiling and 17-cell limit remain fixed?
+- Which deterministic eviction policy resists fragment sprays without giving the attacker control over surviving contexts?
 
-## Protocol lifecycle
+## Scheduling and traffic privacy
 
-- What candidate-window duration minimizes cost without discarding useful delayed candidates?
-- How should route diversity be defined without exposing topology?
-- How are routes repaired without repeating a complete discovery?
-- Are active route labels single-use, flow-scoped, or reusable until expiry?
-- Which bounded acknowledgment scheme is appropriate for multi-cell control messages?
+- Which interleaving, batching, release, and chaff policy provides a useful anonymity set at acceptable latency?
+- How should candidate cell count be padded without excessive amplification?
+- Can queue fairness be preserved under low load and attack traffic?
+- Which classifiers and statistical tests define acceptable timing-linkability evidence?
 
-## Resource safety
+## Protocol lifecycle and routes
 
-- Which quotas best resist Sybil, rotating-peer, candidate-spam, fragment-spray, and distributed fresh-branch attacks?
-- What deterministic eviction policy avoids giving an attacker control over surviving routes or reassemblies?
-- Can rejection remain non-amplifying without becoming a capacity oracle?
-- At what hop/fan-out settings does branch-context and fragment amplification become impractical by topology family?
+- How should route diversity be measured without revealing topology?
+- How are active routes repaired without repeating full discovery?
+- Are active labels flow-scoped, route-scoped, or reusable until expiry?
+- How should gateway handoff or endpoint mobility interact with one-time capabilities?
 
-## Traffic privacy
+## Governance and deployment
 
-- What minimum mixing batch and release policy gives useful matching resistance at acceptable latency?
-- Which observable message sizes, cell counts, and timing patterns partition the anonymity set?
-- Can batching and chaff avoid exposing queue occupancy under low load?
-- What classifier and statistical tests should define traffic-flow unlinkability evidence?
-
-## Identity and directory
-
-- How is a descriptor distributed and refreshed without exposing deterministic lookup tokens?
-- How can lookup provide poisoning resistance, replication, selective-denial evidence, and private queries?
-- How is long-term eligibility-key rotation represented without making historical destinations linkable?
-
-## Governance
-
-- When will the confidential-versus-CC-BY licensing conflict be resolved?
-- Which organization owns protocol identifiers and version allocation?
-- What evidence and review process is required before a research claim becomes a deployment claim?
+- Which organization allocates protocol and suite identifiers?
+- What evidence is required before a research profile becomes operationally enabled?
+- How are relay and gateway admission, Sybil resistance, incentives, and abuse handled?
+- When is the licensing position of preserved historical material resolved?

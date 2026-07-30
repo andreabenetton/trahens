@@ -1,4 +1,4 @@
-.PHONY: test crypto-vectors c2-symbolic-vectors c2-k2-audit experiments sweep policy-compare unlinkability-compare lifecycle-compare tagging-compare fragmentation-compare c2-compare paper check reproduce clean
+.PHONY: test crypto-vectors r1-vectors c2-symbolic-vectors c2-k2-audit c2-k2-exhaustive r1-compare experiments sweep policy-compare unlinkability-compare lifecycle-compare tagging-compare fragmentation-compare c2-compare paper check reproduce clean
 
 test:
 	PYTHONPATH=simulator python -m unittest discover -s simulator/tests -v
@@ -6,11 +6,20 @@ test:
 crypto-vectors:
 	PYTHONPATH=simulator python tools/generate_crypto_vectors.py --output spec/crypto-test-vectors-c1.json
 
+r1-vectors:
+	PYTHONPATH=simulator python tools/generate_r1_vectors.py --output spec/r1-test-vectors.json
+
 c2-symbolic-vectors:
 	PYTHONPATH=simulator python tools/generate_c2_symbolic_vectors.py --output spec/crypto-test-vectors-c2-symbolic.json
 
 c2-k2-audit:
 	PYTHONPATH=simulator python tools/generate_c2_k2_audit.py --output reports/c2-k2-transcription-audit.json
+
+c2-k2-exhaustive:
+	PYTHONPATH=simulator python tools/c2_k2_exhaustive_check.py --output reports/c2-k2-small-chain-exhaustive.json
+
+r1-compare:
+	./tools/run_r1_comparison.sh
 
 experiments:
 	./tools/run_experiments.sh
@@ -46,8 +55,11 @@ check:
 
 reproduce:
 	$(MAKE) crypto-vectors
+	$(MAKE) r1-vectors
 	$(MAKE) c2-symbolic-vectors
 	$(MAKE) c2-k2-audit
+	$(MAKE) c2-k2-exhaustive
+	$(MAKE) r1-compare
 	$(MAKE) experiments
 	$(MAKE) sweep
 	$(MAKE) policy-compare
