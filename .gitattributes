@@ -1,2 +1,28 @@
-*.bin binary
+# Pin text/EOL behaviour so the index stays canonical across machines.
+# Without this file, git inherits each developer's local `core.autocrlf`
+# default, causing "massively dirty" worktrees on first checkout.
+
+# Default: treat every file as text, normalise EOL to LF on commit,
+# check out as LF on every platform. Linux is the primary host.
+* text=auto eol=lf
+
+# ── Binary asset classes — opt out of text handling entirely ─────────
+*.bin    binary
+*.pdf    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.webp   binary
+*.ico    binary
+*.zip    binary
+*.gz     binary
+*.tgz    binary
+*.7z     binary
+
+# Rust compiled artifacts and fuzz corpus
 implementation/rust/fuzz/corpus/** binary
+
+# ── Lockfiles — explicit text=auto so they don't slip through binary ─
+*.lock   text
+Cargo.lock text
