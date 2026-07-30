@@ -11,8 +11,8 @@ jobs:
   reference-and-spec:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install reference dependencies
@@ -23,7 +23,7 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.82.0
         with:
           components: clippy
@@ -40,9 +40,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.82.0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install harness dependencies
@@ -69,7 +69,7 @@ jobs:
             --timeout-ms 90000 --output "$GITHUB_WORKSPACE/build/p1-12-hop"
       - name: Upload captures and metrics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: p1-network-results
           path: build/p1-*
@@ -77,7 +77,7 @@ jobs:
   paper:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install TeX Live
         run: |
           sudo apt-get update
@@ -94,7 +94,7 @@ jobs:
       - name: Build the current paper
         run: make paper
       - name: Upload built paper
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: paper-pdf
           path: build/paper/main.pdf
