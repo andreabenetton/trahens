@@ -2,176 +2,148 @@
 
 ## Objective
 
-Turn the 2020 concept into a falsifiable research program and then into an interoperable experimental protocol. The project succeeds only if it can state precisely:
+Turn the 2020 concept into a falsifiable research program and then into an interoperable experimental protocol. The project succeeds only if it states precisely:
 
 - what information each participant learns;
 - what an adversary can observe or modify;
 - how much bandwidth, computation, and relay state discovery consumes;
-- which privacy properties survive realistic compromise and traffic observation;
-- which components are essential and which are deployment profiles.
+- which privacy properties survive each compromise and observation model;
+- which components are core mechanisms and which are deployment profiles.
 
 ## Design principles
 
 1. **Narrow before extending.** Solve bounded local discovery before global name resolution.
-2. **Separate mechanism from privacy profile.** Core routing correctness must work without claiming that every deployment provides the same traffic-analysis resistance.
-3. **No implicit cryptography.** Every key, transcript, nonce, signature, and validation rule must be defined.
-4. **Bound every resource.** Messages, fan-out, state, retries, lifetimes, and cryptographic operations require explicit limits.
-5. **Make claims executable.** Every security or scalability claim maps to a test, simulation, model, or proof obligation.
-6. **Preserve protocol evolution.** Versioning and algorithm negotiation must resist downgrade and fingerprinting.
-7. **Keep the legacy draft immutable.** Improvements happen in new specifications and paper revisions.
+2. **Transform every cross-hop handle.** A privacy claim fails if any opaque field remains a stable equality token.
+3. **Separate privacy properties.** Wire-image unlinkability, batch-local matching resistance, and traffic-flow unlinkability are distinct.
+4. **No implicit cryptography.** Every key, transcript, nonce, proof, error rule, and domain separator must be defined.
+5. **Bound every resource.** Messages, fan-out, branch contexts, candidate responses, lifetimes, queues, and cryptographic operations require explicit limits.
+6. **Make claims executable.** Every security or scalability claim maps to a test, simulation, model, or proof obligation.
+7. **Preserve evolution.** Version and suite negotiation must resist downgrade without becoming a fingerprinting oracle.
+8. **Keep the legacy draft immutable.** Improvements occur in versioned specifications and the formal rewrite.
+
+## Current architecture
+
+Trahens Core v0.3 is a bounded discovery and opaque bidirectional route-establishment protocol. It excludes the legacy Beacon/Authority directory, economic incentives, inter-domain policy, and a replacement layer-2 stack.
+
+The U1 profile removes attempt-wide wire identifiers. Every outgoing branch replaces its token and capabilities, blinds the reply public key, rerandomizes the hidden eligibility selector, reconstructs the canonical body, pads it to a fixed record class, and passes it through a mixing boundary. This restores the structure required for the original non-adjacent bit-pattern unlinkability objective.
+
+The restoration is conditional rather than absolute. U1 assumes a secure rerandomizable-encryption primitive and reply-key construction, and its batch-local claim excludes precise timing, queue observation, and active modification. The repository therefore distinguishes a restored protocol objective from a completed cryptographic proof.
 
 ## Workstreams
 
-### A. Protocol scope and semantics
+### A. Core semantics
 
-Define Trahens Core as a bounded expanding-ring discovery and bidirectional route-state establishment protocol. Exclude the global directory, economic incentives, inter-domain policy, and a replacement layer-2 stack from Core v0.2.
+Complete the DISCOVER, CANDIDATE, COMMIT, READY, ABORT, CLOSE, expiry, and cleanup behavior under event time, loss, delay, duplication, and cancellation.
 
-### B. Security and privacy model
+### B. Unlinkability and cryptography
 
-Create adversary classes rather than one ambiguous global adversary. Define confidentiality, authentication, route-position privacy, endpoint unlinkability, and availability separately. State where each property fails.
+Select and analyze the URE eligibility primitive and tweakable reply KEM. Define canonical transcripts, depth-hiding candidate capsules, malformed-ciphertext behavior, test vectors, and active-tagging experiments. Independent review is a release gate.
 
-### C. Cryptographic redesign
+### C. Resource and denial-of-service model
 
-Replace BIP32-derived routing keys and generic `E/S/V` notation with explicit, reviewed constructions. Bind every message to the protocol version, attempt or route instance, direction, hop context, and expiration. Add replay and downgrade defenses.
+Because U1 removes attempt-wide duplicate suppression, quantify branch-context amplification and enforce per-link, per-peer, per-node, queue, time-window, and global limits before expensive operations.
 
-### D. Resource and denial-of-service model
+### D. Simulation and measurement
 
-Specify duplicate suppression, per-neighbor and per-origin budgets, state caps, cryptographic work limits, expiration, and overload behavior. A relay must reject work before expensive operations whenever possible.
+Use deterministic models to compare discovery success, cumulative work, peak concurrent state, delayed-candidate behavior, route setup, churn, and attacker strategies. Privacy experiments must report adversarial matching success rather than infer privacy from encryption alone.
 
-### E. Simulation and measurement
+### E. Overlay prototype
 
-Build a deterministic simulator before network code. Measure flood growth, route discovery probability, state occupancy, churn recovery, malicious fan-out, and the privacy/cost trade-off of cover traffic.
+After the event model and first cryptographic profile stabilize, implement the smallest interoperable user-space overlay over an existing authenticated transport. The prototype validates encoding and state machines; it does not replace IP.
 
-### F. Overlay prototype
+### F. Traffic-scheduling profiles
 
-Implement the smallest interoperable prototype over an existing transport. The prototype should validate state machines and encoding, not attempt to replace IP.
+Specify batching, chaff, release cadence, overflow, and constant- or quantized-rate behavior separately from Core. Measure the latency and bandwidth cost against named correlation adversaries.
 
 ### G. Directory research
 
-Treat beacon/authority resolution as a separate protocol. Compare multiple designs, including replicated rendezvous, private-information-retrieval-compatible directories, and capability-based introduction. Do not assume repeated hashing provides query privacy.
+Treat long-range registration and resolution as a separate protocol. Compare rendezvous, capability-based introduction, private-query-compatible directories, replication, poisoning resistance, and selective-denial behavior. Repeated hashing is not accepted as query privacy.
 
 ## Iteration model
 
-Each iteration is a small, reviewable unit with:
+Each iteration contains:
 
-1. a question or defect;
-2. a proposed change;
-3. an ADR when architecture changes;
-4. specification updates;
-5. tests or simulations;
-6. measured results;
+1. a defect or research question;
+2. a proposed change and explicit assumptions;
+3. an ADR for architecture changes;
+4. versioned specification updates;
+5. executable tests, simulations, or proof obligations;
+6. measured results and known counterexamples;
 7. a decision to accept, revise, or revert.
 
-An iteration is incomplete when it only changes prose without changing a testable artifact.
+An iteration is incomplete when it changes prose without changing a testable artifact.
 
 ## Phases and gates
 
-### Phase 0 - Repository and evidence baseline
+### Phase 0 - Evidence baseline: complete
+
+The original source and PDF are immutable, current material is versioned separately, and repository checks are reproducible.
+
+### Phase 1 - Core correctness baseline: complete
+
+Core v0.2 established the first coherent message taxonomy, lifecycle, state machines, and bounded expanding-ring policy.
+
+### Phase 2 - U1 structural unlinkability: complete as a research design
+
+Core v0.3 removes stable cross-hop handles and defines branch-local transformation, fixed record classes, mixing, and a conditional challenge game. The simulator records the cost of losing attempt-wide deduplication.
+
+Gate status: protocol structure accepted; cryptographic guarantee not yet approved.
+
+### Phase 3 - Event-driven route lifecycle: next
 
 Deliverables:
 
-- immutable legacy source and PDF;
-- baseline assessment;
-- glossary and open questions;
-- ADR process;
-- reproducible repository checks.
+- event queue and explicit clocks;
+- candidate windows and late-candidate policy;
+- tentative reverse state and candidate return;
+- COMMIT/READY activation;
+- expiry, cancellation, and deterministic cleanup;
+- packet loss, delay, duplication, and reordering;
+- malicious branch generation and token-bucket admission.
 
-Exit gate: the original design can be cited without being mistaken for the current specification.
+Exit gate: all route-state transitions and races produce deterministic, bounded outcomes.
 
-### Phase 1 - Core v0.2 semantics
-
-Deliverables:
-
-- entities and trust boundaries;
-- relay, initiator, and responder state machines;
-- message taxonomy;
-- route-state lifecycle;
-- protocol invariants;
-- explicit non-goals.
-
-Exit gate: two implementers can independently describe the same state transitions and failure behavior.
-
-### Phase 2 - Abuse-resistant discovery
+### Phase 4 - Cryptographic profile v0.1
 
 Deliverables:
 
-- local logical-discovery context and fresh attempt identifiers;
-- attempt-local duplicate suppression;
-- hard ring, fan-out, hop, and cumulative limits;
-- per-link quotas;
-- state and CPU budgets;
-- replay and stale-message behavior;
-- overload tests in the simulator.
-
-Exit gate: every accepted input has a calculable upper bound on local work and retained state, and every logical discovery has a cumulative policy budget.
-
-### Phase 3 - Cryptographic profile v0.1
-
-Deliverables:
-
-- concrete key establishment and signature profiles;
+- concrete URE and reply-KEM constructions;
 - transcript definitions and domain separation;
-- identity-to-ephemeral-key binding;
-- downgrade and replay resistance;
-- test vectors;
+- identity or credential binding;
+- downgrade, replay, and malformed-ciphertext rules;
+- canonical test vectors;
+- active-tagging analysis;
 - independent cryptographic review.
 
-Exit gate: no security behavior depends on undefined generic cryptographic functions.
-
-### Phase 4 - Deterministic simulator
-
-Deliverables:
-
-- reproducible topologies and events;
-- honest and malicious relay strategies;
-- metrics and experiment manifests;
-- baseline results for scale, churn, and attack cases.
-
-Exit gate: design choices can be compared quantitatively before network implementation.
+Exit gate: no security behavior depends on undefined generic primitives, and the U1 claim is either proved under stated assumptions or narrowed.
 
 ### Phase 5 - Overlay interoperability prototype
 
-Deliverables:
+Deliverables include a canonical codec, conformance harness, fault injection, packet captures, and a controlled testbed.
 
-- canonical binary encoding;
-- at least two independent node implementations or one implementation plus a conformance harness;
-- interoperability tests;
-- packet captures and failure injection;
-- bounded local discovery on a controlled testbed.
+Exit gate: independent nodes establish, activate, use, and expire routes consistently under adverse transport behavior.
 
-Exit gate: nodes establish and expire routes consistently under packet loss, duplication, and reordering.
+### Phase 6 - Traffic privacy profiles
 
-### Phase 6 - Privacy profiles
+Deliverables include padded, mixed, and scheduled-link profiles with correlation experiments and quantified bandwidth/latency costs.
 
-Deliverables:
-
-- baseline encrypted-link profile;
-- padded control-plane profile;
-- constant-rate or scheduled-link profile;
-- measured bandwidth and latency cost;
-- adversarial correlation evaluation.
-
-Exit gate: privacy claims name the exact deployment profile and measured adversary.
+Exit gate: every traffic-analysis claim names its profile, adversary, topology, and measured success metric.
 
 ### Phase 7 - Long-range resolution
 
-Deliverables:
+Deliverables include a separate directory threat model, ownership and freshness rules, replication model, private-query analysis, and poisoning/enumeration tests.
 
-- separate directory threat model;
-- registration ownership and freshness rules;
-- replication and consistency model;
-- private-query analysis;
-- resistance to enumeration, poisoning, and selective denial.
-
-Exit gate: the directory does not silently invalidate the privacy properties of Core.
+Exit gate: directory behavior does not silently invalidate Core privacy claims.
 
 ## Immediate backlog
 
-1. Add event time and explicit candidate windows to expanding-ring simulation.
-2. Model delayed candidates from earlier attempts and cancellation races.
-3. Add malicious fresh-attempt floods and relay-local token buckets.
-4. Simulate candidate reverse propagation, tentative state, COMMIT, and READY.
-5. Define deterministic eviction and overload behavior under mixed state pressure.
-6. Model colluding relays that correlate attempts through timing and overlap.
-7. Define the cryptographic transcript and concrete profile after setup semantics stabilize.
-8. Produce canonical message test vectors before network I/O.
+1. Add event time and candidate-window configuration to the simulator.
+2. Model delayed candidates from earlier rings and cancellation races.
+3. Implement candidate reverse propagation and tentative relay state.
+4. Implement COMMIT and READY propagation and route activation.
+5. Add deterministic expiration and cleanup under lost final messages.
+6. Add malicious fresh-branch floods, replay, candidate spam, and token buckets.
+7. Measure peak concurrent state in addition to cumulative allocations.
+8. Add the U1 two-relay matching harness and unchanged-field negative tests.
+9. Select candidate URE and reply-KEM constructions for cryptographic review.
+10. Produce canonical message and transcript test vectors before network I/O.

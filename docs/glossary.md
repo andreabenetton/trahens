@@ -1,14 +1,23 @@
 # Glossary
 
 - **Adjacent peer**: a node directly reachable through the selected underlay profile.
+- **Batch-local message unlinkability**: inability, under a declared passive game, to match an input record to an output record across an honest transformation and mixing boundary except for the anonymity-set baseline and negligible cryptographic advantage.
+- **Branch context**: peer-bound relay state created for one admitted ingress token; it has no network-wide identifier.
+- **Branch token**: a fresh random capability meaningful only on one adjacent link and link epoch.
 - **Candidate responder**: a node eligible to answer a bounded discovery, such as a gateway or service endpoint.
+- **Candidate token**: a link-local capability used to map a reverse candidate response; it is replaced at every relay.
 - **Discovery**: a bounded control-plane operation that creates temporary reverse state and obtains one or more route candidates.
-- **Discovery ID**: a random identifier used for duplicate suppression and lifecycle correlation within one discovery instance.
-- **Endpoint identity**: a long-term identity key or address used by an application to name a destination.
+- **Eligibility capsule**: an end-to-responder encrypted selector that is rerandomized at every U1 forwarding hop.
+- **Endpoint identity**: a long-term identity key, credential, or address used by an application to name or authorize a destination.
 - **Hop label**: an opaque, short-lived forwarding capability interpreted only by the relay that created it.
-- **Initiator**: the endpoint that starts discovery.
-- **Privacy profile**: a deployment-specific set of padding, batching, scheduling, and observation assumptions.
-- **Relay**: a node that forwards protocol messages and stores bounded ephemeral route state.
-- **Responder**: a node that accepts a discovery and starts the acknowledgement path.
-- **Reverse state**: state installed during outward discovery that permits a response to travel toward the initiator.
-- **Forward state**: state installed during acknowledgement that permits later traffic toward the responder.
+- **Initiator**: the endpoint that starts a logical discovery.
+- **Logical discovery**: initiator-local policy state containing ring schedule, cumulative budgets, candidate set, and deadline; its identifier is never transmitted.
+- **Mixing boundary**: a relay queue that groups indistinguishable record classes and releases them under a hidden permutation and declared schedule.
+- **Privacy profile**: a deployment-specific set of cryptography, padding, batching, scheduling, cover traffic, and observation assumptions.
+- **Relay**: a node that transforms and forwards protocol records while storing bounded ephemeral state.
+- **Responder**: a node that can open the eligibility capsule, authenticate a candidate offer, and participate in route commitment.
+- **Reply-key blinding**: per-hop transformation of the candidate-encryption public key using a fresh scalar, with the scalar returned in a nested encrypted capsule.
+- **Route label**: a peer- and direction-bound forwarding capability used after commitment.
+- **Traffic-flow unlinkability**: resistance to correlation through timing, volume, topology, and active manipulation; Core v0.3 does not provide this by itself.
+- **U1**: the conditional Core v0.3 profile for non-adjacent wire-image and batch-local message unlinkability.
+- **Wire-image unlinkability**: absence of a stable protocol-field equality test across non-adjacent forwarding hops.

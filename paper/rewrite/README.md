@@ -1,11 +1,11 @@
-# Paper rewrite
+# Formal working paper
 
-`main.tex` is the concise research-paper rewrite aligned with Core v0.2 and the tracked simulator results. It is intentionally shorter than the legacy draft and does not copy incomplete legacy algorithms.
+`main.tex` is the formal Core v0.3 paper. It restores the structured language, notation, definitions, algorithms, conditional security statements, and normative requirements of the legacy draft while replacing its incomplete or unsafe mechanisms.
+
+The paper is not the normative implementation specification. Normative behavior remains in `spec/`. Quantitative statements trace to `reports/iteration-0004-unlinkability-comparison.csv` and `docs/review-log/iteration-0004.md`.
 
 Build and verify with:
 
 ```bash
 make paper
 ```
-
-The rewrite remains descriptive. Normative behavior belongs in `spec/`, and quantitative statements must trace to a report and review log.

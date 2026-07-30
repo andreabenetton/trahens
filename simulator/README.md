@@ -1,21 +1,26 @@
 # Simulator
 
-The simulator is the first executable artifact. It models outward Core discovery and policy selection:
+The simulator is the first executable artifact. It currently provides three related models:
 
-- connected undirected graph generation;
-- bounded hop count;
-- separate origin and relay fan-out limits;
-- first-parent duplicate suppression;
-- deterministic responder sets;
-- candidate limits and cross-attempt candidate deduplication;
-- hard transmission and state-allocation budgets;
-- expanding-ring schedules with fresh attempt contexts;
-- cumulative cost and cross-attempt relay-overlap metrics;
-- deterministic seeds and JSON/CSV output.
+1. identifier-based bounded discovery with first-parent duplicate suppression;
+2. expanding-ring policy with fresh attempt contexts;
+3. U1 branch-local discovery without attempt-wide duplicate suppression.
 
-It does not yet model message sizes, event time, candidate reverse propagation, commitment, route expiration, churn, cryptography, or malicious behavior.
+The U1 model treats every accepted ingress as independent branch state, excludes only immediate backtracking, and enforces hard transmission, global-state, per-node-context, candidate-response, and candidate-count limits. Complete paths are retained internally only to measure hidden loop re-entry; they are not protocol-visible state.
 
-## Fixed attempt
+The simulator measures:
+
+- discovery transmissions and candidate success;
+- state allocations and unique relays;
+- repeated branch contexts at one physical relay;
+- hidden loop re-entry;
+- context amplification;
+- per-node and global budget exhaustion;
+- expanding-ring work and cross-attempt overlap.
+
+It does not yet model event time, reverse candidate capsules, COMMIT/READY, expiry, cryptographic distributions, packet loss, churn, or malicious behavior.
+
+## Fixed identifier-based attempt
 
 ```bash
 PYTHONPATH=simulator python -m trahens_sim.cli \
@@ -39,28 +44,21 @@ PYTHONPATH=simulator python -m trahens_sim.expanding_cli \
 
 A two-field ring is `hop_limit:fanout`. A three-field ring is `hop_limit:initial_fanout:relay_fanout`.
 
-## Test
+## U1 comparison
+
+```bash
+make unlinkability-compare
+```
+
+This writes `reports/iteration-0004-unlinkability-comparison.csv` and compares the identifier-based baseline with branch-local U1 discovery across hop/fan-out settings.
+
+## Test and reproduce
 
 ```bash
 make test
+make reproduce
 ```
 
-## Experiments
+## Next simulator increment
 
-```bash
-make experiments
-make sweep
-make policy-compare
-```
-
-The policy comparison writes `reports/iteration-0003-policy-comparison.csv` and compares success, transmissions, duplicates, state allocations, attempts, and relay overlap.
-
-## Next simulator increments
-
-1. Event time and candidate windows.
-2. Candidate reverse propagation and tentative state.
-3. Commit/ready bidirectional state installation.
-4. Expiration, packet loss, duplication, and reordering.
-5. Churn and route teardown.
-6. Malicious fresh-attempt floods, candidate spam, replay, selective forwarding, and state exhaustion.
-7. Padding and correlation experiments for named privacy profiles.
+The next model introduces an event queue, candidate windows, delayed candidates, reverse candidate propagation, tentative state, COMMIT/READY, expiration, cancellation, and malicious branch generation.
