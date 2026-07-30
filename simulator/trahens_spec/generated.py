@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Generated from spec/protocol-registry-v1.5.json; do not edit."""
 
 REGISTRY_VERSION = '1.5.0'
