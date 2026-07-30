@@ -73,3 +73,28 @@ jobs:
         with:
           name: p1-network-results
           path: build/p1-*
+
+  paper:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install TeX Live
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            latexmk \
+            texlive-latex-recommended \
+            texlive-latex-extra \
+            texlive-fonts-recommended \
+            texlive-fonts-extra \
+            texlive-science \
+            texlive-pictures \
+            texlive-plain-generic \
+            texlive-lang-english
+      - name: Build the current paper
+        run: make paper
+      - name: Upload built paper
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-pdf
+          path: build/paper/main.pdf
