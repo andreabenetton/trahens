@@ -1,0 +1,65 @@
+{
+  "interpretation": {
+    "approved_for_protocol": false,
+    "reason": "The literal finite-field transcription validates key generation, encryption, decryption, encoding, and linear strand rerandomization. A non-identity tag multiplier does not validate because the stated integer reduction u -> u mod q is not a multiplicative homomorphism from QR*_p to Z_q. The report includes both a small exact counterexample and the deterministic conformance-parameter witness. The operational C2 backend remains the symbolic ideal functionality until a different reviewed action or a corrected independently reproduced construction is available."
+  },
+  "parameters": {
+    "ciphertext_bytes": 412,
+    "deployment_status": "not-approved",
+    "inner_element_bytes": 17,
+    "inner_generator": 4,
+    "interoperability_status": "finite-field-tag-reduction-nonhomomorphic",
+    "k": 2,
+    "outer_element_bytes": 17,
+    "outer_generator": 4,
+    "p": 351026172018092869259621392491423883979,
+    "parameter_set_id": 1,
+    "q": 175513086009046434629810696245711941989,
+    "r": 702052344036185738519242784982847767959,
+    "suite_id": "7f02"
+  },
+  "profile": "C2-K2 arithmetic transcription audit",
+  "source_construction": {
+    "construction": "Figure 6 k-Lin instantiation",
+    "doi": "10.1007/978-3-030-84259-8_10",
+    "eprint": "2021/862",
+    "literal_tag_map_source": "Section 2, pages 5-6; Section 6.3, Figure 6",
+    "title": "Receiver-Anonymity in Rerandomizable RCCA-Secure Cryptosystems Resolved",
+    "venue": "CRYPTO 2021"
+  },
+  "status": {
+    "ciphertext_bytes": 412,
+    "deployment_approved": false,
+    "encrypt_decrypt": true,
+    "k": 2,
+    "large_parameter_left_reduction": 13632279717703881855061162154229912496,
+    "large_parameter_multiplier": 198751123237432861833463517888729931107,
+    "large_parameter_product": 13632279717703881855061162154229912496,
+    "large_parameter_right_product": 14128530807058580321633388179037576687,
+    "large_parameter_tag": 310860551803198317275001212197543667988,
+    "literal_nontrivial_tag_rerandomization": false,
+    "small_counterexample": {
+      "equation_holds": false,
+      "group_product": 1,
+      "left_reduction": 1,
+      "multiplier": 3,
+      "p": 11,
+      "q": 5,
+      "right_product": 2,
+      "tag": 4
+    },
+    "status": "finite-field-tag-reduction-nonhomomorphic",
+    "strand_rerandomization": true,
+    "tag_reduction_homomorphism": false
+  },
+  "vectors": {
+    "decoded_round_trip": true,
+    "destination_address": "1075cc915976b33ccbacb4f79ffa19536b2630941b2ec46079a41eed847dbdc3",
+    "mutated_component_4_sha256": "a9b842942bfffc7aa681942890f07dd136d8144786c39cc96fb94bf05a3a26db",
+    "original_ciphertext": "017f020100b25b02c5c8ebc293d2e43436bbb880a90103e489c1771575f2009cde7c3a46d52400d6bde948dd632b92c09c221cbdd6a113005d6adb948f7aa6c3b09bf0221234b3d900aac83c45cbe283dff8d875d54faa610b0134261dc2b753aa126e08f2bae5b3b57c01942e9fdad49b4c239ce9f8b88c9f165f01b102aeb9f728f46a366cf0494d5fe35701e60958ad8fcaa38e9430332bf36a40ec0094b32828c04822b0ca3cb14b700930e20016b25b83a2621a98903b793b4fd1db3d009d5508fed92ba5616c49bc344441c681006dab1e53672150862061dd825092d90500369f4fddf6ca56080a6f40d3635e90620029e10255eff99593d49cccf42de1d84b001654e63144064ad284b0286665354e38007a3d6ba16ed14ca3e353aa13429bcba900ad680426e3a3d65f2eda66364711a8b6001979dcf860091f90cc4d0200bbcb430a00619bb8cbc35032286584ee4bb5effe1f00fd5dbdbc9c1d7df9507bfb72fb32d60900a1a5d7a1f7ebe67ec17623919d6af7fd0047d8b8e6968305885e3378382e35dffd00da64f3241f4d5b0884081d3eb8f5494e",
+    "original_sha256": "beb3a5b38457fff9f9714caaaa8facee82497d6f8f957663be093474aca13044",
+    "public_key_sha256": "023424adf0b0823ceced1376f4577fe7c5e682e4f943b4a128a8778a84c5fc0d",
+    "strand_rerandomized_ciphertext": "017f02010057cd22bf778d84189852a32aa548283500fd27ed28eae2c183a5ddd5857bed34b80023e78de5c2990349e799fb70b721054901d2c46fc0386534cf995977bcd12bfb10010831b4316738ede4495efbd17a14d6d300512fc0f52202ea3c4a4d6d4eed922f2401a8b63a331c82b79cb301c5ed2215972101736eec4bd049456e2a1d8e392ae51c3900a89dbde65da2547718973ff9343adbcb0013ad4027a07cc77ca2d29513608564f400977bee4438267d3f0640ee69231b9ee70020497e0b3424058b10068a671ea2afac00303fe2e98b3accd33f2554e0c2206fee009c8be7a6c11ba2753008663bddf5c04500ecda2e9b3e38f340d14c1cf3cc474bd5007dc23ef146e9609bbfcc43ba75bfb79600ab2615dc38765aa940e8482f0bcdf8b900fcd84bdc98ff5155c01b56eb67befa54009732b32fb2ef7d8639e8e4dbd3ce3568007f70e8148096f3ebef8ba64e7b1b8c78006fc886f15bbda9aee407acb7556e4c8c00b42163cae808cd67655b904ba7610af90094c4a3fbae88733c276e805f6448469600c2344111001e9b173889185099407d27",
+    "strand_rerandomized_sha256": "835a3679f9661856caaaa70f38e7dcd8a6ba4ddf1cd8439e99009f58f68b09c8"
+  }
+}

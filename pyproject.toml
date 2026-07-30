@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trahens-sim"
-version = "0.8.0"
-description = "Deterministic Trahens models with C2 security games, M2 messages, and W2 cells"
+version = "0.9.0"
+description = "Deterministic Trahens models with C2 security games and k=2 audit, M2 messages, and W2 cells"
 requires-python = ">=3.11"
 dependencies = ["cryptography>=43"]
 authors = [{name = "Andrea Benetton", email = "andrea.benetton@blueteam.ee"}]

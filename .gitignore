@@ -29,3 +29,4 @@ __pycache__/
 reports/*.json
 # Tracked release/conformance summaries
 !reports/iteration-*-crypto-conformance.json
+!reports/c2-k2-transcription-audit.json

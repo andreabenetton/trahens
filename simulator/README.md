@@ -7,6 +7,7 @@ The simulator is deterministic. It is a protocol-research and conformance model,
 - `model.py` - bounded discovery, expanding rings, and U1 branch-local exploration.
 - `event_model.py` - integrated E1 lifecycle with C1 or symbolic C2 eligibility, M2 messages, W2 cells, nested CANDIDATE, COMMIT/READY, expiry, cancellation, loss, duplication, tampering, and attacks.
 - `trahens_crypto/c2_ideal.py` - executable C2 ideal functionality; simulation only.
+- `trahens_crypto/c2_klinear.py` - exact k=2 arithmetic and canonical-encoding audit of the selected concrete construction; full rerandomization fails closed.
 - `trahens_crypto/c1.py` - C1 negative-control eligibility and retained reply/signature components.
 - `trahens_codec/m2w2.py` - suite-agile M2 messages, fixed W2 cells, link protection, and bounded reassembly.
 - `c2_compare.py` - C1 ratio-tag and symbolic C2 mutation comparison.
@@ -21,6 +22,7 @@ The event model retains full paths and legitimate/malicious classifications only
 make test
 make c2-symbolic-vectors
 make c2-compare
+make c2-k2-audit
 make fragmentation-compare
 make unlinkability-compare
 make lifecycle-compare
@@ -35,4 +37,4 @@ The M2 suite identifier is repeated in every encrypted W2 fragment. Reassembly b
 
 ## Limitations
 
-The C2 ideal functionality stores semantic ciphertext state in a process-local registry. It is not cryptography and cannot support a deployment or security claim. The model uses abstract event delays and does not implement a real transport, mixing scheduler, or side-channel-resistant runtime. W2 equalizes cell length but does not hide fragment count or timing.
+The C2 ideal functionality stores semantic ciphertext state in a process-local registry. It is not cryptography and cannot support a deployment or security claim. The separate C2-K2 module is an interoperability audit, not a network backend; its public full-rerandomization API deliberately raises `C2ConformanceGap`. The model uses abstract event delays and does not implement a real transport, mixing scheduler, or side-channel-resistant runtime. W2 equalizes cell length but does not hide fragment count or timing.
