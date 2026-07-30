@@ -5,9 +5,13 @@ The simulator is deterministic and uses only the Python standard library. It is 
 ## Models
 
 - `model.py` - identifier-based bounded discovery, expanding-ring policy, and U1 branch-local discovery.
-- `event_model.py` - E1 discrete-event lifecycle with candidate windows, reverse tentative state, COMMIT/READY, expiry, cancellation, loss, exact duplication, and fresh-branch attack generation.
+- `event_model.py` - integrated E1 lifecycle with actual C1 transformations, W1 records, nested CANDIDATE, COMMIT/READY authentication, expiry, cancellation, loss, duplication, tampering, and active tagging.
 - `unlinkability_compare.py` - resource comparison between identifier-based and U1 branch-local discovery.
 - `lifecycle_compare.py` - clean, impaired-transport, and fresh-branch-attack lifecycle comparison.
+- `tagging_compare.py` - deterministic W1 tampering and persistent-ratio-tag comparison.
+- `trahens_codec/c1.py` - exact W1 fixed-size encoder and adjacent-link protection.
+- `trahens_crypto/candidate.py` - nested authenticated candidate construction and opening.
+- `trahens_crypto/tagging.py` - research-only active-tag fault injection and observation.
 
 The event model retains full paths and legitimate/malicious classification only for measurement. Those values are not protocol-visible fields.
 
@@ -17,6 +21,7 @@ The event model retains full paths and legitimate/malicious classification only 
 make test
 make unlinkability-compare
 make lifecycle-compare
+make tagging-compare
 ```
 
 A direct lifecycle comparison can be run with:
@@ -37,6 +42,10 @@ Timed rings use `hop:fanout:window_ms` or `hop:initial_fanout:relay_fanout:windo
 
 State is valid on `[created, expiry)`. At the same timestamp, expiry precedes cancellation, route control, candidate, discovery, and candidate-window closure. Thus a candidate at the exact window deadline is eligible, while a message at the exact state expiry is rejected.
 
+## Integrated behavior
+
+The event model performs actual URE rerandomization, reply-key tweaks, nested candidate encryption, responder signature verification, COMMIT and READY proof checks, W1 encoding, and adjacent-link authentication. It records complete wire bytes and cryptographic failure classes.
+
 ## Limitations
 
-The simulator does not execute URE, KEM, signatures, packet codecs, or a real mixing scheduler. Delay, loss, duplication, attack classification, and token buckets are abstract controls. Results are comparative model outputs rather than network throughput or anonymity measurements.
+The model is deterministic and uses abstract event delays rather than a real transport or mixing scheduler. It is not a throughput benchmark. The active ratio-tag experiment is a counterexample demonstrating a missing security property; it is not a protocol feature.

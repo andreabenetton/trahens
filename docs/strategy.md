@@ -2,7 +2,7 @@
 
 ## Objective
 
-Turn the 2020 concept into a falsifiable research program and then into an interoperable experimental protocol. The project succeeds only if it states precisely:
+Turn the protocol concept into a falsifiable research program and then into an interoperable experimental protocol. The project succeeds only if it states precisely:
 
 - what information each participant learns;
 - what an adversary can observe or modify;
@@ -19,19 +19,19 @@ Turn the 2020 concept into a falsifiable research program and then into an inter
 5. **Bound every resource.** Messages, fan-out, branch contexts, candidate responses, lifetimes, queues, and cryptographic operations require explicit limits.
 6. **Make claims executable.** Every security or scalability claim maps to a test, simulation, model, or proof obligation.
 7. **Preserve evolution.** Version and suite negotiation must resist downgrade without becoming a fingerprinting oracle.
-8. **Keep the legacy draft immutable.** Improvements occur in versioned specifications and the formal rewrite.
+8. **Keep evidence immutable.** Improvements occur in versioned specifications and the standalone formal paper.
 
 ## Current architecture
 
-Trahens Core v0.5 is a bounded discovery and ready-gated bidirectional route-establishment protocol. It excludes the legacy Beacon/Authority directory, incentives, inter-domain policy, and a replacement layer-2 stack.
+Trahens Core v0.6 is a bounded discovery and ready-gated bidirectional route-establishment protocol. It excludes global directory resolution, incentives, inter-domain policy, and a replacement link stack.
 
-The U1 profile removes attempt-wide wire identifiers. Every outgoing branch replaces its capability, additively tweaks the reply public key, universally rerandomizes the hidden eligibility capsule, reconstructs the canonical body, pads it to a fixed record class, and obtains fresh adjacent-link encryption. This supplies the structure required for the original non-adjacent bit-pattern unlinkability objective.
+U1 removes attempt-wide wire identifiers. Every outgoing branch replaces its capability, additively tweaks the reply public key, rerandomizes the hidden eligibility capsule, reconstructs the canonical body, pads it to one W1 record, and obtains fresh adjacent-link encryption.
 
-The E1 profile defines half-open state deadlines, deterministic equal-time precedence, candidate windows, delayed candidates across local rings, cancellation races, tentative reverse mappings, pending-ready reservation, reverse activation, loss, duplication, and deterministic cleanup. COMMIT does not authorize data; the initiator exposes a route only after final READY.
+E1 defines half-open state deadlines, deterministic equal-time precedence, candidate windows, delayed candidates across local rings, cancellation races, tentative reverse mappings, pending-ready reservation, reverse activation, loss, duplication, and deterministic cleanup.
 
-The C1 profile makes the cryptographic placeholders executable. It fixes `ristretto255` encodings, a GJJS-style universal re-encryption capsule, a branch-tweakable reply-key chain, `TR-KEM-R255`, HKDF-SHA-256, ChaCha20-Poly1305, Ed25519, transcript domains, generic failure, and deterministic vectors. C1 is an interoperability baseline, not a production security approval.
+C1 fixes the concrete classical operations. W1 fixes the adjacent-link record at 1,052 bytes and moves message type and protocol fields inside the encrypted 1,024-byte body. The event model executes C1, W1, and E1 together.
 
-The privacy claim remains conditional. U1 excludes precise timing, queue observation, and active modification. C1's URE and custom reply KEM require independent proof review and active-tagging analysis. E1 establishes lifecycle behavior, not traffic-flow unlinkability.
+The active-tagging experiment found a persistent ratio relation in the C1 URE consistency pair. Active-adversary unlinkability is not claimed. This negative result is now a design gate: the eligibility construction must be replaced or strengthened before an active-security claim is reconsidered.
 
 ## Workstreams
 
@@ -112,19 +112,33 @@ Delivered:
 
 Gate status: interoperability ambiguity is closed, but the production-security gate is open. Independent proof review, active-tagging analysis, related-key analysis, side-channel review, and a post-quantum strategy remain required.
 
-### Phase 5 - Overlay interoperability prototype
+
+### Phase 5 - W1 and integrated active-security analysis: complete as a research baseline
+
+Delivered:
+
+- one 1,052-byte W1 control record and exact message layouts;
+- link authentication, canonical parsing, and exact byte accounting;
+- integrated C1 candidate, COMMIT, and READY processing in the E1 event model;
+- adjacent-link tampering tests;
+- a reproducible persistent-ratio-tag counterexample;
+- explicit closure of the active-unlinkability claim gate.
+
+Gate status: codec interoperability can proceed, but active-security approval is blocked until the eligibility construction is replaced or proven against the identified attack class.
+
+### Phase 6 - Overlay interoperability prototype
 
 Deliverables include a canonical codec, conformance harness, fault injection, packet captures, and a controlled testbed.
 
 Exit gate: independent nodes establish, activate, use, and expire routes consistently under adverse transport behavior.
 
-### Phase 6 - Traffic privacy profiles
+### Phase 7 - Traffic privacy profiles
 
 Deliverables include padded, mixed, and scheduled-link profiles with correlation experiments and quantified bandwidth/latency costs.
 
 Exit gate: every traffic-analysis claim names its profile, adversary, topology, and measured success metric.
 
-### Phase 7 - Long-range resolution
+### Phase 8 - Long-range resolution
 
 Deliverables include a separate directory threat model, ownership and freshness rules, replication model, private-query analysis, and poisoning/enumeration tests.
 
@@ -132,13 +146,13 @@ Exit gate: directory behavior does not silently invalidate Core privacy claims.
 
 ## Immediate backlog
 
-1. Align C1 with a precise modern URE security game and record proof obligations.
-2. Build active-tagging, ciphertext mutation, and related-key experiments.
-3. Define constant-size depth-hiding CANDIDATE classes.
-4. Generate a canonical outer codec and a malformed-input corpus.
-5. Implement a second independent C1/vector consumer.
+1. Replace or redesign the C1 eligibility capsule against persistent algebraic tagging and selective failure.
+2. State the exact active-security game and required proof obligations.
+3. Implement W1 independently from a reviewed schema and cross-check canonical encodings.
+4. Build a malformed-record and malformed-nested-candidate fuzzing corpus.
+5. Extend the integrated model with batching, release delay, and two-relay correlation measurements.
 6. Model distributed fresh-branch attackers, peer rotation, and candidate spam.
 7. Measure admission fairness for legitimate discovery under adaptive attack.
 8. Define bounded retransmission without cross-hop identifiers.
-9. Add a two-relay matching harness with batching and release delay.
+9. Add transport churn and route-repair experiments.
 10. Keep production claims blocked until independent cryptographic and implementation review.

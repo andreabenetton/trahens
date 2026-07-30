@@ -1,5 +1,17 @@
 # Changelog
 
+## Core v0.6 - 2026-07-30
+
+- Added W1: one 1,052-byte adjacent-link record with a 12-byte public header, 1,024-byte encrypted body, and 16-byte tag.
+- Added exact DISCOVER, CANDIDATE, route-control, and CHAFF layouts.
+- Integrated W1 and C1 cryptography into the E1 event lifecycle.
+- Added exact nested candidate construction, responder verification, and COMMIT/READY proofs.
+- Added adjacent-link tamper injection and exact wire-byte metrics.
+- Added a reproducible persistent ratio-tag attack against the C1 URE consistency pair.
+- Closed the active-adversary unlinkability claim gate and retained only explicitly scoped passive claims.
+- Added eight tests, bringing the deterministic suite to 53 tests.
+- Reworked the formal paper as a standalone current draft with clearer notation, exact wire formats, integrated algorithms, active-tagging analysis, five-line numbering, and no watermark.
+
 ## Core v0.5 - 2026-07-30
 
 - Added the concrete C1 research cryptographic profile.

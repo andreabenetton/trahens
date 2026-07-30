@@ -3,7 +3,7 @@
 ## Cryptographic review
 
 - Which exact modern URE security definition is sufficient for the C1 eligibility use case?
-- Does the GJJS-style construction remain unlinkable under the active modifications available to compromised relays?
+- What replacement eligibility construction prevents the demonstrated persistent ratio tag and selective-failure linking?
 - Can `TR-KEM-R255` be proved secure under its additive related-key evolution, or should it be replaced?
 - How should malformed-ciphertext timing be equalized without creating a denial-of-service primitive?
 - What hybrid or post-quantum construction can preserve universal rerandomization?
@@ -11,8 +11,8 @@
 
 ## Codec and depth hiding
 
-- What constant-size CANDIDATE classes support useful maximum depths without excessive padding?
-- Should nested candidate layers use one maximum-depth envelope or a small declared class set?
+- Is the current single 1,024-byte W1 plaintext sufficient for the target maximum route depth?
+- Should future versions keep one envelope or introduce a small declared class set without creating a useful fingerprint?
 - Which schema language can generate memory-safe parsers in two independent implementations?
 - How should version and suite negotiation avoid downgrade and fingerprinting?
 
