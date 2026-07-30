@@ -25,4 +25,4 @@ The patch establishes exact distributional unlinkability of the reply public key
 - `make check`: succeeds from the remediated working tree and regenerates all tracked vectors and reports.
 - The complete 50-page paper compiles without unresolved references or overfull text.
 - Every PDF page was rendered and visually inspected; line numbers remain present every five lines and no watermark is present.
-- A clean-clone validation is required before release packaging and is recorded in the release notes.
+- A clean clone successfully completed the repository integrity gate and all 127 tests. The 50-page paper also compiled from an empty build directory; an earlier intentionally interrupted compile left a corrupt auxiliary file, which was removed before the successful clean build.
