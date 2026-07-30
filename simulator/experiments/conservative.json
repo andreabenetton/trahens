@@ -1,0 +1,11 @@
+{
+  "nodes": 500,
+  "average_degree": 8.0,
+  "origin": 0,
+  "hop_limit": 4,
+  "initial_fanout": 3,
+  "relay_fanout": 2,
+  "candidate_limit": 4,
+  "responder_fraction": 0.02,
+  "seed": 17
+}
