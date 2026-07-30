@@ -408,6 +408,10 @@ struct Inbound {
     total_length: u16,
     created_ms: u64,
     fragments: Vec<Option<Vec<u8>>>,
+    // Set on first completion. The entry then lingers as a completion cache
+    // for LIMIT_COMPLETION_CACHE_MS so that a retransmission whose ACK was
+    // lost is re-acknowledged without delivering the message a second time.
+    delivered: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -435,8 +439,12 @@ impl Receiver {
             .inbound
             .iter()
             .filter_map(|(id, value)| {
-                (now_ms.saturating_sub(value.created_ms) >= LIMIT_REASSEMBLY_TIMEOUT_MS as u64)
-                    .then_some(*id)
+                let lifetime_ms = if value.delivered {
+                    LIMIT_COMPLETION_CACHE_MS
+                } else {
+                    LIMIT_REASSEMBLY_TIMEOUT_MS
+                };
+                (now_ms.saturating_sub(value.created_ms) >= lifetime_ms as u64).then_some(*id)
             })
             .collect();
         for id in &expired {
@@ -482,6 +490,7 @@ impl Receiver {
                     total_length,
                     created_ms: now_ms,
                     fragments: vec![None; usize::from(fragment_count)],
+                    delivered: false,
                 },
             );
         }
@@ -506,7 +515,7 @@ impl Receiver {
             self.remove_inbound(transmission_id);
             return Err(TransportError::Malformed);
         }
-        let (bitmap, complete_now) = {
+        let (bitmap, deliver_now) = {
             let entry = self
                 .inbound
                 .get_mut(&transmission_id)
@@ -520,7 +529,16 @@ impl Receiver {
                     bitmap |= 1_u32 << index;
                 }
             }
-            (bitmap, entry.fragments.iter().all(Option::is_some))
+            // Deliver exactly once. The entry stays behind as a completion
+            // cache so later duplicates are re-acknowledged above without a
+            // second delivery; expire() reclaims it after
+            // LIMIT_COMPLETION_CACHE_MS counted from delivery.
+            let deliver_now = entry.fragments.iter().all(Option::is_some) && !entry.delivered;
+            if deliver_now {
+                entry.delivered = true;
+                entry.created_ms = now_ms;
+            }
+            (bitmap, deliver_now)
         };
 
         let ack = Frame::Ack {
@@ -530,19 +548,16 @@ impl Receiver {
             ack_delay_ms: 0,
             bitmap,
         };
-        let complete = if complete_now {
-            let removed = self
+        let complete = if deliver_now {
+            let entry = self
                 .inbound
-                .remove(&transmission_id)
+                .get(&transmission_id)
                 .ok_or(TransportError::Malformed)?;
-            self.reserved_bytes = self
-                .reserved_bytes
-                .saturating_sub(usize::from(removed.total_length));
-            let mut message = Vec::with_capacity(usize::from(removed.total_length));
-            for fragment in removed.fragments {
+            let mut message = Vec::with_capacity(usize::from(entry.total_length));
+            for fragment in &entry.fragments {
                 message.extend_from_slice(fragment.as_deref().ok_or(TransportError::Malformed)?);
             }
-            if message.len() != usize::from(removed.total_length) {
+            if message.len() != usize::from(entry.total_length) {
                 return Err(TransportError::Malformed);
             }
             Some((suite, message))
@@ -638,6 +653,55 @@ mod tests {
         assert!(sender.on_ack(id, fragment_count, bitmap)?);
         assert_eq!(sender.pending_count(), 0);
         let _ = first;
+        Ok(())
+    }
+
+    #[test]
+    fn lost_ack_retransmission_is_reacked_but_not_redelivered() -> Result<(), TransportError> {
+        // transport-profile-t1.md:99 — a duplicate DATA fragment MUST NOT
+        // allocate a second fragment and SHOULD be acknowledged again. When
+        // the duplicate arrives after completion (the ACK was lost), the
+        // message must not be delivered a second time: an upstream duplicate
+        // COMMIT is an invalid E1 transition and killed relays in the
+        // netns-p1 harness under 5 percent loss.
+        let mut sender = Sender::new();
+        let id = [8_u8; 16];
+        let message = b"commit-equivalent".to_vec();
+        sender.enqueue(SUITE_R1, id, &message)?;
+        let frame = sender.next_new(0).ok_or(TransportError::Malformed)?;
+
+        let mut receiver = Receiver::new();
+        let first = receiver
+            .accept(frame, 0)?
+            .ok_or(TransportError::Malformed)?;
+        assert_eq!(first.complete, Some((SUITE_R1, message)));
+
+        // The ACK never reaches the sender; it retransmits after one RTO.
+        sender.poll_timeouts(LIMIT_T1_RTO_MS as u64)?;
+        let retry = sender
+            .next_retry(LIMIT_T1_RTO_MS as u64)
+            .ok_or(TransportError::Malformed)?;
+        let duplicate = receiver
+            .accept(retry, LIMIT_T1_RTO_MS as u64)?
+            .ok_or(TransportError::Malformed)?;
+        assert_eq!(duplicate.complete, None, "duplicate must not redeliver");
+        let Frame::Ack {
+            fragment_count,
+            bitmap,
+            ..
+        } = duplicate.ack
+        else {
+            return Err(TransportError::Malformed);
+        };
+        assert!(
+            sender.on_ack(id, fragment_count, bitmap)?,
+            "duplicate must still produce a full cumulative ACK"
+        );
+
+        // The completion cache holds the transmission id for
+        // LIMIT_COMPLETION_CACHE_MS and reclaims it afterwards.
+        let now = (LIMIT_T1_RTO_MS + LIMIT_COMPLETION_CACHE_MS) as u64;
+        assert_eq!(receiver.expire(now), 1);
         Ok(())
     }
 
