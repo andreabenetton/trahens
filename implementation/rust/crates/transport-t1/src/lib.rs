@@ -371,6 +371,12 @@ impl Sender {
             for index in 0..outbound.fragments.len() {
                 if outbound.acknowledged & (1_u32 << index) == 0 {
                     self.retry_queue.push_back((*id, index as u16));
+                    // A recovery round spans one full RTO period. Restart the
+                    // fragment clock at queue time: the worker polls roughly
+                    // every millisecond while the schedule releases the queued
+                    // retry only at the next slot, and without this restart
+                    // the whole budget burned between two slots.
+                    outbound.sent_at_ms[index] = Some(now_ms);
                     queued += 1;
                 }
             }
@@ -702,6 +708,38 @@ mod tests {
         // LIMIT_COMPLETION_CACHE_MS and reclaims it afterwards.
         let now = (LIMIT_T1_RTO_MS + LIMIT_COMPLETION_CACHE_MS) as u64;
         assert_eq!(receiver.expire(now), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn rapid_polling_within_one_rto_consumes_at_most_one_recovery_round(
+    ) -> Result<(), TransportError> {
+        // The link worker polls timeouts roughly every millisecond while the
+        // fixed T2 schedule grants an emission slot only every 12.5 ms. A
+        // recovery round is one RTO period, not one poll: before this held,
+        // a single lost cell could burn the whole retry budget between two
+        // slots and kill the process with zero retransmissions on the wire.
+        let mut sender = Sender::new();
+        let id = [6_u8; 16];
+        sender.enqueue(SUITE_R1, id, b"lost-once")?;
+        let _initial = sender.next_new(0).ok_or(TransportError::Malformed)?;
+
+        // The cell is lost; the RTO expires; the worker then polls every
+        // millisecond for far more ticks than the retry budget holds rounds.
+        let rto = LIMIT_T1_RTO_MS as u64;
+        for tick in 0..(3 * LIMIT_MAX_T1_RETRIES as u64) {
+            sender.poll_timeouts(rto + tick)?;
+        }
+
+        // One retry was queued and, once emitted and acknowledged, the
+        // transmission completes normally.
+        let retry = sender.next_retry(rto).ok_or(TransportError::Malformed)?;
+        let Frame::Data { fragment_count, .. } = retry else {
+            return Err(TransportError::Malformed);
+        };
+        assert!(sender.next_retry(rto).is_none(), "exactly one retry queued");
+        assert!(sender.on_ack(id, fragment_count, 0b1)?);
+        assert_eq!(sender.pending_count(), 0);
         Ok(())
     }
 
