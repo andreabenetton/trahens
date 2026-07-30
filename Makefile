@@ -1,7 +1,10 @@
-.PHONY: test experiments sweep policy-compare unlinkability-compare lifecycle-compare paper check reproduce clean
+.PHONY: test crypto-vectors experiments sweep policy-compare unlinkability-compare lifecycle-compare paper check reproduce clean
 
 test:
 	PYTHONPATH=simulator python -m unittest discover -s simulator/tests -v
+
+crypto-vectors:
+	PYTHONPATH=simulator python tools/generate_crypto_vectors.py --output spec/crypto-test-vectors-c1.json
 
 experiments:
 	./tools/run_experiments.sh
@@ -27,6 +30,7 @@ check:
 	$(MAKE) paper
 
 reproduce:
+	$(MAKE) crypto-vectors
 	$(MAKE) experiments
 	$(MAKE) sweep
 	$(MAKE) policy-compare

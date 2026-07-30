@@ -4,9 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trahens-sim"
-version = "0.4.0"
-description = "Deterministic simulator for Trahens discovery and event lifecycle"
+version = "0.5.0"
+description = "Deterministic Trahens protocol models and C1 cryptographic conformance code"
 requires-python = ">=3.11"
+dependencies = ["cryptography>=43"]
 authors = [{name = "Andrea Benetton", email = "andrea.benetton@blueteam.ee"}]
 
 [project.scripts]
