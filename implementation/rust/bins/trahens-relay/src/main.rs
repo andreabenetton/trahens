@@ -4,7 +4,7 @@ use codec_m2::{Candidate, Control, Discover, Envelope, Message, MessageType};
 use node_runtime::p1::wrap_candidate;
 use node_runtime::{
     event_channel, parse_hex, spawn_link, structured_event, unix_time_ms, write_link_metrics,
-    CliArgs, LinkConfig, LinkEvent, LinkHandle, LinkMetrics,
+    CliArgs, LinkConfig, LinkEvent, LinkMetrics,
 };
 use protocol_registry::{LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_ROUTE_TTL_MS, SUITE_R1};
 use state_machine::{Event, Phase, RouteTable};

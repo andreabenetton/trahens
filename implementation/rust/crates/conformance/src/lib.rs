@@ -1,10 +1,12 @@
 #![forbid(unsafe_code)]
 #![doc = "Independent P1 canonical-vector and decoder fuzz-smoke harness."]
 
-use codec_m2::decode;
-
+// This crate is a pure test harness: every item below exists only to drive the
+// tests at the bottom of the file, so all of it is scoped to test builds.
+#[cfg(test)]
 const CORPUS: &[u8] = include_bytes!("../../../../../spec/p1-conformance-corpus-v1.5.bin");
 
+#[cfg(test)]
 #[derive(Debug, Clone)]
 struct Vector<'a> {
     valid: bool,
@@ -12,6 +14,7 @@ struct Vector<'a> {
     encoding: &'a [u8],
 }
 
+#[cfg(test)]
 fn take<'a>(input: &'a [u8], cursor: &mut usize, length: usize) -> Option<&'a [u8]> {
     let end = cursor.checked_add(length)?;
     let value = input.get(*cursor..end)?;
@@ -19,6 +22,7 @@ fn take<'a>(input: &'a [u8], cursor: &mut usize, length: usize) -> Option<&'a [u
     Some(value)
 }
 
+#[cfg(test)]
 fn parse_corpus() -> Option<Vec<Vector<'static>>> {
     if CORPUS.get(..4)? != b"TP15" {
         return None;
@@ -44,6 +48,7 @@ fn parse_corpus() -> Option<Vec<Vector<'static>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use codec_m2::decode;
     use protocol_registry::BYTES_CELL_BODY;
     use wire_w2::{open_record, seal_record, ReplayWindow};
 
