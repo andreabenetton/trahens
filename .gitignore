@@ -27,3 +27,5 @@ __pycache__/
 
 # Raw generated experiment output
 reports/*.json
+# Tracked release/conformance summaries
+!reports/iteration-*-crypto-conformance.json

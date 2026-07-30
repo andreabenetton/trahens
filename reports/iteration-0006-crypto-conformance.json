@@ -1,0 +1,24 @@
+{
+  "crypto_tests": 7,
+  "date": "2026-07-30",
+  "open_security_gates": [
+    "modern URE proof alignment",
+    "active-tagging resistance",
+    "related-key analysis of TR-KEM-R255",
+    "side-channel review",
+    "constant-size depth-hiding codec",
+    "post-quantum migration"
+  ],
+  "paper_line_number_modulo": 5,
+  "paper_pages": 22,
+  "paper_sha256": "b1950784fd3d62ba5b2fbc9c80df0354532481f0d247f72769618126f71e1f59",
+  "paper_watermark": false,
+  "paper_word_count_approx": 8220,
+  "production_approved": false,
+  "profile": "Trahens C1",
+  "repository_tests": 45,
+  "status": "research interoperability baseline",
+  "suite_id": "0001",
+  "vector_file": "spec/crypto-test-vectors-c1.json",
+  "vector_sha256": "c1611f6d5dc5723ec1166a817688bee5f2b063d3a432e12caa87dab244db1a7a"
+}

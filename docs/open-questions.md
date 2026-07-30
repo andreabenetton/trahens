@@ -1,46 +1,50 @@
 # Open questions
 
+## Cryptographic review
+
+- Which exact modern URE security definition is sufficient for the C1 eligibility use case?
+- Does the GJJS-style construction remain unlinkable under the active modifications available to compromised relays?
+- Can `TR-KEM-R255` be proved secure under its additive related-key evolution, or should it be replaced?
+- How should malformed-ciphertext timing be equalized without creating a denial-of-service primitive?
+- What hybrid or post-quantum construction can preserve universal rerandomization?
+- Which independent implementation should cross-check the C1 vectors?
+
+## Codec and depth hiding
+
+- What constant-size CANDIDATE classes support useful maximum depths without excessive padding?
+- Should nested candidate layers use one maximum-depth envelope or a small declared class set?
+- Which schema language can generate memory-safe parsers in two independent implementations?
+- How should version and suite negotiation avoid downgrade and fingerprinting?
+
 ## Protocol lifecycle
 
 - What candidate-window duration minimizes cost without discarding useful delayed candidates?
-- Should a later local ring cancel earlier branch state or permit bounded overlap until the logical deadline?
-- How should late CANDIDATE messages be handled after a route has been committed?
-- How is route diversity defined without exposing more topology?
-- How are routes repaired without repeating a full discovery?
-- Are route labels single-use, flow-scoped, or reusable until expiration?
-
-## Unlinkability and cryptography
-
-- Which universally rerandomizable encryption construction satisfies U1, including malformed-ciphertext and active-tagging behavior?
-- Can the reply-key blinding chain be instantiated with a reviewed CCA-secure KEM-DEM construction and a compact proof?
-- How is nested candidate return padded without revealing route depth or creating a size class per depth?
-- Can exact replay rejection remain link-local without introducing a transferable tag?
-- What minimum mixing batch and release policy gives useful matching resistance at acceptable latency?
-- Which fields remain observable classes and therefore part of the anonymity-set partition?
+- How should route diversity be defined without exposing topology?
+- How are routes repaired without repeating a complete discovery?
+- Are active route labels single-use, flow-scoped, or reusable until expiry?
 
 ## Resource safety
 
-- Which peer and link quotas best resist Sybil and rotating-peer attacks?
-- How should relays estimate the cost of tentative state before responder authentication completes?
-- What deterministic eviction policy avoids giving an attacker control over which active routes survive?
-- Can rejection behavior remain non-amplifying without becoming a capacity oracle?
-- At what hop/fan-out settings does branch-context amplification make U1 impractical on each topology family?
+- Which quotas best resist Sybil, rotating-peer, candidate-spam, and distributed fresh-branch attacks?
+- What deterministic eviction policy avoids giving an attacker control over surviving routes?
+- Can rejection remain non-amplifying without becoming a capacity oracle?
+- At what hop/fan-out settings does branch-context amplification become impractical by topology family?
 
-## Underlay and traffic profile
+## Traffic privacy
 
-- What minimum adjacent-link properties belong to Core?
-- Which traffic-analysis defenses are optional profiles rather than mandatory assumptions?
-- How are asymmetric and intermittently available links represented?
-- Can batching and chaff be coordinated without exposing queue occupancy or creating deadlock under low load?
+- What minimum mixing batch and release policy gives useful matching resistance at acceptable latency?
+- Which observable classes partition the anonymity set?
+- Can batching and chaff avoid exposing queue occupancy under low load?
+- What classifier and statistical tests should define traffic-flow unlinkability evidence?
 
 ## Identity and directory
 
-- Is the endpoint address self-certifying, human-resolvable, or both?
-- How can a responder prove control of the requested identity without exposing it to every relay?
-- Which long-range resolution design avoids stable deterministic lookup tokens?
+- How is a descriptor distributed and refreshed without exposing deterministic lookup tokens?
+- How can lookup provide poisoning resistance, replication, selective-denial evidence, and private queries?
+- How is long-term eligibility-key rotation represented without making historical destinations linkable?
 
 ## Governance
 
 - When will the confidential-versus-CC-BY licensing conflict be resolved?
 - Which organization owns protocol identifiers and version allocation?
-- What evidence and review process is required before a privacy statement changes from research hypothesis to guarantee?
+- What evidence and review process is required before a research claim becomes a deployment claim?

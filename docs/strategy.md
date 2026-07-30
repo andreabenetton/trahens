@@ -23,13 +23,15 @@ Turn the 2020 concept into a falsifiable research program and then into an inter
 
 ## Current architecture
 
-Trahens Core v0.4 is a bounded discovery and ready-gated bidirectional route-establishment protocol. It excludes the legacy Beacon/Authority directory, economic incentives, inter-domain policy, and a replacement layer-2 stack.
+Trahens Core v0.5 is a bounded discovery and ready-gated bidirectional route-establishment protocol. It excludes the legacy Beacon/Authority directory, incentives, inter-domain policy, and a replacement layer-2 stack.
 
-The U1 profile removes attempt-wide wire identifiers. Every outgoing branch replaces its token and capabilities, blinds the reply public key, rerandomizes the hidden eligibility selector, reconstructs the canonical body, pads it to a fixed record class, and passes it through a mixing boundary. This restores the structure required for the original non-adjacent bit-pattern unlinkability objective.
+The U1 profile removes attempt-wide wire identifiers. Every outgoing branch replaces its capability, additively tweaks the reply public key, universally rerandomizes the hidden eligibility capsule, reconstructs the canonical body, pads it to a fixed record class, and obtains fresh adjacent-link encryption. This supplies the structure required for the original non-adjacent bit-pattern unlinkability objective.
 
-The E1 profile adds half-open state deadlines, deterministic equal-time event precedence, candidate windows, delayed candidates across local rings, cancellation races, tentative reverse mappings, pending-ready reservation, reverse activation, loss, exact duplication, and deterministic cleanup. COMMIT does not authorize data; the initiator exposes a route only after final READY.
+The E1 profile defines half-open state deadlines, deterministic equal-time precedence, candidate windows, delayed candidates across local rings, cancellation races, tentative reverse mappings, pending-ready reservation, reverse activation, loss, duplication, and deterministic cleanup. COMMIT does not authorize data; the initiator exposes a route only after final READY.
 
-The restoration is conditional rather than absolute. U1 assumes a secure rerandomizable-encryption primitive and reply-key construction, and its batch-local claim excludes precise timing, queue observation, and active modification. E1 establishes lifecycle behavior, not traffic-flow unlinkability.
+The C1 profile makes the cryptographic placeholders executable. It fixes `ristretto255` encodings, a GJJS-style universal re-encryption capsule, a branch-tweakable reply-key chain, `TR-KEM-R255`, HKDF-SHA-256, ChaCha20-Poly1305, Ed25519, transcript domains, generic failure, and deterministic vectors. C1 is an interoperability baseline, not a production security approval.
+
+The privacy claim remains conditional. U1 excludes precise timing, queue observation, and active modification. C1's URE and custom reply KEM require independent proof review and active-tagging analysis. E1 establishes lifecycle behavior, not traffic-flow unlinkability.
 
 ## Workstreams
 
@@ -39,7 +41,7 @@ Maintain the completed E1 baseline for DISCOVER, CANDIDATE, COMMIT, READY, ABORT
 
 ### B. Unlinkability and cryptography
 
-Select and analyze the URE eligibility primitive and tweakable reply KEM. Define canonical transcripts, depth-hiding candidate capsules, malformed-ciphertext behavior, test vectors, and active-tagging experiments. Independent review is a release gate.
+Review and challenge the concrete C1 URE and reply KEM. Align the construction with an explicit security definition, define depth-hiding candidate classes, expand malformed-input vectors, and run active-tagging and related-key experiments. Independent review remains a release gate.
 
 ### C. Resource and denial-of-service model
 
@@ -51,7 +53,7 @@ Use deterministic models to compare discovery success, cumulative work, peak con
 
 ### E. Overlay prototype
 
-After the first cryptographic profile stabilizes, implement the smallest interoperable user-space overlay over an existing authenticated transport. The prototype validates encoding and state machines; it does not replace IP.
+Begin with schema, codec, and conformance work using C1 only as a research profile. After two independent codecs agree on vectors and negative inputs, implement the smallest user-space overlay over an existing authenticated transport. The prototype validates interoperability and state machines; it does not replace IP.
 
 ### F. Traffic-scheduling profiles
 
@@ -97,19 +99,18 @@ Core v0.4 and E1 define event ordering, candidate windows, delayed candidates, t
 
 Gate status: all modeled route-state transitions and races have bounded deterministic outcomes; network implementation remains unvalidated.
 
-### Phase 4 - Cryptographic profile v0.1: next
+### Phase 4 - Cryptographic profile C1: concrete research baseline complete
 
-Deliverables:
+Delivered:
 
-- concrete URE and reply-KEM constructions;
-- transcript definitions and domain separation;
-- identity or credential binding;
-- downgrade, replay, and malformed-ciphertext rules;
-- canonical test vectors;
-- active-tagging analysis;
-- independent cryptographic review.
+- concrete GJJS-style URE and additive reply-key constructions;
+- canonical `ristretto255` point/scalar rules and endpoint descriptors;
+- KDF, AEAD, signature, and transcript domain separation;
+- generic malformed-input behavior;
+- deterministic vectors and executable reference code;
+- positive and negative conformance tests.
 
-Exit gate: no security behavior depends on undefined generic primitives, and the U1 claim is either proved under stated assumptions or narrowed.
+Gate status: interoperability ambiguity is closed, but the production-security gate is open. Independent proof review, active-tagging analysis, related-key analysis, side-channel review, and a post-quantum strategy remain required.
 
 ### Phase 5 - Overlay interoperability prototype
 
@@ -131,13 +132,13 @@ Exit gate: directory behavior does not silently invalidate Core privacy claims.
 
 ## Immediate backlog
 
-1. Select candidate URE and tweakable reply-KEM constructions for independent review.
-2. Define canonical binary encodings and transcript domain separation.
-3. Publish deterministic cryptographic test vectors and malformed-input vectors.
-4. Add active-tagging and unchanged-field negative tests.
-5. Model distributed fresh-branch attackers and adaptive per-peer admission.
-6. Measure fairness impact of bucket parameters on legitimate branch convergence.
-7. Add responder and candidate spam to the event model.
-8. Define bounded retransmission policies that do not add cross-hop identifiers.
-9. Add the U1 two-relay matching harness with event and mixing delay.
-10. Keep network I/O and the overlay prototype blocked until the cryptographic gate passes.
+1. Align C1 with a precise modern URE security game and record proof obligations.
+2. Build active-tagging, ciphertext mutation, and related-key experiments.
+3. Define constant-size depth-hiding CANDIDATE classes.
+4. Generate a canonical outer codec and a malformed-input corpus.
+5. Implement a second independent C1/vector consumer.
+6. Model distributed fresh-branch attackers, peer rotation, and candidate spam.
+7. Measure admission fairness for legitimate discovery under adaptive attack.
+8. Define bounded retransmission without cross-hop identifiers.
+9. Add a two-relay matching harness with batching and release delay.
+10. Keep production claims blocked until independent cryptographic and implementation review.

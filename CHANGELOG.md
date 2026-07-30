@@ -1,5 +1,18 @@
 # Changelog
 
+## Core v0.5 - 2026-07-30
+
+- Added the concrete C1 research cryptographic profile.
+- Bound Core to canonical `ristretto255` point and scalar encodings.
+- Added a GJJS-style 128-byte universally rerandomizable eligibility capsule.
+- Required non-identity rerandomization coins so every valid outgoing capsule changes all four point encodings.
+- Added the additively tweakable reply-key chain and the custom `TR-KEM-R255` KEM/AEAD wrapper.
+- Added HKDF-SHA-256, ChaCha20-Poly1305, and Ed25519 transcript authentication.
+- Added ordered CANDIDATE, COMMIT, and READY transcript definitions and generic `INVALID_CRYPTO` behavior.
+- Added deterministic C1 vectors, a `libsodium`/`cryptography` reference implementation, and seven C1 tests.
+- Increased the complete deterministic suite from 38 to 45 tests.
+- Rewrote the formal paper as a 22-page Core v0.5 document with clearer notation, worked examples, claim boundaries, formal propositions, five-line numbering, and no watermark.
+
 ## Core v0.4 - 2026-07-30
 
 - Added E1 event lifecycle with half-open deadlines and deterministic equal-time precedence.
