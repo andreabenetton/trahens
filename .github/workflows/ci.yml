@@ -25,8 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.82.0
+        with:
+          components: clippy
       - name: Install native crypto dependency
         run: sudo apt-get update && sudo apt-get install -y libsodium-dev
+      - name: Enforce denied clippy lints
+        run: cargo clippy --manifest-path implementation/rust/Cargo.toml --all-targets
       - name: Build and test all Rust targets
         run: cargo test --manifest-path implementation/rust/Cargo.toml --all-targets
 
