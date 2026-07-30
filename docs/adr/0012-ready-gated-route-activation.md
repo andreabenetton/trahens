@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0012: Gate route use on reverse READY
 
 - Status: Accepted

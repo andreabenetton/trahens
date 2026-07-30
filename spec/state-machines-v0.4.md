@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens Core v0.4 state machines
 
 - Applies to: U1 branch-local transformation and E1 lifecycle

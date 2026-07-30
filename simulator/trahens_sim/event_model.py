@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic discrete-event model for the Trahens route lifecycle.
 
 The model integrates the U1 branch transformations, the E1 event lifecycle, the

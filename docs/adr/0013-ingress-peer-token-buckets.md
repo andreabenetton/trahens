@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0013: Admit fresh branches through ingress-peer token buckets
 
 - Status: Accepted with limitations

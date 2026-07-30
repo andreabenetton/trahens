@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # C2 active-unlinkability games
 
 - Status: Normative research game suite

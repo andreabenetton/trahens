@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic M1/W2 encoding and lifecycle comparison."""
 
 from __future__ import annotations

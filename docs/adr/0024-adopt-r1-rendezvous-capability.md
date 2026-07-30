@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0024: Adopt R1 rendezvous capability as the active eligibility profile
 
 - Status: Accepted

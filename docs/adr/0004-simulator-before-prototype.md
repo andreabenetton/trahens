@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0004: Build a deterministic simulator before network code
 
 - Status: Accepted

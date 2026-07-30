@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Trahens W1 fixed-size control-record codec.
 
 The module defines the cleartext body processed after adjacent-link

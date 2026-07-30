@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Aggregate P1 process metrics, structured logs, and /usr/bin/time output."""
 from __future__ import annotations
 

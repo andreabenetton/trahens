@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Protocol invariants
 
 The simulator, conformance tests, and implementations must check these invariants.

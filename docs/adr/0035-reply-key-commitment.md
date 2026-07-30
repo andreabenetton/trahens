@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0035: Add explicit reply-ciphertext key commitment
 
 ## Status

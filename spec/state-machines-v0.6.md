@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens Core v0.6 state machines
 
 - Applies to: U1 branch-local transformation, E1 lifecycle, C1 cryptography, and W1 records

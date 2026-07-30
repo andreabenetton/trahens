@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0016: Fix one constant-size W1 control record
 
 - Status: Accepted for research interoperability

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Iteration 0006 - Concrete C1 cryptography and formal paper expansion
 
 - Date: 2026-07-30

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Generate P1 M2 conformance vectors directly from the frozen registry.
 
 This generator intentionally does not import simulator or implementation code.

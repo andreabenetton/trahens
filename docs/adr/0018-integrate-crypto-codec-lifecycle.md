@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0018: Integrate C1, W1, and E1 in one event model
 
 - Status: Accepted for research validation

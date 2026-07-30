@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens Core v1.4 — Independent Review
 
 **Artifact reviewed:** `trahens-protocol-repo-v1_4.zip` (273 files; spec series, simulator, ADRs, formal paper)  

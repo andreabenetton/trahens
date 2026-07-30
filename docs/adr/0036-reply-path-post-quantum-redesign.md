@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0036: Treat post-quantum migration as a reply-path redesign
 
 ## Status

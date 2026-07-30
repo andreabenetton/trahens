@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0023: Keep the C2 k=2 transcription fail-closed pending interoperability review
 
 - Status: Accepted

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """C1 candidate-layer construction for the event-driven simulator.
 
 A responder payload is sealed to the final reply public key. Each reverse relay

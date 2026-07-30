@@ -1,4 +1,5 @@
 --------------------------- MODULE R1Capability ---------------------------
+\* SPDX-License-Identifier: Apache-2.0
 EXTENDS Naturals, FiniteSets, Sequences
 
 CONSTANTS Capabilities, Gateways, Endpoints, NoEndpoint

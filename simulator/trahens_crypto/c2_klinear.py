@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Literal k=2 transcription and interoperability audit for Trahens C2.
 
 The formulas in this module follow Figure 6 of Wang, Chen, Yang, Huang, Wang,

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0029: Compare schedule policies under an equal public bandwidth budget
 
 - Status: Accepted

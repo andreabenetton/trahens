@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Reproducible M1/W2/C1 integration and active-tagging comparison."""
 
 from __future__ import annotations

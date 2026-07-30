@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Entropy-based anonymity metrics for classifier confusion matrices.
 
 These metrics complement accuracy. They treat the true route label as the

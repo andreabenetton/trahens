@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Trahens v1.5 P1 user-space implementation
 
 `implementation/rust/` is the first interoperable implementation of the frozen P1 profile. It runs over UDP and keeps M2, W2, T1, fixed T2, R1, and route lifecycle responsibilities in separate crates.

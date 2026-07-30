@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Generate deterministic Trahens C1 conformance vectors."""
 
 from __future__ import annotations

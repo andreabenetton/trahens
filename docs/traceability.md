@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Design traceability
 
 | Earlier concern or mechanism | Current treatment | Authoritative artifact |

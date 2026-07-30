@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic candidate-layer builders for vectors and tests only."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic simulation components for Trahens Core."""
 
 from .model import (

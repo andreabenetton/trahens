@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Symbolic C2 anonymous rerandomizable RCCA functionality.
 
 This module is an executable *ideal functionality* used to integrate the C2

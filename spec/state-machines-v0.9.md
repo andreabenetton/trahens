@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens Core v0.9 state machines
 
 - Applies to: U1 branch-local transformation, E1 lifecycle, C2 eligibility, C1 reply/signature components, M2 logical messages, and W2 cells

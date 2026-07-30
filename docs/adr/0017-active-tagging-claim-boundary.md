@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0017: Close the active-unlinkability claim gate
 
 - Status: Accepted

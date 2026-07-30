@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens T2 Congestion and Quantized Scheduling Profile
 
 - Status: Active experimental research profile

@@ -1,4 +1,5 @@
 ---------------------------- MODULE E1Lifecycle ----------------------------
+\* SPDX-License-Identifier: Apache-2.0
 EXTENDS Naturals, FiniteSets
 
 CONSTANT Routes

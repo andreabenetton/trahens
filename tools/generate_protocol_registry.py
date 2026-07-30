@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Generate Python, Rust, and Markdown bindings from the v1.5 registry."""
 
 from __future__ import annotations

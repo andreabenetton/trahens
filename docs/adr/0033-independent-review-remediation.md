@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0033: Remediate independent review before prototype work
 
 ## Status

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Compare attempt-wide duplicate suppression with U1 branch-local discovery."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0008: Replace wire attempt IDs with branch-local contexts
 
 - Status: Accepted for Core v0.3 research draft

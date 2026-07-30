@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0025: Hop-local selective recovery
 
 - Status: Accepted

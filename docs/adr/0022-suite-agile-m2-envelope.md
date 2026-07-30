@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0022: Bind cryptographic suites in M2 and W2
 
 - Status: Accepted

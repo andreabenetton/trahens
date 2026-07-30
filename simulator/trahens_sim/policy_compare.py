@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Compare fixed broad flooding with bounded expanding-ring discovery."""
 
 from __future__ import annotations

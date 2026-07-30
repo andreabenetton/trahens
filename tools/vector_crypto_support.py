@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic C1 reply encryption for repository vectors and tests only.
 
 This module is outside the installed ``trahens_crypto`` package. It exists so

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Trahens C1 research cryptographic profile.
 
 The implementation exists to make encodings and deterministic vectors precise.

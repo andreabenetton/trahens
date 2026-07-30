@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Trahens simulator
 
 The simulator is deterministic. It is a protocol-research and conformance model, not a packet-level performance benchmark or a cryptographic proof environment.

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Generate deterministic T4 packet-emulation and adversarial reports."""
 
 from __future__ import annotations

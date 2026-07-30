@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens Eligibility Suite Interface v1
 
 - Status: Active protocol boundary

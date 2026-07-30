@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0001: Develop an overlay before a new network layer
 
 - Status: Accepted

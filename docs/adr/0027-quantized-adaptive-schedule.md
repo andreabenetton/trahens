@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0027: Quantized adaptive scheduling at explicit epochs
 
 - Status: Accepted

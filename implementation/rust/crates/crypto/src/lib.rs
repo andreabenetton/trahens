@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #![doc = "Minimal libsodium-backed primitives for the Trahens P1 prototype."]
 
 use core::ffi::{c_int, c_uchar, c_ulonglong, c_void};

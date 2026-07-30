@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Iteration 0005 - Event-driven route lifecycle and fresh-branch abuse
 
 - Date: 2026-07-30

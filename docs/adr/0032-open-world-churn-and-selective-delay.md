@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0032: Require open-world, route-churn, and selective-delay evaluation
 
 - Status: Accepted

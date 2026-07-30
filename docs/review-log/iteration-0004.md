@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Iteration 0004 - Restore non-adjacent message unlinkability
 
 - Date: 2026-07-30

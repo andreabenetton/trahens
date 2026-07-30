@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #![forbid(unsafe_code)]
 #![doc = "Typed event-driven route state machines for P1 nodes."]
 

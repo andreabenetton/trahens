@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0009: Use a multiplicatively blinded reply-key chain for candidate return
 
 - Status: Accepted with an explicit composition proof obligation

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #![forbid(unsafe_code)]
 #![doc = "Generated Trahens v1.5 protocol identifiers and limits."]
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Exhaustively test the literal finite-field tag reduction on small chains.
 
 The checked equation is the one needed if ``mu(u) = u mod q`` is interpreted as

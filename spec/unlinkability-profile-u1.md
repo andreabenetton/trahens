@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens U1 branch-local unlinkability profile
 
 - Status: Active research profile

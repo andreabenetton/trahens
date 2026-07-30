@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Trahens logical-message and adjacent-link codec profiles."""
 
 from .m1w2 import (

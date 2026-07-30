@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens v1.5 typed state machines
 
 - Status: Normative P1 lifecycle

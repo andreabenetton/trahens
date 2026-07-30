@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Technical review - C2 k=2 construction transcription
 
 - Date: 2026-07-30

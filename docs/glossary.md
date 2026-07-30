@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Glossary
 
 - **Adjacent peer**: a node directly reachable through the selected underlay profile.

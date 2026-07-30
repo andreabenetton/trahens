@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Trahens M1 variable-message codec and W2 fixed-cell framing.
 
 M1 encodes protocol messages canonically without semantic padding. W2 fragments

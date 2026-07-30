@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic T2 congestion, fairness, and schedule-adaptation model.
 
 T2 extends the T1 fixed-cell transport with finite schedule epochs, a small

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0020: Bound W2 reassembly before semantic processing
 
 - Status: Accepted

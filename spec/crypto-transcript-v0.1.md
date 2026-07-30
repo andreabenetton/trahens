@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens cryptographic transcript v0.1
 
 - Status: Proof-oriented design draft

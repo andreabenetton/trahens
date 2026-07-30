@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0002: Separate bounded discovery from global resolution
 
 - Status: Accepted

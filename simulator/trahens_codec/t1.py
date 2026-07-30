@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Trahens T1 hop-local reliability and scheduled-cell framing.
 
 T1 retains the 1,052-byte adjacent-link record size used by W2 but gives the

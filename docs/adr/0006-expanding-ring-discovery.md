@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0006: Evaluate expanding-ring discovery before fixed broad flooding
 
 - Status: Accepted

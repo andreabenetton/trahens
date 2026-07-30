@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens T3 Multi-Link Traffic-Analysis Profile
 
 - Status: Active experimental evaluation profile

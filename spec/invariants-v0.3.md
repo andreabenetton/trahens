@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens Core v0.3 invariants
 
 The simulator, conformance tests, and implementations must check these invariants.

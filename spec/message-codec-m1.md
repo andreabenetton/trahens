@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens M1 canonical logical-message codec
 
 - Status: Active research profile

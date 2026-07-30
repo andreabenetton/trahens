@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens T1 hop-local reliability and scheduled-cell profile
 
 - Status: Active experimental transport profile

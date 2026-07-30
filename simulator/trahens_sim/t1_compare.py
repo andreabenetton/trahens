@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Reproducible comparison of W2 delivery and the T1 reliability profiles."""
 
 from __future__ import annotations

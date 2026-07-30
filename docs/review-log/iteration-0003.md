@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Iteration 0003 - Expanding-ring discovery and cumulative budgets
 
 - Date: 2026-07-30

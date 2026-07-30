@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Verify that every captured IPv4 UDP payload is one fixed-size W2 record."""
 from __future__ import annotations
 

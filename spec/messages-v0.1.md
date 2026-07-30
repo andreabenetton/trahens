@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens Core v0.1 abstract messages
 
 This document defines semantic fields, not a final binary encoding. A later wire-format document will assign canonical field numbers, lengths, and test vectors.

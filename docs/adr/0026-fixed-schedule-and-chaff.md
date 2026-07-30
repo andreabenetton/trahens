@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0026: Fixed schedule, interleaving, and chaff
 
 - Status: Accepted as an experimental privacy profile

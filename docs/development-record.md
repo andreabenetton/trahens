@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Development record and evidentiary status
 
 The repository contains versioned specifications, ADRs, deterministic reports, and files under `docs/review-log/`. These materials record a compressed reconstruction of design decisions and automated experiments. They are not evidence of fifteen independent external review rounds, nor do the Git timestamps establish an extended real-time development history.

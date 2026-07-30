@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 PYTHONPATH=simulator python -m trahens_sim.t1_compare \
   --runs 30 \

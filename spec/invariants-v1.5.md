@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens Core v1.5 invariants
 
 - Status: Normative P1 safety and conformance invariants

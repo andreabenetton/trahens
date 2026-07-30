@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic models for bounded Trahens discovery policies.
 
 The simulator intentionally excludes cryptography and traffic-shaping profiles.

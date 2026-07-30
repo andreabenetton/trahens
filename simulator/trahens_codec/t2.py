@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Trahens T2 quantized schedule-control framing.
 
 T2 keeps the 1,052-byte adjacent-link record size of W2/T1.  The encrypted

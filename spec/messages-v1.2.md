@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens Core v1.2 messages and T1/T2 adjacent-link frames
 
 - Status: Active research design

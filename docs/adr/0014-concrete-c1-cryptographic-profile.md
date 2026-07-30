@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0014: Define a concrete C1 cryptographic profile
 
 - Status: Superseded for network interoperability by ADR-0034 and C1 v2 suite `0x0003`

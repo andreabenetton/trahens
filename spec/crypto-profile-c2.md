@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens cryptographic profile C2
 
 - Status: Selected active-security target with executable ideal functionality and fail-closed k=2 transcription audit

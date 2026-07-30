@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Iteration 0008 - M1 logical messages, W2 fixed cells, and bounded reassembly
 
 - Date: 2026-07-30

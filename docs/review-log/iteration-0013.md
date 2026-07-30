@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Technical review: T2 congestion and quantized scheduling
 
 - Date: 2026-07-30

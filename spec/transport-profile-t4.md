@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens T4 Packet-Level Adversarial Evaluation Profile
 
 - Status: Active experimental evaluation profile

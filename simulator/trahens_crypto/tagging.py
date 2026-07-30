@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Active-tagging probes for the C1 universal rerandomization construction.
 
 The helpers intentionally implement an attack, not a protocol feature. A

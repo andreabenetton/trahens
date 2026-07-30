@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Generate deterministic Trahens T2 schedule-control vectors."""
 
 from __future__ import annotations

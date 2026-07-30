@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic T2 congestion, leakage, burst-loss, and correlation reports."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Technical review - C2 active-security contract and M2 suite agility
 
 - Date: 2026-07-30

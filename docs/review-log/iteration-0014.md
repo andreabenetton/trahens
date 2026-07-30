@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Technical review: T3 multi-link traffic analysis
 
 Date: 2026-07-30

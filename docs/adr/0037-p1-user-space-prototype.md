@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0037: Build the P1 user-space prototype over UDP
 
 ## Status

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Technical review: T4 packet-level adversarial evaluation
 
 - Date: 2026-07-30

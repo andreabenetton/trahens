@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic T3 multi-link traffic-analysis evaluation model.
 
 T3 is an analysis profile layered above T2.  It does not define a new wire

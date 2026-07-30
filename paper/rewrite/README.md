@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Formal working paper
 
 `main.tex` is the formal Core v0.5 paper. It restores the formal language of the legacy manuscript while replacing incomplete or unsafe mechanisms with explicit definitions, notation, algorithms, propositions, claim boundaries, state rules, measured results, and implementation gates.

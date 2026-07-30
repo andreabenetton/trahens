@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Generate deterministic Trahens T1 framing and retry vectors."""
 
 from __future__ import annotations

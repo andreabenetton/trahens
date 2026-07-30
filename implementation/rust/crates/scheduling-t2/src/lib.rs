@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #![forbid(unsafe_code)]
 #![doc = "Frozen fixed-rate T2 P1 scheduler."]
 

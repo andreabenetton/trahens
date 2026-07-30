@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Review 0011 - Core v1.0 R1 gate
 
 ## Decision

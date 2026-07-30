@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Iteration 0001 - Scope and executable baseline
 
 - Date: 2026-07-30

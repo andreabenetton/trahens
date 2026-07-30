@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #![forbid(unsafe_code)]
 #![doc = "Fixed-size authenticated Trahens W2 adjacent-link records."]
 

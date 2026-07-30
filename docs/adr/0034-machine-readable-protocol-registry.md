@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0034: Use one machine-readable protocol registry
 
 ## Status

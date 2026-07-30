@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens Core v1.5 — P1 interoperability profile
 
 - Status: Frozen experimental wire profile and first user-space prototype

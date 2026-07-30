@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens Rendezvous Capability Profile R1
 
 - Status: Active experimental fallback

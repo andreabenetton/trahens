@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Citation and claim audit
 
 This file maps external claims in the current paper and specifications to primary sources. It does not treat a citation as proof that the complete Trahens composition is secure.

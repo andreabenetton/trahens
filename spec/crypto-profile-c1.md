@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens cryptographic profile C1 v2
 
 - Status: frozen research-interoperability profile for P1

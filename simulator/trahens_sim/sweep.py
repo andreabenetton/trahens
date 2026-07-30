@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Parameter sweep for bounded Trahens discovery."""
 
 from __future__ import annotations

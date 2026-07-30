@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #![forbid(unsafe_code)]
 
 use codec_m2::{Candidate, Control, Discover, Envelope, Message, MessageType, P1Payload};

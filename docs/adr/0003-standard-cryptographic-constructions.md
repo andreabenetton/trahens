@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0003: Replace ad hoc key derivation with standard constructions
 
 - Status: Proposed

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Open questions
 
 ## D1/R1 descriptor and gateway design

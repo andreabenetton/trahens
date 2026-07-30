@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #![forbid(unsafe_code)]
 #![doc = "Canonical Trahens M2 logical-message and P1 payload codec."]
 

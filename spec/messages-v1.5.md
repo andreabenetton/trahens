@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens v1.5 message roles and P1 payloads
 
 - Status: Normative P1 supplement to M2/W2/T1

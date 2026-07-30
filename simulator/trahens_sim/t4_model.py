@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic T4 packet-level traffic-analysis evaluation model.
 
 T4 is an evaluation profile layered above T2/T3. It does not add a wire

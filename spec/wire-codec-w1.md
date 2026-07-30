@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens W1 fixed-size wire codec
 
 - Status: Active research profile

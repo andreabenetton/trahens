@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #![forbid(unsafe_code)]
 #![doc = "Independent P1 canonical-vector and decoder fuzz-smoke harness."]
 

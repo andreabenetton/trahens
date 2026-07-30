@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens Core v0.9 messages, M2 encoding, and W2 transport
 
 - Status: Active research design

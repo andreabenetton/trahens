@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Generate deterministic entropy-based T3 anonymity measurements."""
 
 from __future__ import annotations

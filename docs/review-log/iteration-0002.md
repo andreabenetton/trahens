@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Iteration 0002 - Fan-out and hop-limit sweep
 
 - Date: 2026-07-30

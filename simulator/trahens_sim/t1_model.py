@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic T1 reliability and scheduled-cell model.
 
 The model runs the current Trahens route-setup exchange over a line topology:

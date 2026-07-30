@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Exhaustively check small R1 and E1 state spaces.
 
 The checker is intentionally independent of the simulator runtime. It explores

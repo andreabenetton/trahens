@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Bounded integrity verifier for the tracked historical C2 exhaustive report.
 
 The full 5,000-chain-limit reproduction evaluates more than 115 million ordered

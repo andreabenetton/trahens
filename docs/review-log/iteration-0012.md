@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Review 0012 - T1 reliability and scheduled cells
 
 - Date: 2026-07-30

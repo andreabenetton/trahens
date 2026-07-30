@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0021: Select anonymous rerandomizable RCCA encryption for eligibility
 
 - Status: Accepted as a research target

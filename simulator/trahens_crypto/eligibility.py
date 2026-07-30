@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Eligibility-suite boundary for Trahens discovery.
 
 The active R1 profile deliberately removes endpoint-specific cryptography from

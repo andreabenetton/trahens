@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # v1.4.1 independent-review remediation
 
 ## Scope

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens Core v1.5 P1 resource accounting
 
 - Status: Normative limits for the P1 implementation

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #![doc = "P1 candidate-chain and end-to-end control helpers."]
 
 use codec_m2::{decode_p1, encode_p1, CodecError, MessageType, P1Payload};

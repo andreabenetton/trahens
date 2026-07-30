@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Minimal ristretto255 wrapper over libsodium.
 
 The wrapper exposes only the operations needed by the C1 reference profile.

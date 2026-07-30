@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0030: Require multi-link route classification and active probing
 
 - Status: Accepted

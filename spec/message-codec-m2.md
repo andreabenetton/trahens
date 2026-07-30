@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Trahens logical-message codec M2
 
 - Status: Current suite-agile logical-message profile

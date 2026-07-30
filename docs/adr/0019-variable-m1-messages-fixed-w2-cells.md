@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0019: Separate logical message encoding from fixed-size wire cells
 
 - Status: Accepted

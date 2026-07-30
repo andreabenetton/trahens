@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0010: Require a rerandomizable eligibility capsule for U1
 
 - Status: Accepted as a research dependency

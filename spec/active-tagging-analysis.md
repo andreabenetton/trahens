@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Active-tagging analysis and C1 negative control
 
 - Status: Blocking security analysis

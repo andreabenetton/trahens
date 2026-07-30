@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Reference cryptographic building blocks for the Trahens C1 research profile.
 
 This package is a conformance aid, not production cryptographic software.

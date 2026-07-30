@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # C1 v2 reply-key privacy and robustness obligations
 
 ## Status

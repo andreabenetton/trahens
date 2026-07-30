@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Generate deterministic Trahens C2 ideal-functionality vectors.
 
 These vectors validate protocol composition and the symbolic security-game

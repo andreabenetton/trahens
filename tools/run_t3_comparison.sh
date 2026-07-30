@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 set -eu
 PYTHONPATH=simulator python -m trahens_sim.t3_compare \
   --classification-output reports/iteration-0014-t3-route-classification.csv \

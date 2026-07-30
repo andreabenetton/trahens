@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0011: Define explicit event time and half-open state deadlines
 
 - Status: Accepted

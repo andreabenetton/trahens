@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Compare C1 ratio tagging with the symbolic C2 active-security contract."""
 
 from __future__ import annotations

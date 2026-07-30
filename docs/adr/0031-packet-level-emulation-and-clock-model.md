@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR 0031: Add packet-level emulation and heterogeneous observer clocks
 
 - Status: Accepted

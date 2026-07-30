@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic T3 route-classification, probing, and boundary reports."""
 
 from __future__ import annotations

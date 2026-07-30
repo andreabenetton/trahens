@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # ADR-0007: Use a local logical discovery and fresh wire attempt IDs
 
 - Status: Accepted

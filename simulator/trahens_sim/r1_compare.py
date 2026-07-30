@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Compare active R1 generic-gateway discovery with archived C1 tagging."""
 
 from __future__ import annotations

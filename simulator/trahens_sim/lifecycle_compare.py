@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Aggregate event-driven Trahens lifecycle experiments."""
 
 from __future__ import annotations
