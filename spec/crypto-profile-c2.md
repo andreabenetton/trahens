@@ -34,7 +34,7 @@ The repository does **not** yet contain a reviewed implementation of the CRYPTO 
 - active-tagging and selective-failure state-machine behavior;
 - deterministic cost accounting.
 
-2. `trahens_crypto.c2_klinear`, a byte-exact `k = 2` transcription audit of the construction in Wang et al., Section 6.3 and Figure 6. The source smoothness results require `k >= 2`, and the source proposes related quadratic-residue groups obtained from a length-three Cunningham chain [Wang2021, Theorems 6.2, 6.5, 6.10; Section 6.3]. The audit validates key generation, encryption, decryption, canonical encoding, mutation rejection, and the linear strand equations. It then tests the literal map `mu(u) = u mod q`, which the source invokes for the related-group tag equations [Wang2021, Section 2, pp. 5-6; Figure 6]. A minimal exact counterexample shows that `mu` is not multiplicative under ordinary `QR*_p` group multiplication. The public rerandomization API therefore fails closed and reserved suite `0x7f02` is prohibited on the network.
+2. `trahens_crypto.c2_klinear`, a byte-exact `k = 2` transcription audit of the construction in Wang et al., Section 6.3 and Figure 6. The source smoothness results require `k >= 2`, and the source proposes related quadratic-residue groups obtained from a length-three Cunningham chain [Wang2021, Theorems 6.2, 6.5, 6.10; Section 6.3]. The audit validates key generation, encryption, decryption, canonical encoding, mutation rejection, and the linear strand equations. It then tests the project's literal representative-level interpretation `mu(u) = u mod q` under ordinary `QR*_p` multiplication. That transcription does not satisfy the required equation. The most likely explanation is that an abstract group action, exponent representation, embedding, or projection has been interpreted incorrectly or omitted. The public rerandomization API therefore fails closed and reserved suite `0x7f02` is prohibited on the network.
 
 The ideal functionality is not cryptography. The transcription audit is not approved cryptography. Neither artifact MUST be used outside simulation, conformance testing, or interoperability review. Passing either test set does not close the concrete active-security gate.
 
@@ -42,7 +42,7 @@ The ideal functionality is not cryptography. The transcription audit is not appr
 
 The detailed audit is specified in `crypto-profile-c2-k2.md` and reproduced by `make c2-k2-audit`. Its 412-byte ciphertext representation contains 24 canonically encoded group elements. The audit parameters are intentionally small and deterministic; they do not provide a production security level.
 
-The current result must be read narrowly. It demonstrates that the selected paper can be mapped to explicit data structures and that most source equations are executable. It also establishes that the literal integer-reduction map stated in the finite-field explanation is not a multiplicative group homomorphism: for `q = 5`, `p = 11`, and quadratic residues `3,4`, `mu(3*4 mod 11) = 1`, while `mu(3)mu(4) mod 5 = 2`. This blocks the literal finite-field instantiation audited here [Wang2021, Section 2, pp. 5-6; Section 6.3, Figure 6]. It does not invalidate the generic Re-T-SPHF framework, a corrected action, or a different instantiation.
+The current result must be read narrowly. It demonstrates that the selected paper can be mapped to explicit data structures and that most source equations are executable. It also establishes that the project's literal integer-representative transcription is not a multiplicative group homomorphism: for `q = 5`, `p = 11`, and quadratic residues `3,4`, `mu(3*4 mod 11) = 1`, while `mu(3)mu(4) mod 5 = 2`. This blocks only the project's audited transcription [Wang2021, Section 2, pp. 5-6; Section 6.3, Figure 6]. It does not invalidate the generic Re-T-SPHF framework, a corrected action, or a different instantiation.
 
 ## 3. Abstract syntax
 
@@ -130,7 +130,7 @@ Implementations SHOULD equalize cryptographic work where practical and MUST NOT 
 
 C2 is not complete until the repository contains all of the following:
 
-1. an author-confirmed corrected action or an independently reviewed replacement for the non-homomorphic literal Figure 6 finite-field tag map;
+1. an author-confirmed interpretation of the related-group action or an independently reviewed replacement;
 2. a reviewed parameter generation method and current security level for the related groups or an approved alternative instantiation;
 3. canonical public-key, secret-key, ciphertext, proof, scalar, and group encodings confirmed by a second implementation;
 4. exact `KeyGen`, `Enc`, `ReRand`, and `Dec` algorithms, with nontrivial full rerandomization enabled only after the audit gap is closed;

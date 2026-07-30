@@ -2,7 +2,8 @@
 
 ## Active research draft
 
-- [`core-v1.4.md`](core-v1.4.md) - bounded gateway discovery, R1 redemption, M2/W2 framing, T1 recovery, T2 congestion/scheduling, and READY-gated route establishment.
+- [`core-v1.4.1.md`](core-v1.4.1.md) - bounded gateway discovery, R1 redemption, M2/W2 framing, T1 recovery, T2 congestion/scheduling, and READY-gated route establishment.
+- [`private-directory-d1.md`](private-directory-d1.md) - non-normative private descriptor lookup and distribution strawman.
 - [`rendezvous-capability-r1.md`](rendezvous-capability-r1.md) - capability issuance, non-semantic discovery nonce, gateway filtering, and atomic post-READY redemption.
 - [`message-codec-m2.md`](message-codec-m2.md) - suite-agile canonical variable-length logical messages.
 - [`wire-cell-w2.md`](wire-cell-w2.md) - canonical 992-byte fragmentation and 1,052-byte authenticated adjacent-link records.
@@ -12,12 +13,12 @@
 - [`transport-profile-t4.md`](transport-profile-t4.md) - packet-event timing, heterogeneous observer clocks, jitter, shared bottlenecks, route churn, partial observation, open-world rejection, and bounded selective delay.
 - [`unlinkability-profile-u1.md`](unlinkability-profile-u1.md) - branch-local structural unlinkability and scheduler dependency.
 - [`event-lifecycle-profile-e1.md`](event-lifecycle-profile-e1.md) - event ordering, candidate windows, races, activation, expiry, and admission.
-- [`messages-v1.4.md`](messages-v1.4.md) - routed operation roles and T1/T2 adjacent-link frame semantics.
-- [`state-machines-v1.4.md`](state-machines-v1.4.md) - route, recovery, ACK, timeout, queue, negotiation, and schedule state machines.
-- [`invariants-v1.4.md`](invariants-v1.4.md) - route, privacy, encoding, recovery, scheduling, fairness, overload, and failure invariants.
-- [`resource-accounting-v1.4.md`](resource-accounting-v1.4.md) - finite route, reassembly, recovery, queue, rate, schedule-control, and CHAFF budgets.
+- [`messages-v1.4.1.md`](messages-v1.4.1.md) - routed operation roles and T1/T2 adjacent-link frame semantics.
+- [`state-machines-v1.4.1.md`](state-machines-v1.4.1.md) - route, recovery, ACK, timeout, queue, negotiation, and schedule state machines.
+- [`invariants-v1.4.1.md`](invariants-v1.4.1.md) - route, privacy, encoding, recovery, scheduling, fairness, overload, and failure invariants.
+- [`resource-accounting-v1.4.1.md`](resource-accounting-v1.4.1.md) - finite route, reassembly, recovery, queue, rate, schedule-control, and CHAFF budgets.
 
-Core v1.4 combines U1, E1, R1, M2, W2, T1, T2, and the T3 and T4 analysis profiles. Endpoint capability material remains absent from forward discovery. Recovery identifiers and schedule negotiations terminate at every adjacent relay. Each retry uses a fresh public sequence, padding, authentication tag, and ciphertext.
+Core v1.4.1 combines U1, E1, R1, M2, W2, T1, T2, and the T3 and T4 analysis profiles. Endpoint capability material remains absent from forward discovery. Recovery identifiers and schedule negotiations terminate at every adjacent relay. Each retry uses a fresh public sequence, padding, authentication tag, and ciphertext. Reply public keys use multiplicative blinding; only their distributional unlinkability is established directly, while the nested encryption composition remains conditional on key privacy.
 
 T2 fixed mode emits one 1,052-byte record per declared slot and fills idle slots with CHAFF. Adaptive mode changes among a finite public rate menu at epoch boundaries. Its rate-class sequence is observable and is not covered by the fixed-trace claim. Work-conserving mode is a no-chaff baseline.
 

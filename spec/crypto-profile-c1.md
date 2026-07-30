@@ -1,17 +1,18 @@
 # Trahens cryptographic profile C1
 
 - Status: Concrete research profile
-- Applies to: Trahens Core v0.5, U1, and E1
+- Applies to: Trahens Core v1.4.1 reply path; eligibility construction retained only as a research negative control
 - Suite identifier: `0x0001`
+- Profile encoding version: `0x02`
 - Security status: Interoperability and analysis only; not approved for production deployment
 
 ## 1. Purpose and claim boundary
 
-C1 replaces the abstract cryptographic interfaces used by Core v0.4 with one executable classical suite. It defines:
+C1 defines the executable classical components retained by Core v1.4.1 and the archived eligibility negative control. It defines:
 
 1. endpoint eligibility keys and descriptors;
 2. a universally rerandomizable eligibility capsule;
-3. an additively tweakable reply KEM and AEAD wrapper;
+3. a multiplicatively blinded reply-key chain and AEAD wrapper;
 4. responder signatures and candidate transcript binding;
 5. canonical encodings, domain separation, malformed-input behavior, and deterministic vectors.
 
@@ -26,7 +27,7 @@ C1 does **not** claim post-quantum security, active-adversary unlinkability, tra
 | KDF | HKDF-SHA-256 | RFC 5869 |
 | AEAD | ChaCha20-Poly1305, full 128-bit tag | RFC 8439 |
 | Signature | Ed25519 | RFC 8032 |
-| Eligibility encryption | GJJS universal re-encryption in additive notation | CT-RSA 2004; C1 definition below |
+| Archived eligibility negative control | GJJS universal re-encryption, written in additive group notation | CT-RSA 2004; C1 definition below |
 | Reply encryption | `TR-KEM-R255` plus HKDF-SHA-256 and ChaCha20-Poly1305 | C1 definition below |
 
 ## 3. Mathematical notation
@@ -46,7 +47,7 @@ A scalar field that is required to be non-zero MUST satisfy \(1\le x<q\). A grou
 
 ## 4. Canonical field encoding and domain separation
 
-Let `Prefix = ASCII("Trahens-C1-v1")` and let `LP16(x)` be a two-byte unsigned big-endian length followed by `x`. The function
+Let `Prefix = ASCII("Trahens-C1-v2")` and let `LP16(x)` be a two-byte unsigned big-endian length followed by `x`. The function
 
 ```text
 EncodeFields(label, values) = Prefix || LP16(label) || LP16(values[0]) || ...
@@ -80,7 +81,7 @@ The descriptor, not only the address hash, is required to create an eligibility 
 C1 encrypts one fixed group element rather than a structured plaintext. Let:
 
 ```text
-uniform = SHA-512("Trahens-C1-element-v1" || "eligibility-marker")
+uniform = SHA-512("Trahens-C1-element-v2" || "eligibility-marker")
 M*      = ristretto255_from_uniform_bytes(uniform)
 ```
 
@@ -149,7 +150,7 @@ The consistency pair \((U_1,V_1)\) prevents an arbitrary four-point string from 
 
 Before rerandomization or decryption, all four points MUST decode canonically. Invalid encodings are rejected before scalar multiplication. No protocol-visible error distinguishes malformed encoding, consistency failure, wrong recipient, or marker mismatch.
 
-## 8. Tweakable reply key chain
+## 8. Multiplicatively blinded reply-key chain
 
 For each first-hop branch, the initiator samples \(x_0\leftarrow\mathbb Z_q^*\) and publishes the branch-local reply public key
 
@@ -157,25 +158,27 @@ For each first-hop branch, the initiator samples \(x_0\leftarrow\mathbb Z_q^*\) 
 X_0=x_0B.
 \]
 
-A relay forwarding to one child samples \(\delta_i\leftarrow\mathbb Z_q^*\) and computes
+A relay forwarding to one child samples an independent factor \(b_i\leftarrow\mathbb Z_q^*\) and computes
 
 \[
-X_{i+1}=X_i+\delta_iB.
+X_{i+1}=b_iX_i.
 \]
 
-The relay rejects and resamples if \(X_{i+1}=\mathcal O\). The initiator later derives the corresponding secret value as
+The initiator later derives the corresponding secret value as
 
 \[
-x_{i+1}=x_i+\delta_i\pmod q.
+x_{i+1}=b_ix_i\pmod q.
 \]
 
-Correctness follows from:
+Correctness follows from
 
 \[
-x_{i+1}B=(x_i+\delta_i)B=X_i+\delta_iB=X_{i+1}.
+x_{i+1}B=(b_ix_i)B=b_i(x_iB)=b_iX_i=X_{i+1}.
 \]
 
-The scalar \(\delta_i\) is stored only in the relay's child branch context and is disclosed to the initiator inside the encrypted reverse candidate layer.
+For every fixed non-identity \(X_i\), the map \(b\mapsto bX_i\) from \(\mathbb Z_q^*\) to \(\mathbb G\setminus\{\mathcal O\}\) is a bijection. Consequently one honest transformation makes the outgoing public key exactly uniform over non-identity group elements. This is a statement about the public-key distribution only; it does not prove key privacy of the reply ciphertext or unlinkability of the complete nested composition.
+
+The factor \(b_i\) is stored only in the relay's child branch context and is disclosed to the initiator inside the authenticated encrypted reverse layer. A zero factor, identity input key, or identity output key is invalid.
 
 ## 9. `TR-KEM-R255`
 
@@ -187,13 +190,17 @@ For recipient reply key \(X=xB\), the sender samples \(e\leftarrow\mathbb Z_q^*\
 R=eB,\qquad Z=eX.
 \]
 
-The encapsulated value is \(\langle R\rangle\). The KEM context is:
+The encapsulated value is \(\langle R\rangle\). The KEM context and key schedule are:
 
 ```text
 context = EncodeFields("reply-kem-context", [suite_id, encode(R), encode(X), info])
 prk     = HKDF-Extract(0^32, EncodeFields("reply-kem-dh", [encode(Z)]))
-secret  = HKDF-Expand(prk, EncodeFields("reply-kem-secret", [context]), 32)
+okm     = HKDF-Expand(prk, EncodeFields("reply-kem-key-schedule", [context]), 44)
+key     = okm[0:32]
+nonce   = okm[32:44]
 ```
+
+This is one Extract followed by one Expand. No HKDF output is reused as a new PRK.
 
 ### 9.2 Decapsulation
 
@@ -201,22 +208,15 @@ The recipient validates \(R\ne\mathcal O\), computes \(Z=xR\), reconstructs \(X=
 
 ### 9.3 AEAD wrapper
 
-C1 derives:
-
-```text
-key   = HKDF-Expand(secret, EncodeFields("reply-aead-key",   [context]), 32)
-nonce = HKDF-Expand(secret, EncodeFields("reply-aead-nonce", [context]), 12)
-```
-
-and returns:
+C1 returns:
 
 ```text
 encode(R) || ChaCha20-Poly1305(key, nonce, plaintext, aad)
 ```
 
-The nonce is deterministic because the AEAD key is specific to the fresh encapsulation. Reuse of the same ephemeral scalar \(e\) with the same recipient key and `info` would repeat both key and nonce and is prohibited. Production code MUST obtain \(e\) from an approved CSPRNG; deterministic ephemerals are used only in test vectors.
+The nonce is deterministic relative to a fresh encapsulation-specific key. Reuse of the same ephemeral scalar \(e\) with the same recipient key and `info` would repeat both key and nonce and is prohibited. The production-facing `reply_seal` API obtains \(e\) from an approved CSPRNG and exposes no caller-supplied deterministic ephemeral parameter. Deterministic sealing is isolated in a non-exported, explicitly gated test-support module used only by vectors and deterministic simulations.
 
-`TR-KEM-R255` follows the structure and domain-separation discipline of HPKE, but it is not an IANA-registered HPKE KEM and MUST NOT be advertised as RFC 9180 interoperability.
+`TR-KEM-R255` follows the context-binding discipline of HPKE, but it is not an IANA-registered HPKE KEM and MUST NOT be advertised as RFC 9180 interoperability. In particular, this document does not inherit a receiver-anonymity or key-privacy theorem from HPKE.
 
 ## 10. Candidate authentication
 
@@ -247,9 +247,11 @@ Timing equalization is implementation-dependent and not claimed by this referenc
 
 ## 12. Security considerations
 
-### 12.1 Passive unlinkability
+### 12.1 Public reply-key distribution and conditional layer unlinkability
 
-The URE construction is intended to make two valid ciphertext representations computationally unlinkable without the recipient key, under the relevant group assumptions and the selected URE security definition. C1 adopts it as a research hypothesis, not as a new proof.
+Multiplicative reply-key blinding gives the exact public-key distribution stated in Section 8. Complete reply-layer unlinkability additionally requires the reply encryption to be key-private or receiver-anonymous in the relevant multi-user chosen-ciphertext setting; that composition remains an open review obligation.
+
+The archived URE construction is intended to make two valid ciphertext representations computationally unlinkable without the recipient key, under the relevant group assumptions and the selected URE security definition. C1 adopts it as a research hypothesis, not as a new proof.
 
 ### 12.2 Active modification
 
@@ -273,6 +275,7 @@ The non-production reference implementation is located in:
 
 - `simulator/trahens_crypto/ristretto.py`
 - `simulator/trahens_crypto/c1.py`
+- `simulator/trahens_crypto/test_support.py` (test-only deterministic sealing)
 
 It uses the installed `libsodium` `ristretto255` operations and the Python `cryptography` implementation of Ed25519 and ChaCha20-Poly1305. Deterministic vectors are stored in `crypto-test-vectors-c1.json` and regenerated by:
 

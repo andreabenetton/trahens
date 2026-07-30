@@ -1,8 +1,8 @@
 # Open questions
 
-## R1 descriptor and gateway design
+## D1/R1 descriptor and gateway design
 
-- How are descriptors queried without revealing the destination to the directory?
+- Which exact two-server PIR or oblivious-query construction should instantiate D1, and what does it leak under replica or relay collusion?
 - How are clients authorized without making queries or descriptors linkable?
 - Should commitments be replicated, threshold-shared, or registered at independent gateways?
 - How are gateway pseudonyms authenticated, rotated, revoked, and protected from enumeration?
@@ -11,10 +11,10 @@
 
 ## Retained cryptography
 
-- Can the additive reply-key chain and custom KEM be proved secure under related-key evolution?
+- Does the multiplicatively blinded reply-key chain compose securely with a concrete key-private, chosen-ciphertext-secure reply KEM/PKE under related-key evolution?
 - Which transcript fields and key-confirmation step prevent substitution?
 - How should malformed-input and timing behavior be normalized without creating a denial-of-service primitive?
-- Does an author-confirmed interpretation repair the disabled C2 k=2 transcription?
+- Does an author-confirmed interpretation identify the representation or group action that the project transcribed incorrectly in the disabled C2 k=2 audit?
 - Which post-quantum construction preserves acceptable candidate size and route depth?
 
 ## T1 recovery

@@ -1,7 +1,7 @@
 # Trahens U1 branch-local unlinkability profile
 
 - Status: Active research profile
-- Applies to: Core v1.4 with R1, M2, W2, T1, and T2
+- Applies to: Core v1.4.1 with R1, M2, W2, T1, and T2
 - Property class: structural and conditional batch-local message unlinkability
 
 ## 1. Objective
@@ -30,7 +30,7 @@ For each child branch, an honest relay MUST independently:
 
 1. replace the ingress branch token;
 2. replace candidate and setup capabilities;
-3. additively transform the reply public key;
+3. multiplicatively blind the reply public key with a fresh non-zero scalar;
 4. replace the complete R1 service-query nonce with a fresh independent non-zero value;
 5. reconstruct one canonical M2 message rather than patching received bytes;
 6. assign a fresh link-local W2 message identifier;
@@ -48,11 +48,13 @@ A solitary immediately forwarded cell supports only structural field-replacement
 
 ## 6. Explicit leakage
 
+The public reply-key sequence satisfies one exact algebraic statement: for any fixed non-identity incoming key, one honest uniform non-zero multiplicative factor makes the outgoing public key uniform over all non-identity group elements. Full reply-layer unlinkability remains conditional on key privacy of the reply encryption and does not follow from this public-key statement alone.
+
 U1 does not conceal predecessor and successor peers, local acceptance decisions, cell count, coarse timing, queue pressure, route depth inferred from candidate growth, repeated contexts at one physical relay, origin adjacency across local rings, gateway choice, or directory and redemption observations.
 
 ## 7. Active attacks
 
-R1 removes literal discovery-field tags by complete replacement. This does not defeat tags encoded through selective delay, drop, topology, reply-key manipulation, cell count, or other protocol behavior. Extending the claim to active adversaries requires explicit experiments and review of the reply-key chain, candidate authentication, failure normalization, and scheduler.
+R1 removes literal discovery-field tags by complete replacement. This does not defeat tags encoded through selective delay, drop, topology, reply-key manipulation, cell count, or other protocol behavior. Extending the claim to active adversaries requires explicit experiments and review of the multiplicatively blinded reply-key chain, key-private reply KEM/PKE assumption, candidate authentication, failure normalization, and scheduler.
 
 C1 remains a negative control whose ratio tag survives an honest rerandomization. Symbolic C2 remains a composition oracle. Neither is an active network suite.
 

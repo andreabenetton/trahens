@@ -4,7 +4,7 @@ Trahens is a research protocol for privacy-enabled route discovery in decentrali
 
 ## Status
 
-The active specification is **Trahens Core v1.4**, composed of:
+The active specification is **Trahens Core v1.4.1**, a review-remediation release composed of:
 
 - **U1** - branch-local representation replacement and conditional passive unlinkability;
 - **E1** - deterministic event and route-state lifecycle;
@@ -16,9 +16,11 @@ The active specification is **Trahens Core v1.4**, composed of:
 - **T3** - equal-budget multi-link route classification, correlated background traffic, boundary-phase measurement, and active probing;
 - **T4** - deterministic packet-event emulation with heterogeneous clocks, jitter, shared bottlenecks, route churn, partial observation, open-world classification, and bounded selective delay.
 
+> **System-level anonymity boundary.** Core v1.4.1 is not a complete endpoint-anonymity system. R1 removes endpoint-specific selectors from route discovery, but an authorized initiator still needs a private descriptor lookup and distribution mechanism. Until D1 or an equivalent independently reviewed directory profile exists, directory enumeration, lookup correlation, and directory--gateway collusion remain load-bearing unsolved problems.
+
 Endpoint-specific material is absent from active `DISCOVER` messages. A destination issues a random, short-lived capability, registers its commitment at selected rendezvous gateways, and privately distributes a descriptor to an authorized initiator. Discovery returns authenticated gateway candidates. After `COMMIT` and `READY`, the initiator presents the capability through the active route; the gateway atomically consumes it and starts the local rendezvous procedure.
 
-This removes the active protocol's dependency on an unresolved receiver-anonymous universal-rerandomization construction. It introduces explicit directory, gateway, and adjacent-link scheduling trust boundaries. The protocol does not yet specify private descriptor lookup, protection from colluding directory and gateway operators, a global-observer traffic-flow theorem, production congestion control, or a production implementation.
+This removes the active protocol's dependency on an unresolved receiver-anonymous universal-rerandomization construction, but relocates endpoint privacy to the directory and rendezvous infrastructure. `spec/private-directory-d1.md` now defines a non-normative strawman so the missing trust and leakage assumptions are explicit. The protocol still lacks an implemented private directory, protection from colluding directory and gateway operators, a global-observer traffic-flow theorem, production congestion control, and a production implementation.
 
 ## Current transport result
 
@@ -42,17 +44,17 @@ T4 converts those public schedules into timestamped cell events. It adds finite 
 
 Research-only providers remain executable and fail closed:
 
-- **C1 (`0x0001`)** reproduces a persistent algebraic ratio tag and is a mandatory negative control.
+- **C1 eligibility control (`0x0001`)** reproduces a persistent algebraic ratio tag and remains a mandatory negative control. The retained reply-path components are specified separately in C1 profile version `0x02`.
 - **Symbolic C2 (`0x0002`)** is an ideal functionality used only to test composition and failure placement.
-- **C2 k=2 audit (`0x7f02`)** transcribes the cited construction and remains disabled after the literal finite-field reduction failed exhaustive small-chain homomorphism checks.
+- **C2 k=2 audit (`0x7f02`)** is a disabled transcription experiment. The project's literal mapping of an abstract related-group operation to ordinary finite-field representatives does not satisfy the required equation. This is treated as an interpretation/transcription failure, not as evidence of a defect in the cited CRYPTO 2021 construction.
 
-The reply path continues to use independent first-hop reply keys, additive `ristretto255` tweaks, nested ChaCha20-Poly1305 encryption, Ed25519 candidate authentication, and domain-separated HKDF-SHA-256. These retained components still require independent cryptographic review as a composition.
+The reply path now uses independent first-hop reply keys, multiplicative `ristretto255` blinding factors, nested ChaCha20-Poly1305 encryption, Ed25519 candidate authentication, and one RFC 5869-style Extract-then-Expand schedule. Multiplicative blinding gives an exact uniform public-key distribution after one honest relay. Full reply-layer unlinkability remains conditional on key privacy and independent review of the complete composition.
 
 ## Repository map
 
 - `paper/legacy/` - preserved historical source material.
 - `paper/rewrite/` - standalone current formal protocol paper.
-- `docs/` - strategy, threat model, ADRs, citation audit, cryptographic reviews, and review logs.
+- `docs/` - strategy, threat model, ADRs, citation audit, cryptographic reviews, the independent review, and internal retrospective notes. `docs/review-log/` is not evidence of independent review rounds.
 - `spec/` - active and research specifications, invariants, transcripts, and vectors.
 - `simulator/` - deterministic discovery, lifecycle, transport, scheduling, and adversarial models.
 - `implementation/` - requirements for a future user-space overlay prototype.
@@ -76,4 +78,9 @@ make paper
 make check
 ```
 
-Start with [`spec/core-v1.4.md`](spec/core-v1.4.md), [`spec/rendezvous-capability-r1.md`](spec/rendezvous-capability-r1.md), [`spec/message-codec-m2.md`](spec/message-codec-m2.md), [`spec/wire-cell-w2.md`](spec/wire-cell-w2.md), [`spec/transport-profile-t1.md`](spec/transport-profile-t1.md), [`spec/transport-profile-t2.md`](spec/transport-profile-t2.md), [`spec/transport-profile-t3.md`](spec/transport-profile-t3.md), [`spec/transport-profile-t4.md`](spec/transport-profile-t4.md), [`docs/threat-model.md`](docs/threat-model.md), and [`docs/citation-audit.md`](docs/citation-audit.md).
+Start with [`spec/core-v1.4.1.md`](spec/core-v1.4.1.md), [`spec/private-directory-d1.md`](spec/private-directory-d1.md), [`spec/rendezvous-capability-r1.md`](spec/rendezvous-capability-r1.md), [`spec/message-codec-m2.md`](spec/message-codec-m2.md), [`spec/wire-cell-w2.md`](spec/wire-cell-w2.md), [`spec/transport-profile-t1.md`](spec/transport-profile-t1.md), [`spec/transport-profile-t2.md`](spec/transport-profile-t2.md), [`spec/transport-profile-t3.md`](spec/transport-profile-t3.md), [`spec/transport-profile-t4.md`](spec/transport-profile-t4.md), [`docs/threat-model.md`](docs/threat-model.md), and [`docs/citation-audit.md`](docs/citation-audit.md).
+
+
+## Development-record note
+
+The version sequence and files under `docs/review-log/` are a compressed internal reconstruction of design decisions and deterministic experiments. They must not be cited as independent external review. See [`docs/development-record.md`](docs/development-record.md) and the separately stored [`30 July 2026 independent review`](docs/external-review-2026-07-30.md).

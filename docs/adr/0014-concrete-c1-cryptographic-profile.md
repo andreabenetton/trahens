@@ -1,30 +1,33 @@
 # ADR-0014: Define a concrete C1 cryptographic profile
 
-- Status: Accepted for research and interoperability testing
+- Status: Accepted for research and interoperability testing; amended for C1 encoding v2
 - Date: 2026-07-30
 
 ## Context
 
-Core v0.4 intentionally left universal rerandomizable encryption and the tweakable reply KEM abstract. This prevented accidental deployment of an improvised construction, but it also blocked independent implementation, deterministic vectors, and precise transcript review.
+An executable profile is required for canonical encodings, vectors, transcript review, and simulator integration. The original C1 reply path used additive key tweaks and a non-standard HKDF chain. Independent review identified both as avoidable proof and implementation obligations and identified caller-supplied deterministic ephemerals as an API footgun.
 
 ## Decision
 
-Define profile C1 using:
+C1 encoding version `0x02` uses:
 
 - `ristretto255` as the prime-order group;
-- the Golle-Jakobsson-Juels-Syverson universal re-encryption construction in additive notation for the eligibility marker;
-- an additively tweakable, HPKE-inspired DH KEM over `ristretto255` for reverse reply layers;
-- HKDF-SHA-256 and ChaCha20-Poly1305 for KEM expansion and authenticated encryption;
-- Ed25519 for responder transcript signatures.
+- the Golle-Jakobsson-Juels-Syverson universal re-encryption construction only as an archived negative-control eligibility mechanism;
+- multiplicative reply-key blinding `X_(i+1)=b_i X_i`;
+- an HPKE-inspired ephemeral-static DH reply seal over `ristretto255`;
+- one HKDF-SHA-256 Extract followed by one 44-byte Expand, split into the ChaCha20-Poly1305 key and nonce;
+- Ed25519 for responder transcript signatures;
+- a production API that generates reply ephemerals internally and a separately gated test-support API for deterministic vectors.
 
-C1 receives suite identifier `0x0001`. It includes canonical encodings, domain separation, generic failure behavior, an executable reference implementation, and deterministic vectors.
+C1 retains suite identifier `0x0001`; its descriptor/profile encoding byte is `0x02`. Canonical encodings, domain separation, generic failure behavior, executable reference code, and deterministic vectors are normative for research interoperability.
 
 ## Consequences
 
-- Core v0.5 can be implemented consistently at the cryptographic interface.
-- URE rerandomization and reply-key tweaking have executable correctness tests.
-- The reply KEM is not an IANA-registered HPKE KEM and cannot claim RFC 9180 interoperability.
-- The URE construction remains malleable and lacks a C1 proof against active tagging.
-- C1 requires non-identity URE rerandomization coins so a conforming hop changes every eligibility point encoding.
-- C1 is classical and not post-quantum.
-- Production implementation remains blocked on independent review and active-adversary analysis.
+- public reply-key distribution after one honest relay is exact uniform over non-identity group elements;
+- no HKDF output is reused as a new PRK;
+- deterministic ephemeral reuse is structurally unavailable through the production API;
+- the reply seal is not an IANA-registered HPKE suite and cannot claim RFC 9180 interoperability;
+- full reply-layer unlinkability remains conditional on key privacy and independent composition review;
+- the archived C1 eligibility construction remains malleable and is not an active endpoint-discovery primitive;
+- C1 is classical and not post-quantum;
+- production deployment remains blocked on independent cryptographic review.

@@ -6,7 +6,7 @@ Develop Trahens as a falsifiable privacy-preserving route-discovery protocol and
 
 ## Active architecture
 
-Core v1.4 binds U1, E1, R1, M2, W2, T1, T2, and the T3 and T4 analysis profiles.
+Core v1.4.1 binds U1, E1, R1, M2, W2, T1, T2, and the T3 and T4 analysis profiles.
 
 - U1 replaces branch-local capabilities and representations at each honest relay.
 - E1 defines deterministic state transitions, half-open deadlines, candidate windows, COMMIT, READY, cancellation, and cleanup.
@@ -18,12 +18,12 @@ Core v1.4 binds U1, E1, R1, M2, W2, T1, T2, and the T3 and T4 analysis profiles.
 - T3 compares fixed, adaptive, and hybrid schedules under an exact equal bandwidth budget and attacks them with multi-link route classification and active probing.
 - T4 refines those traces into timestamped packet events with heterogeneous clocks, jitter, shared bottlenecks, route churn, partial observation, open-world rejection, and bounded selective delay.
 
-R1 is Gate B of the cryptographic decision. The active protocol no longer depends on receiver-anonymous universal rerandomization. C1, symbolic C2, and the C2 k=2 transcription remain research providers and mandatory negative or composition controls.
+R1 is Gate B of the cryptographic decision. The active protocol no longer depends on receiver-anonymous universal rerandomization, but it does not complete endpoint anonymity: descriptor lookup, directory enumeration, and directory--gateway correlation remain unsolved. D1 records a strawman private-directory boundary. C1, symbolic C2, and the C2 k=2 transcription remain research providers and mandatory negative or composition controls.
 
 ## Design principles
 
 1. **No endpoint selector in active discovery.** Raw capability, commitment, endpoint key, address, gateway pseudonym, and endpoint handle are prohibited from DISCOVER.
-2. **Transform every branch-local handle.** Tokens, query nonces, reply keys, message identifiers, padding, and link ciphertexts are replaced for each child.
+2. **Transform every branch-local handle.** Tokens, query nonces, message identifiers, padding, and link ciphertexts are replaced for each child. Reply public keys use independent multiplicative blinding factors; full reply-layer unlinkability remains conditional on key-private encryption.
 3. **Separate messages, recovery, and release.** M2 is semantic; W2 fragments; T1 repairs; T2 decides bounded service and public cadence.
 4. **Separate route activation from rendezvous.** CANDIDATE is tentative, COMMIT reserves, READY activates, and only then may RENDEZVOUS_OPEN carry the capability.
 5. **Make trust and observation boundaries explicit.** R1 requires a directory and gateways; T2 exposes public rate class and epoch boundaries.
@@ -40,13 +40,13 @@ R1 erases an upstream literal nonce marker at the first honest replacement. The 
 
 T1 recovers missing adjacent-link fragments with finite selective acknowledgements and retries. T2 demonstrates deterministic overload, weighted sharing, finite rate transitions, and the cost/leakage distinction between fixed, adaptive, and work-conserving release. Under the current equal-overload model, adaptive scheduling delivered all admitted work with substantially less CHAFF than fixed-high service, but its public rate sequence permitted perfect classification by the deliberately simple rate-presence observer. T3 then equalizes total public bandwidth and still finds route information in adaptive trace shape and active-probe response. The hybrid evaluation envelope reduces those signals through smoothing, decoy uplifts, and non-boundary transitions, but it is not a proof or a deployable scheduler. T4 now tests the same profiles at packet-event resolution and makes clock, bottleneck, churn, observation, and unknown-class assumptions explicit. Its transparent classifiers remain rejection tools rather than evidence of anonymity.
 
-The C1 negative control still carries a persistent algebraic ratio relation through an honest rerandomizing relay. The symbolic C2 control rejects a non-replay-equivalent mutation before an honest relay emits a child. The C2 k=2 audit reproduces executable source equations and demonstrates that the literal finite-field reduction is not multiplicative over tested small chains.
+The C1 negative control still carries a persistent algebraic ratio relation through an honest rerandomizing relay. The symbolic C2 control rejects a non-replay-equivalent mutation before an honest relay emits a child. The C2 k=2 audit reproduces one literal transcription and shows that this project's mapping of the abstract related-group operation to ordinary finite-field representatives does not satisfy the required equation over tested small chains. The likely cause is an interpretation or transcription mismatch; the result is not presented as a flaw in the cited paper.
 
 ## Workstreams
 
 ### A. Private descriptor distribution
 
-Specify authentication, private query, replication, rotation, revocation, enumeration resistance, and what the directory learns.
+D1 now records a non-normative two-replica PIR/OHTTP strawman. The next work must select and implement an exact query protocol, authentication, replication, rotation, revocation, enumeration resistance, collusion model, and timing-leakage evaluation.
 
 ### B. Gateway trust reduction
 
@@ -70,7 +70,7 @@ Implement M2/W2/T1/T2 independently, exchange conformance corpora, fuzz malforme
 
 ### G. Retained cryptography
 
-Review the additive reply-key transform, custom KEM, nested candidate chain, transcript binding, and failure timing. Preserve the C2 author query and exhaustive checker; reopen endpoint-specific eligibility only after independent review.
+The reply transform now uses multiplicative blinding and has an exact public-key distribution argument. Review the custom key-private KEM/PKE requirement, nested candidate chain, transcript binding, malicious-key behavior, and failure timing. Preserve the C2 author query and exhaustive checker; reopen endpoint-specific eligibility only after independent review.
 
 ## Completion gates
 

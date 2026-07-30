@@ -7,6 +7,8 @@
 
 ## 1. Rationale
 
+**Complete-system boundary.** R1 is not an endpoint-anonymity system by itself. It removes endpoint-specific selectors from route discovery but requires an authorized initiator to obtain a private descriptor. Until `private-directory-d1.md` or an equivalent reviewed profile is implemented, directory enumeration, lookup correlation, publication timing, and directory--gateway collusion remain unresolved.
+
 R1 removes the unresolved universal-rerandomization dependency from active route discovery. The endpoint-specific secret is not carried, encrypted or otherwise, in a DISCOVER message. Discovery selects a generic rendezvous-gateway service. A short-lived, single-use capability is presented only after the route to a selected gateway reaches READY.
 
 This architecture resembles the separation between service descriptors, introduction points, and rendezvous points in Tor onion services, but R1 is not a Tor protocol and does not inherit Tor's security analysis. Tor's current protocol overview and rendezvous specification are useful precedents for separating endpoint identity from a relay-mediated rendezvous operation: [Tor onion-service protocol overview](https://spec.torproject.org/rend-spec/protocol-overview.html) and [Tor rendezvous protocol](https://spec.torproject.org/rend-spec/rendezvous-protocol.html).
@@ -52,7 +54,7 @@ RDesc = (
 )
 ```
 
-How `Q` answers privately, authenticates clients, resists enumeration, and replicates records is a separate directory profile.
+How `Q` answers privately, authenticates clients, resists enumeration, and replicates records is a separate directory profile. D1 records a non-normative two-replica PIR / oblivious-relay strawman; it is not enabled by R1 and supplies no inherited security claim.
 
 ## 4. Discovery
 
@@ -96,7 +98,8 @@ R1 provides the following structural properties:
 
 R1 does not by itself provide:
 
-- a private directory;
+- meaningful complete-system endpoint anonymity;
+- an implemented or proven private directory;
 - protection from a malicious gateway correlating registration and redemption;
 - protection if the capability is stolen before use;
 - traffic-flow unlinkability;

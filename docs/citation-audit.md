@@ -8,7 +8,7 @@ This file maps external claims in the current paper and specifications to primar
 
 George Danezis and Ian Goldberg, **“Sphinx: A Compact and Provably Secure Mix Format,”** IEEE Symposium on Security and Privacy, 2009, pp. 269-282.
 
-Used for: compact per-hop transformed mix packets, reply support, and formal mix-packet context.
+Used for: compact per-hop transformed mix packets, reply support, formal mix-packet context, and the multiplicative-blinding pattern. Trahens does not inherit the Sphinx proof for its custom reply format.
 
 ### HORNET2015
 
@@ -46,7 +46,7 @@ Used for: replayable chosen-ciphertext security.
 
 Mihir Bellare, Alexandra Boldyreva, Anand Desai, and David Pointcheval, **“Key-Privacy in Public-Key Encryption,”** ASIACRYPT 2001, LNCS 2248, pp. 566-582, DOI `10.1007/3-540-45682-1_33`.
 
-Used for: recipient/key privacy context.
+Used for: recipient/key privacy context and the explicit statement that uniform public-key blinding does not by itself prove unlinkability of encrypted reply layers.
 
 ### PrabhakaranRosulek2007
 
@@ -58,7 +58,7 @@ Used for: rerandomizable RCCA encryption and the distinction between rerandomiza
 
 Yong Wang, Rui Chen, Guomin Yang, Xinyi Huang, Bin Wang, and Moti Yung, **“Receiver-Anonymity in Rerandomizable RCCA-Secure Cryptosystems Resolved,”** CRYPTO 2021, LNCS 12828, pp. 270-300, DOI `10.1007/978-3-030-84259-8_10`; full version IACR ePrint 2021/862.
 
-Used for: the receiver-anonymous rerandomizable RCCA target and the exact k=2 source-to-code audit. The Trahens counterexample concerns only the literal finite-field interpretation implemented from the cited equations. It is not presented as a refutation of the paper's generic framework or an author-confirmed corrected interpretation.
+Used for: the receiver-anonymous rerandomizable RCCA target and the exact k=2 source-to-code audit. The Trahens audit concerns only the project's literal representative-level transcription of the cited equations. It is presented as an implementation/interpretation mismatch, not as a refutation of the paper's generic framework or any author-confirmed interpretation.
 
 ### BanfiMaurerRitsch2023
 
@@ -91,6 +91,18 @@ Used for: introduction-point mediation, replay considerations, and fixed-maximum
 The Tor Project, **“The Rendezvous Protocol,”** Tor Specifications, section 13.5.
 
 Used for: client/service circuits joining at a rendezvous point and one-use rendezvous-cookie precedent. Trahens R1 is not a Tor protocol and does not inherit Tor's security analysis.
+
+### DP5
+
+George Danezis, Nikita Borisov, and Ian Goldberg, **“Privacy-Preserving Presence Sharing,”** Proceedings on Privacy Enhancing Technologies 2015(2), pp. 4-24, DOI `10.1515/popets-2015-0008`.
+
+Used for: the architectural precedent that private presence and rendezvous-oriented directory systems expose explicit replica, update, and lookup assumptions. D1 does not claim DP5 compatibility or inherit its proof.
+
+### RFC9458
+
+Martin Thomson and Christopher A. Wood, **“Oblivious HTTP,”** RFC 9458, January 2024, DOI `10.17487/RFC9458`.
+
+Used for: the weaker D1 mode that separates client source address from request content under a relay/gateway non-collusion assumption. OHTTP is not private information retrieval and does not hide the decoded lookup handle from the gateway.
 
 ## Transport recovery and scheduling
 
@@ -147,9 +159,9 @@ Used for: the caution that adaptive padding and release policies remain classifi
 ## Standards and retained primitives
 
 - RFC 2119 and RFC 8174: normative requirement language.
-- RFC 9180: HPKE structure and context-binding discipline; Trahens reply KEM is not claimed to be RFC 9180 HPKE.
+- RFC 9180: HPKE structure and context-binding discipline; Trahens reply KEM is not claimed to be RFC 9180 HPKE and does not inherit a receiver-anonymity theorem.
 - RFC 9496: `ristretto255` encodings and group abstraction.
-- RFC 5869: HKDF.
+- RFC 5869: the Extract-then-Expand structure. C1 v2 uses one Extract and one 44-byte Expand, split into key and nonce.
 - RFC 8439: ChaCha20-Poly1305.
 - RFC 8032: Ed25519.
 
@@ -159,8 +171,10 @@ The following are not attributed to external papers:
 
 - R1 endpoint-independent service-query nonce and one-time capability state machine;
 - the deterministic R1 literal-marker experiment;
+- the proof that multiplicative reply-key blinding makes the public key exactly uniform after one honest relay;
+- the production/test API separation that makes deterministic reply ephemerals unavailable to normal callers;
 - the C1 ratio-tag implementation and integrated regression result;
-- the exact finite-field counterexample and exhaustive small-chain checker;
+- the exact counterexample to the project transcription and exhaustive small-chain checker;
 - M2/W2 encodings, fragmentation, reassembly, and route lifecycle;
 - T1 DATA/ACK/CHAFF framing, adjacent-link transmission identifiers, bounded selective recovery, and retry ciphertext vectors;
 - T2 SCHEDULE framing, finite rate menus, hysteresis, weighted equal-cell service, admission, and overload rules;

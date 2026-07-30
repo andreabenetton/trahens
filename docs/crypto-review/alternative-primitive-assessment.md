@@ -8,7 +8,7 @@ Trahens originally sought a destination-eligibility primitive with ciphertext-on
 
 Wang et al. present the first receiver-anonymous rerandomizable RCCA-secure PKE framework and a concrete k-linear instantiation: [IACR ePrint 2021/862](https://eprint.iacr.org/2021/862), DOI `10.1007/978-3-030-84259-8_10`.
 
-The repository contains an exact `k = 2` transcription audit. Key generation, encryption, decryption, canonical encoding, selected mutation rejection, and the linear strand equations are executable. The literal finite-field interpretation of the related-group tag projection is not multiplicative under ordinary `QR*_p` multiplication. Until an author-confirmed interpretation or a second reviewed instantiation is available, the concrete suite remains disabled.
+The repository contains an exact `k = 2` transcription audit. Key generation, encryption, decryption, canonical encoding, selected mutation rejection, and the linear strand equations are executable. The project's literal mapping of the related-group tag operation to ordinary integer representatives in `QR*_p` does not satisfy the required equation. This is treated as an interpretation/transcription failure, not as evidence of a flaw in the paper. Until an author-confirmed interpretation or a second reviewed instantiation is available, the concrete suite remains disabled.
 
 ## ASIACRYPT 2022 updatable and randomizable PKE
 

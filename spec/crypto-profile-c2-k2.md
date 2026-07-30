@@ -77,9 +77,9 @@ The audit executes:
 
 The key-generation, encryption, decryption, canonical encoding, mutation rejection, and linear strand-combination checks pass in the deterministic audit.
 
-## 6. Literal finite-field non-homomorphism
+## 6. Failure of the literal representative-level transcription
 
-The source explains the inner validity term by replacing the group element `u` with the integer reduction `u mod q` and states that this modular operation has the homomorphism property needed by rerandomization [Wang2021, Section 2, pp. 5-6]. For ordinary multiplication in `QR*_p`, that literal map is not a group homomorphism.
+The audit interpreted the related-group term as ordinary integer representatives in `QR*_p` followed by `u mod q`. Under that interpretation, the required action is not homomorphic. This demonstrates an incompatibility in the project transcription. It does not establish that the paper intends ordinary representative-level multiplication; an exponent representation, embedding, projection, or other abstract group action may be missing from the transcription [Wang2021, Section 2, pp. 5-6].
 
 Define
 
@@ -96,7 +96,7 @@ mu(r*u mod p) = mu(r) * mu(u) mod q.
 
 A minimal exact counterexample is `q = 5`, `p = 11`, `r = 3`, and `u = 4`. Both `3` and `4` are in `QR*_11`; their group product is `1`, so the left side is `1`, while the right side is `(3 mod 5)(4 mod 5) mod 5 = 2`. The deterministic conformance parameters produce a second, larger witness recorded in `reports/c2-k2-transcription-audit.json`.
 
-This result blocks the **literal finite-field instantiation** and explains why the non-identity tag-multiplication path fails. It does not refute the source's generic Re-T-SPHF framework, an author-confirmed corrected action, or another independently reviewed instantiation [Wang2021, Sections 4-6].
+This result blocks the **project's literal representative-level transcription** and explains why that implementation path fails. It is best treated as a transcription or interpretation error unless the authors confirm otherwise. It does not refute the source's generic Re-T-SPHF framework, an author-confirmed interpretation, or another independently reviewed instantiation [Wang2021, Sections 4-6].
 
 ## 7. Fail-closed behavior
 
@@ -114,7 +114,7 @@ The operational route simulator continues to use the explicitly symbolic `C2Idea
 
 C2-K2 may receive a network suite identifier only after all of the following:
 
-1. an author-confirmed corrected action or an independently reviewed replacement is provided for the non-homomorphic literal finite-field map;
+1. an author-confirmed interpretation of the related-group operation or an independently reviewed replacement is provided;
 2. full nontrivial rerandomization decrypts and validates for randomized test populations under that corrected or replacement construction;
 3. canonical public-key, secret-key, ciphertext, and error encodings are reviewed;
 4. parameter generation and a modern security level are specified;

@@ -32,7 +32,12 @@ docs/adr/0029-equal-budget-traffic-analysis.md
 docs/adr/0030-multilink-classifier-and-active-probe.md
 docs/adr/0031-packet-level-emulation-and-clock-model.md
 docs/adr/0032-open-world-churn-and-selective-delay.md
-spec/core-v1.4.md
+docs/adr/0033-independent-review-remediation.md
+docs/external-review-2026-07-30.md
+docs/review-remediation-v1.4.1.md
+docs/development-record.md
+docs/crypto-review/reply-path-security.md
+spec/core-v1.4.1.md
 spec/eligibility-suite-interface-v1.md
 spec/rendezvous-capability-r1.md
 spec/unlinkability-profile-u1.md
@@ -56,15 +61,18 @@ spec/transport-profile-t1.md
 spec/transport-profile-t2.md
 spec/transport-profile-t3.md
 spec/transport-profile-t4.md
-spec/messages-v1.4.md
-spec/state-machines-v1.4.md
-spec/invariants-v1.4.md
-spec/resource-accounting-v1.4.md
+spec/messages-v1.4.1.md
+spec/state-machines-v1.4.1.md
+spec/invariants-v1.4.1.md
+spec/resource-accounting-v1.4.1.md
+spec/private-directory-d1.md
 simulator/trahens_crypto/ristretto.py
 simulator/trahens_crypto/c1.py
 simulator/trahens_crypto/c2_ideal.py
 simulator/trahens_crypto/c2_klinear.py
 simulator/trahens_crypto/candidate.py
+simulator/trahens_crypto/test_support.py
+simulator/trahens_crypto/candidate_test_support.py
 simulator/trahens_crypto/tagging.py
 simulator/trahens_crypto/eligibility.py
 simulator/trahens_codec/m2w2.py
@@ -156,6 +164,10 @@ for path in $required_files; do
         exit 1
     fi
 done
+
+# The exhaustive C2 report is cited by the review material and must exist in a
+# fresh clone, not only in a maintainer's working tree.
+git ls-files --error-unmatch reports/c2-k2-small-chain-exhaustive.json >/dev/null
 
 python -m compileall -q simulator
 PYTHONPATH=simulator python -m unittest discover -s simulator/tests -v
