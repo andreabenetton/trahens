@@ -1,7 +1,7 @@
 # Trahens cryptographic profile C2
 
-- Status: Selected active-security target with executable ideal functionality
-- Applies to: Trahens Core v0.8, U1, E1, M2, and W2
+- Status: Selected active-security target with executable ideal functionality and fail-closed k=2 transcription audit
+- Applies to: Trahens Core v0.9, U1, E1, M2, and W2
 - Suite identifier: `0x0002`
 - Deployment status: **not approved for production**
 
@@ -22,7 +22,9 @@ C2 changes the destination-eligibility primitive only. Until separately revised,
 
 ## 2. Current implementation status
 
-The repository does **not** yet contain a reviewed implementation of the CRYPTO 2021 construction. Instead it contains `trahens_crypto.c2_ideal.C2IdealOracle`, an executable ideal functionality used to test:
+The repository does **not** yet contain a reviewed implementation of the CRYPTO 2021 construction. It contains two deliberately separated artifacts:
+
+1. `trahens_crypto.c2_ideal.C2IdealOracle`, an executable ideal functionality used to test:
 
 - M2 suite agility;
 - W2 fragmentation and reassembly;
@@ -32,7 +34,15 @@ The repository does **not** yet contain a reviewed implementation of the CRYPTO 
 - active-tagging and selective-failure state-machine behavior;
 - deterministic cost accounting.
 
-The ideal functionality is not cryptography. It uses a process-local semantic registry and MUST NOT be used outside simulation or conformance testing. Passing the symbolic tests does not close the concrete active-security gate.
+2. `trahens_crypto.c2_klinear`, a byte-exact `k = 2` transcription audit of the construction in Wang et al., Section 6.3 and Figure 6. The source smoothness results require `k >= 2`, and the source proposes related quadratic-residue groups obtained from a length-three Cunningham chain [Wang2021, Theorems 6.2, 6.5, 6.10; Section 6.3]. The audit validates key generation, encryption, decryption, canonical encoding, mutation rejection, and the linear strand equations. It then tests the literal map `mu(u) = u mod q`, which the source invokes for the related-group tag equations [Wang2021, Section 2, pp. 5-6; Figure 6]. A minimal exact counterexample shows that `mu` is not multiplicative under ordinary `QR*_p` group multiplication. The public rerandomization API therefore fails closed and reserved suite `0x7f02` is prohibited on the network.
+
+The ideal functionality is not cryptography. The transcription audit is not approved cryptography. Neither artifact MUST be used outside simulation, conformance testing, or interoperability review. Passing either test set does not close the concrete active-security gate.
+
+## 2.1 Concrete transcription audit
+
+The detailed audit is specified in `crypto-profile-c2-k2.md` and reproduced by `make c2-k2-audit`. Its 412-byte ciphertext representation contains 24 canonically encoded group elements. The audit parameters are intentionally small and deterministic; they do not provide a production security level.
+
+The current result must be read narrowly. It demonstrates that the selected paper can be mapped to explicit data structures and that most source equations are executable. It also establishes that the literal integer-reduction map stated in the finite-field explanation is not a multiplicative group homomorphism: for `q = 5`, `p = 11`, and quadratic residues `3,4`, `mu(3*4 mod 11) = 1`, while `mu(3)mu(4) mod 5 = 2`. This blocks the literal finite-field instantiation audited here [Wang2021, Section 2, pp. 5-6; Section 6.3, Figure 6]. It does not invalidate the generic Re-T-SPHF framework, a corrected action, or a different instantiation.
 
 ## 3. Abstract syntax
 
@@ -120,10 +130,10 @@ Implementations SHOULD equalize cryptographic work where practical and MUST NOT 
 
 C2 is not complete until the repository contains all of the following:
 
-1. an exact choice of the CRYPTO 2021 generic construction and k-Lin parameter `k`;
-2. a reviewed prime-order or pairing/graded-ring instantiation supporting the required SPHF operations;
-3. canonical public-key, secret-key, ciphertext, proof, scalar, and group encodings;
-4. exact `KeyGen`, `Enc`, `ReRand`, and `Dec` algorithms;
+1. an author-confirmed corrected action or an independently reviewed replacement for the non-homomorphic literal Figure 6 finite-field tag map;
+2. a reviewed parameter generation method and current security level for the related groups or an approved alternative instantiation;
+3. canonical public-key, secret-key, ciphertext, proof, scalar, and group encodings confirmed by a second implementation;
+4. exact `KeyGen`, `Enc`, `ReRand`, and `Dec` algorithms, with nontrivial full rerandomization enabled only after the audit gap is closed;
 5. deterministic positive and negative vectors;
 6. subgroup, identity, malformed-element, truncation, substitution, and replay tests;
 7. a receiver-anonymity game harness;
@@ -135,6 +145,14 @@ Until this gate is closed, the paper may claim only that the protocol has select
 
 ## 11. References
 
-- Yi Wang, Rongmao Chen, Guomin Yang, Xinyi Huang, Baosheng Wang, and Moti Yung, "Receiver-Anonymity in Rerandomizable RCCA-Secure Cryptosystems Resolved," CRYPTO 2021, LNCS 12828, pp. 270-300; full version IACR ePrint 2021/862.
-- Fabio Banfi, Ueli Maurer, and Silvia Ritsch, "On the Security of Universal Re-Encryption," IACR ePrint 2023/1165.
-- Manoj Prabhakaran and Mike Rosulek, "Rerandomizable RCCA Encryption," CRYPTO 2007.
+[Wang2021]: Yi Wang, Rongmao Chen, Guomin Yang, Xinyi Huang, Baosheng Wang, and Moti Yung, "Receiver-Anonymity in Rerandomizable RCCA-Secure Cryptosystems Resolved," CRYPTO 2021, LNCS 12828, pp. 270-300; full version IACR ePrint 2021/862.
+
+[Banfi2023]: Fabio Banfi, Ueli Maurer, and Silvia Ritsch, "On the Security of Universal Re-Encryption," IACR ePrint 2023/1165.
+
+[CKN2003]: Ran Canetti, Hugo Krawczyk, and Jesper Buus Nielsen, "Relaxing Chosen-Ciphertext Security," CRYPTO 2003.
+
+[BBDP2001]: Mihir Bellare, Alexandra Boldyreva, Anand Desai, and David Pointcheval, "Key-Privacy in Public-Key Encryption," ASIACRYPT 2001.
+
+[CS2002]: Ronald Cramer and Victor Shoup, "Universal Hash Proofs and a Paradigm for Adaptive Chosen Ciphertext Secure Public-Key Encryption," EUROCRYPT 2002.
+
+[PR2007]: Manoj Prabhakaran and Mike Rosulek, "Rerandomizable RCCA Encryption," CRYPTO 2007.

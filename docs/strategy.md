@@ -18,13 +18,13 @@ Turn Trahens into a falsifiable research protocol and then an interoperable expe
 
 ## Current architecture
 
-Trahens Core v0.8 is a bounded route-discovery and ready-gated bidirectional route-establishment protocol. It excludes global directory resolution, incentives, inter-domain policy, and a replacement link stack.
+Trahens Core v0.9 is a bounded route-discovery and ready-gated bidirectional route-establishment protocol. It excludes global directory resolution, incentives, inter-domain policy, and a replacement link stack.
 
 U1 removes network-wide discovery handles. Each outgoing branch replaces its capability, tweaks the reply public key, rerandomizes the eligibility capsule, and reconstructs the message.
 
 E1 defines half-open deadlines, deterministic event precedence, candidate windows, delayed candidates, cancellation races, tentative mappings, COMMIT, READY, loss, duplication, and cleanup.
 
-C2 defines the active-security target for destination eligibility: public rerandomization without the recipient key, receiver anonymity, replayable chosen-ciphertext security, and resistance to persistent cross-hop tags. The repository currently provides an executable ideal functionality, not a concrete construction. C1 remains the negative-control eligibility backend and supplies the executable reply-key, nested-candidate, signature, KDF, AEAD, and transcript components.
+C2 defines the active-security target for destination eligibility: public rerandomization without the recipient key, receiver anonymity, replayable chosen-ciphertext security, and resistance to persistent cross-hop tags. The repository provides an executable ideal functionality and a separate exact `k = 2` arithmetic transcription audit of Wang et al. [Wang2021](citation-audit.md#wang2021). The audit is fail-closed: it validates most Figure 6 equations and canonical encoding, but an exact counterexample shows that the paper's literal finite-field map `u -> u mod q` is not multiplicative under ordinary `QR*_p` group multiplication. Nontrivial full rerandomization is therefore disabled. C1 remains the negative-control eligibility backend and supplies the executable reply-key, nested-candidate, signature, KDF, AEAD, and transcript components.
 
 M2 defines suite-agile canonical variable-length messages. W2 fragments them into fixed 1,052-byte adjacent-link cells and reassembles them under strict byte, context, fragment, suite, and time bounds. W2 equalizes individual cell length but does not hide cell count or timing.
 
@@ -38,7 +38,7 @@ In the symbolic C2 experiment, an upstream marker mutation is not replay-equival
 
 ### A. Concrete C2 cryptography
 
-Select the exact anonymous rerandomizable RCCA construction and parameters. Define canonical key, ciphertext, proof, scalar, and group/ring encodings; exact `KeyGen`, `Enc`, `ReRand`, and `Dec`; malformed-input behavior; deterministic vectors; and side-channel requirements. Map the C2 games to the cited construction and assumptions. Obtain independent review.
+The exact Figure 6 `k = 2` construction has been transcribed with a reserved audit encoding. The literal finite-field tag reduction stated in the source is non-homomorphic, so the audited instantiation cannot be enabled as written. Obtain an author-confirmed correction or select an independently reviewed replacement construction; then define modern parameters, enable full `ReRand`, complete real-byte game harnesses, and obtain independent review. This finding is limited to the literal finite-field instantiation and does not invalidate the generic Re-T-SPHF framework.
 
 ### B. Suite and transcript composition
 
@@ -91,13 +91,14 @@ A revision is incomplete when it changes prose without changing a testable artif
 - E1 event-driven route lifecycle.
 - C1 executable reply/signature component baseline and negative-control eligibility attack.
 - M2/W2 message-cell separation and bounded reassembly.
-- C2 abstract games, suite integration, and executable ideal functionality.
+- C2 abstract games, suite integration, executable ideal functionality, and fail-closed k=2 transcription audit.
 
-### Current gate: concrete C2
+### Current gate: concrete C2 interoperability
 
 Exit requires:
 
-- exact construction and parameters;
+- author-confirmed corrected group action or an independently reviewed replacement for the non-homomorphic literal Figure 6 finite-field map;
+- reviewed modern parameters;
 - canonical encodings and deterministic vectors;
 - positive, malformed, receiver-anonymity, RCCA, replay, and tag tests;
 - no observable C1 ratio-tag analogue under the declared game;
@@ -114,9 +115,9 @@ Exit requires:
 
 ## Immediate backlog
 
-1. Implement the selected concrete C2 instantiation outside the simulator.
-2. Replace the 640-byte planning budget with exact ciphertext and proof sizes.
-3. Add C2 receiver-anonymity, RCCA, and tag-game harnesses against real bytes.
+1. Resolve the fail-closed C2-K2 full-rerandomization path with an author-confirmed or independently reviewed mapping.
+2. Cross-check the 412-byte audit representation with a second implementation and choose modern parameters.
+3. Add C2 receiver-anonymity, RCCA, replay-equivalence, and tag-game harnesses against real bytes.
 4. Add cross-suite downgrade and transcript-confusion tests.
 5. Build a second M2/W2 codec and differential fuzzer.
 6. Model invalid-C2 work exhaustion and distributed fragment sprays.

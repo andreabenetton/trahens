@@ -4,7 +4,7 @@ Trahens is a research protocol for privacy-enabled route discovery in decentrali
 
 ## Status
 
-The active specification is **Trahens Core v0.8**, composed of:
+The active specification is **Trahens Core v0.9**, composed of:
 
 - **U1** - conditional branch-local passive unlinkability;
 - **E1** - deterministic event and route-state lifecycle;
@@ -12,7 +12,7 @@ The active specification is **Trahens Core v0.8**, composed of:
 - **M2** - suite-agile canonical variable-length logical messages;
 - **W2** - fixed-size authenticated adjacent-link cells with bounded reassembly.
 
-C2 is currently integrated through an executable ideal functionality. It validates protocol composition, suite binding, replay-equivalent rerandomization semantics, arbitrary-mutation rejection, and active-tagging instrumentation. It is not a concrete cryptographic implementation and must not be deployed. C1 remains executable as a negative-control eligibility suite and supplies the current reply-key, candidate-encryption, signature, transcript, KDF, and AEAD components.
+C2 is integrated through an executable ideal functionality for protocol composition and through a separate fail-closed `k = 2` arithmetic transcription audit of Wang et al.'s CRYPTO 2021 construction [Wang et al., 2021](https://doi.org/10.1007/978-3-030-84259-8_10). The audit fixes canonical dimensions and a 412-byte encoding and validates key generation, encryption, decryption, mutation rejection, and the linear strand equations. It also tests the paper's literal finite-field map `mu(u) = u mod q`: an exact counterexample shows that this map is not a multiplicative homomorphism from `QR*_p` to `Z_q` under ordinary group multiplication. Reserved suite `0x7f02` is therefore not a network suite and full concrete rerandomization is disabled. This blocks the audited finite-field instantiation; it does not refute the paper's generic framework or a corrected construction. Neither artifact is deployable. C1 remains executable as a negative-control eligibility suite and supplies the current reply-key, candidate-encryption, signature, transcript, KDF, and AEAD components.
 
 ## Current result
 
@@ -20,7 +20,7 @@ Every forwarded DISCOVER branch receives a fresh adjacent capability, a tweaked 
 
 M2 separates semantic encoding from transport framing. Logical messages contain canonical fields and no semantic padding. W2 fragments a message into 992-byte payload fragments, pads each 1,024-byte cell plaintext, and emits 1,052-byte adjacent-link records. The number and timing of cells remain observable unless a separate scheduling profile conceals them.
 
-The C1 negative-control experiment reproduces a persistent ratio tag across an honest rerandomizing relay. In the symbolic C2 experiment, an attacker-controlled marker mutation is rejected by the first honest transformation and no transformed tag reaches the separated colluder. This establishes that the C2-TAG game is correctly embedded in the lifecycle; it does not prove a concrete construction secure.
+The C1 negative-control experiment reproduces a persistent ratio tag across an honest rerandomizing relay. In the symbolic C2 experiment, an attacker-controlled marker mutation is rejected by the first honest transformation and no transformed tag reaches the separated colluder. This establishes that the C2-TAG game is correctly embedded in the lifecycle; it does not prove a concrete construction secure. The C2-K2 audit makes the remaining cryptographic question reproducible rather than silently accepting a partial implementation.
 
 ## Repository map
 
@@ -49,9 +49,10 @@ make test
 make crypto-vectors
 make c2-symbolic-vectors
 make c2-compare
+make c2-k2-audit
 make fragmentation-compare
 make paper
 make check
 ```
 
-Start with [`spec/core-v0.8.md`](spec/core-v0.8.md), [`spec/crypto-profile-c2.md`](spec/crypto-profile-c2.md), [`spec/active-unlinkability-games-c2.md`](spec/active-unlinkability-games-c2.md), [`spec/message-codec-m2.md`](spec/message-codec-m2.md), [`spec/wire-cell-w2.md`](spec/wire-cell-w2.md), [`spec/unlinkability-profile-u1.md`](spec/unlinkability-profile-u1.md), [`spec/event-lifecycle-profile-e1.md`](spec/event-lifecycle-profile-e1.md), and [`docs/strategy.md`](docs/strategy.md).
+Start with [`spec/core-v0.9.md`](spec/core-v0.9.md), [`spec/crypto-profile-c2.md`](spec/crypto-profile-c2.md), [`spec/crypto-profile-c2-k2.md`](spec/crypto-profile-c2-k2.md), [`spec/active-unlinkability-games-c2.md`](spec/active-unlinkability-games-c2.md), [`spec/message-codec-m2.md`](spec/message-codec-m2.md), [`spec/wire-cell-w2.md`](spec/wire-cell-w2.md), [`spec/unlinkability-profile-u1.md`](spec/unlinkability-profile-u1.md), [`spec/event-lifecycle-profile-e1.md`](spec/event-lifecycle-profile-e1.md), [`docs/citation-audit.md`](docs/citation-audit.md), and [`docs/strategy.md`](docs/strategy.md).

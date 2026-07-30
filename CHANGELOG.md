@@ -1,5 +1,17 @@
 # Changelog
 
+## Core v0.9 - 2026-07-30
+
+- Selected the exact `k`-linear construction in Wang et al., CRYPTO 2021, Section 6.3 and Figure 6, for a concrete C2 interoperability audit.
+- Fixed the minimum admissible `k = 2` and a deterministic length-three Cunningham-chain conformance parameter set.
+- Added canonical subgroup-checked public-key and 412-byte ciphertext encodings.
+- Implemented deterministic key generation, encryption, decryption, wrong-recipient rejection, mutation rejection, and linear strand rerandomization outside the event simulator.
+- Added a fail-closed full-rerandomization API after an exact counterexample showed that the literal finite-field map `u -> u mod q` is not a multiplicative homomorphism from `QR*_p` to `Z_q`.
+- Reserved local suite `0x7f02` for audit artifacts only and prohibited it from M2/W2 network use.
+- Added ten C2-K2 audit tests, including a minimal `q = 5`, `p = 11` homomorphism counterexample, and a deterministic JSON conformance report.
+- Expanded the formal paper with point-of-use citations, a concrete-construction transcription section, exact encoding sizes, and an explicit interoperability limitation.
+- Kept the symbolic C2 oracle as the only protocol-facing C2 backend and retained the production prohibition.
+
 ## Core v0.8 - 2026-07-30
 
 - Selected C2, a receiver-anonymous rerandomizable RCCA eligibility contract, as the active-security target.
