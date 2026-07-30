@@ -13,4 +13,4 @@
 
 ## Current milestone
 
-M1 is active. The repository contains a first scoped Core v0.1 and an initial simulator for bounded flood behavior. Cryptographic choices are deliberately not frozen yet.
+M1 is active. The repository contains a first scoped Core v0.1, a deterministic bounded-flood simulator, and an initial parameter sweep showing the coverage/amplification trade-off. Expanding-ring discovery is the next proposed simulation increment. Cryptographic choices are deliberately not frozen yet.

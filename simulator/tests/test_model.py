@@ -65,5 +65,32 @@ class DiscoveryTests(unittest.TestCase):
         self.assertLessEqual(result.candidate_count, 2)
 
 
+class SweepTests(unittest.TestCase):
+    def test_small_sweep_is_deterministic(self) -> None:
+        from trahens_sim.sweep import run_sweep
+
+        first = run_sweep(
+            nodes=30,
+            average_degree=4.0,
+            hop_limits=[2],
+            relay_fanouts=[2],
+            runs=3,
+            candidate_limit=2,
+            responder_fraction=0.1,
+            seed_base=50,
+        )
+        second = run_sweep(
+            nodes=30,
+            average_degree=4.0,
+            hop_limits=[2],
+            relay_fanouts=[2],
+            runs=3,
+            candidate_limit=2,
+            responder_fraction=0.1,
+            seed_base=50,
+        )
+        self.assertEqual(first, second)
+
+
 if __name__ == "__main__":
     unittest.main()

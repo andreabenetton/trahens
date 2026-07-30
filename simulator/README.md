@@ -45,3 +45,11 @@ PYTHONPATH=simulator python -m unittest discover -s simulator/tests -v
 4. Churn and route teardown.
 5. Malicious fan-out, replay, selective forwarding, and state exhaustion.
 6. Padding and correlation experiments for named privacy profiles.
+
+## Parameter sweep
+
+```bash
+make sweep
+```
+
+The default sweep writes `reports/iteration-0002-sweep.csv`. It compares candidate success, graph coverage, transmissions, duplicates, amplification, and candidate count over multiple deterministic seeds.

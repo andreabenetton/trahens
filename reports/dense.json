@@ -1,0 +1,114 @@
+{
+  "parameters": {
+    "average_degree": 12.0,
+    "candidate_limit": 8,
+    "hop_limit": 5,
+    "initial_fanout": 6,
+    "nodes": 500,
+    "origin": 0,
+    "relay_fanout": 4,
+    "responder_fraction": 0.02,
+    "seed": 17
+  },
+  "result": {
+    "accepted_nodes": 456,
+    "candidate_count": 8,
+    "candidates": [
+      {
+        "hop_count": 3,
+        "path": [
+          0,
+          11,
+          434,
+          1
+        ],
+        "responder": 1
+      },
+      {
+        "hop_count": 3,
+        "path": [
+          0,
+          323,
+          155,
+          14
+        ],
+        "responder": 14
+      },
+      {
+        "hop_count": 4,
+        "path": [
+          0,
+          271,
+          328,
+          230,
+          481
+        ],
+        "responder": 481
+      },
+      {
+        "hop_count": 4,
+        "path": [
+          0,
+          11,
+          499,
+          269,
+          256
+        ],
+        "responder": 256
+      },
+      {
+        "hop_count": 4,
+        "path": [
+          0,
+          321,
+          252,
+          126,
+          210
+        ],
+        "responder": 210
+      },
+      {
+        "hop_count": 4,
+        "path": [
+          0,
+          323,
+          127,
+          211,
+          497
+        ],
+        "responder": 497
+      },
+      {
+        "hop_count": 4,
+        "path": [
+          0,
+          36,
+          292,
+          461,
+          287
+        ],
+        "responder": 287
+      },
+      {
+        "hop_count": 5,
+        "path": [
+          0,
+          271,
+          41,
+          91,
+          190,
+          460
+        ],
+        "responder": 460
+      }
+    ],
+    "discover_transmissions": 1154,
+    "discovery_state_entries": 456,
+    "duplicate_deliveries": 698,
+    "edge_count": 3000,
+    "max_depth": 5,
+    "node_count": 500,
+    "replay_cache_entries": 698,
+    "transmission_amplification": 2.530701754385965
+  }
+}

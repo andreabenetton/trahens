@@ -1,0 +1,66 @@
+{
+  "parameters": {
+    "average_degree": 4.0,
+    "candidate_limit": 4,
+    "hop_limit": 4,
+    "initial_fanout": 4,
+    "nodes": 100,
+    "origin": 0,
+    "relay_fanout": 3,
+    "responder_fraction": 0.05,
+    "seed": 1
+  },
+  "result": {
+    "accepted_nodes": 64,
+    "candidate_count": 4,
+    "candidates": [
+      {
+        "hop_count": 1,
+        "path": [
+          0,
+          73
+        ],
+        "responder": 73
+      },
+      {
+        "hop_count": 3,
+        "path": [
+          0,
+          73,
+          56,
+          25
+        ],
+        "responder": 25
+      },
+      {
+        "hop_count": 3,
+        "path": [
+          0,
+          96,
+          21,
+          70
+        ],
+        "responder": 70
+      },
+      {
+        "hop_count": 4,
+        "path": [
+          0,
+          68,
+          72,
+          41,
+          47
+        ],
+        "responder": 47
+      }
+    ],
+    "discover_transmissions": 89,
+    "discovery_state_entries": 64,
+    "duplicate_deliveries": 25,
+    "edge_count": 200,
+    "max_depth": 4,
+    "node_count": 100,
+    "replay_cache_entries": 25,
+    "transmission_amplification": 1.390625
+  }
+}
