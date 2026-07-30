@@ -1,24 +1,22 @@
 # Design traceability
 
-| Earlier concept | Current treatment | Active location |
+| Earlier concern or mechanism | Current treatment | Authoritative artifact |
 |---|---|---|
-| Broad local flooding | Bounded initiator-local expanding rings | `spec/core-v1.1.md` |
-| Stable discovery context | Removed from the wire; peer-bound branch contexts only | U1, `spec/invariants-v1.1.md` |
-| Forward endpoint selector | Removed from active DISCOVER; replaced by non-semantic R1 nonce | `spec/rendezvous-capability-r1.md` |
-| Endpoint discovery ciphertext | Retained only in disabled/research C1 and C2 providers | `spec/eligibility-suite-interface-v1.md` |
-| Gateway or responder discovery | Generic rendezvous gateway candidates with protected short-lived pseudonyms | `spec/core-v1.1.md` |
-| Endpoint connection after discovery | Post-READY single-use capability redemption | `spec/rendezvous-capability-r1.md` |
-| Reverse acknowledgement | Nested CANDIDATE return installing tentative state | `spec/messages-v1.1.md` |
-| Final route acknowledgement | Split into COMMIT and READY | `spec/state-machines-v1.1.md` |
-| Directional labels | Peer-, direction-, epoch-, generation-, and deadline-bound random capabilities | `spec/invariants-v1.1.md` |
+| Stable discovery identifier | Removed; branch-local capabilities and replacement nonces | `spec/unlinkability-profile-u1.md`, `spec/rendezvous-capability-r1.md` |
+| Endpoint selector in exploration | Removed from active DISCOVER; capability used only after READY | `spec/rendezvous-capability-r1.md` |
+| Implicit route activation | Tentative CANDIDATE, outward COMMIT, inward READY | `spec/state-machines-v1.2.md` |
+| Directional labels | Peer-, direction-, epoch-, generation-, and deadline-bound random capabilities | `spec/invariants-v1.2.md` |
 | Deterministic child-key derivation | Additive `ristretto255` reply-key chain and nested return capsule | `spec/crypto-profile-c1.md` |
-| One fixed logical record | Canonical variable-length M2 message carried in fixed W2 cells | `spec/message-codec-m2.md`, `spec/wire-cell-w2.md` |
-| Padding inside semantic message | Removed; padding belongs to encrypted W2 cells | M2/W2 specs |
-| Best-effort cleanup only | Independent local expiry plus advisory CANCEL/ABORT/CLOSE | E1 and v1.0 state machines |
-| Unbounded convergence state | Explicit per-peer/global branch and reassembly budgets | `spec/resource-accounting-v1.1.md` |
-| Implicit directory | Explicitly separate private descriptor profile, not yet specified | R1 limitations and roadmap |
-| Unqualified unlinkability | Structural, batch-local, active-tag, directory, and traffic claims separated | `docs/threat-model.md`, paper |
-
+| One fixed logical record | Canonical variable-length M2 message carried in fixed W2/T1/T2 cells | `spec/message-codec-m2.md`, `spec/wire-cell-w2.md` |
+| Padding inside semantic message | Removed; padding belongs to encrypted adjacent-link cells | M2/W2/T1 specifications |
+| Best-effort cleanup only | Independent local expiry plus advisory CANCEL/ABORT/CLOSE | E1 and v1.2 state machines |
+| Unbounded convergence state | Explicit per-peer/global branch, reassembly, queue, and timer budgets | `spec/resource-accounting-v1.2.md` |
 | Fragment loss | Hop-local cumulative selective ACK and bounded missing-fragment recovery | `spec/transport-profile-t1.md` |
-| Retry equality | Fresh sequence, padding, authentication tag, and ciphertext per emission | `spec/transport-profile-t1.md`, `spec/invariants-v1.1.md` |
-| Fragment burst and idle leakage | Fixed directed slots with encrypted DATA/ACK/CHAFF class and explicit residual leakage | `spec/transport-profile-t1.md` |
+| Retry equality | Fresh sequence, padding, authentication tag, and ciphertext per emission | T1 and v1.2 invariants |
+| Fixed cadence under overload | Quantized rate classes, admission, and fail-closed maximum-class behavior | `spec/transport-profile-t2.md` |
+| FIFO or equal-flow service | Weighted deficit round robin over fixed-size DATA cells | T2 and ADR-0028 |
+| Hidden adaptive rate | Rejected; public class sequence is explicit leakage | T2 privacy boundary and paper |
+| Loss modeled only as independent | Added two-state Gilbert-Elliott stress baseline | T2 reports |
+| Single-link trace claim extrapolated globally | Prohibited; multi-link correlation measured separately | T2 report and threat model |
+| Implicit directory | Separate private descriptor profile remains open | R1 limitations and roadmap |
+| Unqualified unlinkability | Structural, batch-local, active-tag, directory, fixed-schedule, adaptive-rate, and global-traffic claims separated | threat model and paper |

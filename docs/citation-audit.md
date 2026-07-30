@@ -114,6 +114,36 @@ Used for: acknowledgement-based loss detection, acknowledgement delay, timer/pro
 
 TARANET and Loopix, listed above, are also cited at the scheduler discussion. They motivate constant-rate shaping and stochastic mixing/cover-traffic comparisons respectively; neither result is attributed to T1.
 
+### RFC5681
+
+Mark Allman, Vern Paxson, and Ethan Blanton, **“TCP Congestion Control,”** RFC 5681, September 2009.
+
+Used for: the general requirement that a sender bound injected traffic and avoid inappropriate bursts under uncertain path capacity. T2 is adjacent-link, cell-based, and quantized; it is not TCP and does not copy TCP congestion-window semantics.
+
+### ShreedharVarghese1995
+
+M. Shreedhar and George Varghese, **“Efficient Fair Queueing Using Deficit Round Robin,”** ACM SIGCOMM 1995, pp. 231-242, DOI `10.1145/217382.217453`.
+
+Used for: the deficit-round-robin service structure. T2 specializes it to equal-size encrypted cells and local policy weights.
+
+### JainChiuHawe1984
+
+Raj Jain, Dah-Ming Chiu, and William Hawe, **“A Quantitative Measure of Fairness and Discrimination for Resource Allocation in Shared Computer Systems,”** DEC Research Report TR-301, September 1984.
+
+Used for: the normalized throughput fairness index reported in the T2 model.
+
+### Gilbert1960 and Elliott1963
+
+E. N. Gilbert, **“Capacity of a Burst-Noise Channel,”** Bell System Technical Journal, vol. 39, no. 5, 1960, pp. 1253-1265, DOI `10.1002/j.1538-7305.1960.tb03959.x`; and E. O. Elliott, **“Estimates of Error Rates for Codes on Burst-Noise Channels,”** Bell System Technical Journal, vol. 42, no. 5, 1963, pp. 1977-1997, DOI `10.1002/j.1538-7305.1963.tb00955.x`.
+
+Used for: the two-state burst-loss stress model. The repository does not claim that this model describes any particular deployment.
+
+### JuarezEtAl2016
+
+Marc Juarez, Mohsen Imani, Mike Perry, Claudia Diaz, and Matthew Wright, **“Toward an Efficient Website Fingerprinting Defense,”** ESORICS 2016, LNCS 9878, pp. 27-46, DOI `10.1007/978-3-319-45744-4_2`.
+
+Used for: the caution that adaptive padding and release policies remain classifier- and workload-dependent and may retain fingerprints. T2 therefore treats adaptive rate changes as observable evidence rather than claiming activity hiding.
+
 ## Standards and retained primitives
 
 - RFC 2119 and RFC 8174: normative requirement language.
@@ -132,7 +162,9 @@ The following are not attributed to external papers:
 - the C1 ratio-tag implementation and integrated regression result;
 - the exact finite-field counterexample and exhaustive small-chain checker;
 - M2/W2 encodings, fragmentation, reassembly, and route lifecycle;
-- T1 DATA/ACK/CHAFF framing, adjacent-link transmission identifiers, bounded selective recovery, retry ciphertext vectors, and scheduler algorithms;
-- the fixed-schedule active/empty trace-equivalence experiment and all simulator performance, bandwidth, and cleanup measurements.
+- T1 DATA/ACK/CHAFF framing, adjacent-link transmission identifiers, bounded selective recovery, and retry ciphertext vectors;
+- T2 SCHEDULE framing, finite rate menus, hysteresis, weighted equal-cell service, admission, and overload rules;
+- fixed/adaptive/work-conserving congestion, leakage, burst-loss, fairness, and multi-link correlation measurements;
+- all simulator performance, bandwidth, queue, delay, and cleanup measurements.
 
 Each such result is accompanied by executable artifacts or tests. None is described as a cryptographic proof.

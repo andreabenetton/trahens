@@ -6,60 +6,68 @@ Develop Trahens as a falsifiable privacy-preserving route-discovery protocol and
 
 ## Active architecture
 
-Core v1.1 binds U1, E1, R1, M2, W2, and T1.
+Core v1.2 binds U1, E1, R1, M2, W2, T1, and T2.
 
 - U1 replaces branch-local capabilities and representations at each honest relay.
 - E1 defines deterministic state transitions, half-open deadlines, candidate windows, COMMIT, READY, cancellation, and cleanup.
 - R1 discovers generic rendezvous gateways and presents a one-time endpoint capability only after READY.
 - M2 defines canonical variable-length logical messages.
 - W2 defines canonical fragmentation and the fixed 1,052-byte adjacent-link record.
-- T1 adds encrypted selective ACKs, bounded retries, fresh retry ciphertexts, round-robin fragment interleaving, and fixed-schedule or work-conserving release.
+- T1 adds encrypted selective ACKs, bounded retries, fresh retry ciphertexts, and fragment interleaving.
+- T2 defines fixed and quantized-adaptive epochs, encrypted schedule negotiation, weighted fair service, bounded queues, overload rejection, and explicit rate-trace leakage.
 
 R1 is Gate B of the cryptographic decision. The active protocol no longer depends on receiver-anonymous universal rerandomization. C1, symbolic C2, and the C2 k=2 transcription remain research providers and mandatory negative or composition controls.
 
 ## Design principles
 
-1. **No endpoint selector in active discovery.** The raw capability, commitment, endpoint key, address, gateway pseudonym, and endpoint handle are prohibited from DISCOVER.
+1. **No endpoint selector in active discovery.** Raw capability, commitment, endpoint key, address, gateway pseudonym, and endpoint handle are prohibited from DISCOVER.
 2. **Transform every branch-local handle.** Tokens, query nonces, reply keys, message identifiers, padding, and link ciphertexts are replaced for each child.
-3. **Separate messages from transport.** M2 is semantic and variable length; W2 defines canonical fragments; T1 defines DATA, ACK, CHAFF, recovery, and release scheduling.
+3. **Separate messages, recovery, and release.** M2 is semantic; W2 fragments; T1 repairs; T2 decides bounded service and public cadence.
 4. **Separate route activation from rendezvous.** CANDIDATE is tentative, COMMIT reserves, READY activates, and only then may RENDEZVOUS_OPEN carry the capability.
-5. **Make trust boundaries explicit.** R1 requires a directory and gateways; private lookup and operator separation are separate profiles.
+5. **Make trust and observation boundaries explicit.** R1 requires a directory and gateways; T2 exposes public rate class and epoch boundaries.
 6. **Keep counterexamples executable.** C1 and the C2 audit remain reproducible and fail closed.
-7. **Bound every resource.** Cells, bytes, fragments, ACKs, retries, RTO timers, schedule slots, CHAFF, contexts, branches, candidates, queues, work, registrations, and failed redemptions have finite limits.
-8. **Normalize failure behavior.** Invalid capability, suite, message, cell, route, signature, and reassembly failures must not become detailed oracles.
-9. **Block production claims.** Reference code and deterministic simulations are not independent cryptographic or operational validation.
+7. **Bound every resource.** Cells, bytes, fragments, ACKs, retries, timers, schedule controls, CHAFF, queues, deficits, contexts, branches, registrations, and failed redemptions have finite limits.
+8. **Normalize failure behavior.** Invalid capability, suite, message, cell, route, signature, reassembly, and schedule negotiation failures must not become detailed remote oracles.
+9. **Do not turn adaptation into an anonymity claim.** Adaptive scheduling is an efficiency/congestion mechanism whose public class sequence is treated as leakage.
+10. **Block production claims.** Reference code and deterministic simulations are not independent cryptographic, transport, or operational validation.
 
 ## Current evidence
 
-The R1 event model erases an upstream literal nonce marker at the first honest replacement. The correct capability redeems once, while replay, expiry, wrong gateway, all-zero input, and duplicate registration fail. The raw capability is absent from encoded DISCOVER bytes.
+R1 erases an upstream literal nonce marker at the first honest replacement. The correct capability redeems once, while replay, expiry, wrong gateway, all-zero input, and duplicate registration fail. The raw capability is absent from encoded DISCOVER bytes.
 
-The C1 negative control still carries a persistent algebraic ratio relation through an honest rerandomizing relay. The symbolic C2 control rejects a non-replay-equivalent mutation before an honest relay emits a child. The C2 k=2 audit reproduces the source equations that are executable and demonstrates that the literal finite-field reduction is not multiplicative over the tested small chains.
+T1 recovers missing adjacent-link fragments with finite selective acknowledgements and retries. T2 demonstrates deterministic overload, weighted sharing, finite rate transitions, and the cost/leakage distinction between fixed, adaptive, and work-conserving release. Under the current equal-overload model, adaptive scheduling delivered all admitted work with substantially less CHAFF than fixed-high service, but its public rate sequence permitted perfect classification by the deliberately simple rate-presence observer.
+
+The C1 negative control still carries a persistent algebraic ratio relation through an honest rerandomizing relay. The symbolic C2 control rejects a non-replay-equivalent mutation before an honest relay emits a child. The C2 k=2 audit reproduces executable source equations and demonstrates that the literal finite-field reduction is not multiplicative over tested small chains.
 
 ## Workstreams
 
 ### A. Private descriptor distribution
 
-Specify how descriptors are authenticated, privately queried, replicated, rotated, revoked, and protected from enumeration. Define what the directory learns and how gateway pseudonyms are selected.
+Specify authentication, private query, replication, rotation, revocation, enumeration resistance, and what the directory learns.
 
 ### B. Gateway trust reduction
 
-Evaluate multiple gateways, short epochs, operator separation, threshold registration, auditable selective denial, and end-to-end authentication that limits a stolen capability race.
+Evaluate multiple gateways, short epochs, operator separation, threshold registration, auditable selective denial, and endpoint authentication limiting a stolen-capability race.
 
-### C. Reliability
+### C. Recovery and correlated loss
 
-T1 now provides bounded cumulative selective ACKs, RTO backoff, missing-fragment retransmission, fresh retry ciphertexts, and finite completion caches. The next reliability work is congestion interaction, schedule-capacity failure, forward error correction, and adversarial ACK behavior.
+Extend T1 with adversarial ACK behavior, schedule-control loss, bounded redundancy, and queue-aware deadlines. Compare retransmission and erasure coding under correlated loss.
 
-### D. Traffic scheduling
+### D. Congestion and adaptive schedules
 
-T1 fixed-schedule mode defines round-robin fragment interleaving and CHAFF-filled slots. The current claim is only link-local schedule-shape equivalence inside a pre-existing non-overflowing epoch. Next work must evaluate schedule establishment, adaptive rates, randomized release, congestion, and global cross-link classifiers before any traffic-flow claim.
+Complete T2 negotiation under loss, simultaneous offers, restart, and peer disagreement. Evaluate randomized or privacy-budgeted adaptation. Treat rate changes as observable until a formal privacy mechanism and classifier study justify a narrower claim.
 
-### E. Independent interoperability
+### E. Multi-link traffic analysis
 
-Implement M2/W2 and E1 independently, exchange conformance corpora, fuzz malformed inputs, and verify that both implementations produce identical acceptance and rejection behavior.
+Model heterogeneous propagation delay, clock noise, variable traffic, route churn, shared bottlenecks, and colluding observers. Measure timing and count classifiers instead of inferring privacy from equal record sizes.
 
-### F. Retained cryptography
+### F. Independent interoperability
 
-Review the additive reply-key transform, custom KEM, nested candidate chain, transcript binding, and failure timing. Preserve the C2 author query and exhaustive checker; reopen endpoint-specific eligibility only after a corrected construction is independently reviewed.
+Implement M2/W2/T1/T2 independently, exchange conformance corpora, fuzz malformed inputs, and verify identical acceptance, rejection, recovery, and scheduling behavior.
+
+### G. Retained cryptography
+
+Review the additive reply-key transform, custom KEM, nested candidate chain, transcript binding, and failure timing. Preserve the C2 author query and exhaustive checker; reopen endpoint-specific eligibility only after independent review.
 
 ## Completion gates
 
@@ -67,22 +75,23 @@ Review the additive reply-key transform, custom KEM, nested candidate chain, tra
 
 - descriptor queries have a specified privacy goal and adversary;
 - descriptors are authenticated, finite, rotatable, and revocable;
-- directory and gateway collusion leakage is quantified;
+- directory/gateway collusion leakage is quantified;
 - abuse and replication limits are defined.
 
-### Gate T1-reliability
+### Gate T2-transport
 
-- bounded recovery improves multi-cell success; **baseline passed**;
-- retransmission creates no stable cross-hop handle; **specified and tested**;
-- retries, acknowledgements, queues, timers, and buffers have hard limits; **specified and tested**;
-- loss, duplication, retry exhaustion, deep fragmentation, and trace shape are tested; **baseline passed**;
-- congestion-aware overload and independent implementation remain open.
+- recovery, queue, negotiation, and retry state are finite; **baseline passed**;
+- rate transitions are quantized and boundary-aligned; **baseline passed**;
+- fair service under sustained backlogs is measured; **baseline passed**;
+- fixed and adaptive privacy claims are separated; **baseline passed**;
+- schedule-control loss, conflict, restart, and independent implementation remain open;
+- realistic multi-link classifier evaluation remains open.
 
 ### Gate I1-interoperability
 
 - two independent codecs and state machines agree;
-- fuzzing covers message, cell, reassembly, candidate, and capability paths;
+- fuzzing covers message, cell, reassembly, recovery, schedule, candidate, and capability paths;
 - all tracked vectors reproduce;
 - externally observable failure classes match.
 
-Only after these gates should the project attempt a wider overlay deployment or traffic-privacy claim.
+Only after these gates should the project attempt a wider overlay deployment or traffic-flow privacy claim.

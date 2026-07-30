@@ -50,7 +50,7 @@
   citecolor=accent,
   pdftitle={Trahens: A Privacy-Enabled Route Discovery Protocol},
   pdfauthor={Andrea Benetton},
-  pdfsubject={Current Trahens protocol draft with U1, E1, R1, M2, W2, and T1 profiles}
+  pdfsubject={Current Trahens protocol draft with U1, E1, R1, M2, W2, T1, and T2 profiles}
 }
 
 \setstretch{1.045}
@@ -99,6 +99,7 @@
 \newcommand{\Mtwo}{\ensuremath{\mathsf{M2}}}
 \newcommand{\Wtwo}{\ensuremath{\mathsf{W2}}}
 \newcommand{\Tone}{\ensuremath{\mathsf{T1}}}
+\newcommand{\Ttwo}{\ensuremath{\mathsf{T2}}}
 \newcommand{\bytes}[1]{\langle #1\rangle}
 \newcommand{\code}[1]{\texttt{#1}}
 
@@ -132,7 +133,7 @@
 \vspace{-1.0em}
 
 \begin{statusbox}
-\textbf{Document status.} This document specifies one current experimental protocol. Its active profiles are \Uone{} branch-local representation replacement, \Eone{} deterministic route-state lifecycle, \Rone{} rendezvous-capability discovery, \Mtwo{} canonical variable-length logical messages, \Wtwo{} canonical fragmentation over fixed-size encrypted adjacent-link cells, and \Tone{} bounded hop-local recovery with an optional fixed-rate cell schedule. Endpoint-specific material is absent from forward discovery. A short-lived, single-use rendezvous capability is presented only after an authenticated route to an acceptable gateway has reached \textsc{Ready}. Earlier universal-rerandomization constructions are retained solely as research controls: one demonstrates a persistent algebraic tag, one is an ideal functionality, and one concrete transcription remains disabled after a reproducible algebraic inconsistency. The protocol is a research specification, not a production anonymity system.
+\textbf{Document status.} This document specifies one current experimental protocol. Its active profiles are \Uone{} branch-local representation replacement, \Eone{} deterministic route-state lifecycle, \Rone{} rendezvous-capability discovery, \Mtwo{} canonical variable-length logical messages, \Wtwo{} canonical fragmentation over fixed-size encrypted adjacent-link cells, \Tone{} bounded hop-local recovery, and \Ttwo{} fixed or quantized-adaptive adjacent-link scheduling. Endpoint-specific material is absent from forward discovery. A short-lived, single-use rendezvous capability is presented only after an authenticated route to an acceptable gateway has reached \textsc{Ready}. The adaptive schedule is an efficiency and overload mechanism whose public rate class is explicitly treated as leakage. Universal-rerandomization constructions are retained solely as research controls: one demonstrates a persistent algebraic tag, one is an ideal functionality, and one concrete transcription remains disabled after a reproducible algebraic inconsistency. The protocol is a research specification, not a production anonymity system.
 \end{statusbox}
 
 \begin{abstract}
@@ -140,11 +141,13 @@ Route discovery can reveal endpoint relationships, local topology, and stable co
 
 The active design separates endpoint rendezvous from route discovery. A destination creates random, short-lived, single-use capabilities and registers their commitments at selected rendezvous gateways. An initiator privately obtains a descriptor containing the capability and acceptable short-lived gateway pseudonyms. Forward \textsc{Discover} messages contain only a non-semantic service-query nonce. Every honest relay replaces that nonce, the adjacent branch token, the reply public key, the logical-message representation, the link-local transmission identifier, the padding, and the link ciphertext. A gateway returns its pseudonym inside an authenticated end-to-end candidate. The initiator selects a candidate, completes \textsc{Commit} and \textsc{Ready}, and only then sends the rendezvous capability through the active route. Atomic redemption prevents a second successful use.
 
-The protocol binds six profiles. \Uone{} defines per-hop replacement and conditional batch-local unlinkability. \Eone{} defines half-open deadlines, equal-time precedence, candidate windows, delayed responses, cancellation races, tentative state, \textsc{Commit}, \textsc{Ready}, and local expiry. \Rone{} specifies descriptor distribution assumptions, generic gateway discovery, post-activation redemption, and explicit trust boundaries. \Mtwo{} gives each logical control operation one canonical variable-length encoding without semantic padding. \Wtwo{} defines canonical fragmentation into payloads of at most 992 bytes and bounded out-of-order reassembly. \Tone{} places those fragments in fixed 1,052-byte authenticated \textsc{Data}, \textsc{Ack}, or \textsc{Chaff} cells, applies cumulative selective acknowledgements, estimates a bounded hop-local retransmission timer, retransmits only missing fragments with fresh link ciphertexts, and optionally emits one cell per declared directional slot.
+The protocol binds seven profiles. \Uone{} defines per-hop replacement and conditional batch-local unlinkability. \Eone{} defines half-open deadlines, equal-time precedence, candidate windows, delayed responses, cancellation races, tentative state, \textsc{Commit}, \textsc{Ready}, and local expiry. \Rone{} specifies descriptor distribution assumptions, generic gateway discovery, post-activation redemption, and explicit trust boundaries. \Mtwo{} gives each logical control operation one canonical variable-length encoding without semantic padding. \Wtwo{} defines canonical fragmentation into payloads of at most 992 bytes and bounded out-of-order reassembly. \Tone{} places those fragments in fixed 1,052-byte authenticated \textsc{Data}, \textsc{Ack}, or \textsc{Chaff} cells, applies cumulative selective acknowledgements, estimates a bounded hop-local retransmission timer, and retransmits only missing fragments with fresh link ciphertexts. \Ttwo{} defines fixed, quantized-adaptive, and work-conserving release modes, encrypted schedule negotiation, finite rate menus, hysteresis, weighted deficit-round-robin service, and fail-closed overload behavior.
 
-The retained reply path uses independent first-hop reply keys, additive relay tweaks over the Ristretto255 group, nested ChaCha20-Poly1305 encryption, Ed25519 candidate authentication, and domain-separated HKDF-SHA-256. Deterministic experiments show that bounded selective recovery materially improves route activation under independent cell loss. Across 30 runs per configuration, both evaluated \Tone{} modes activated every route up to twelve hops at loss rates of two and five percent; at twelve hops and ten percent loss, selective recovery activated 96.7 percent and fixed scheduling 93.3 percent, while unrecovered delivery activated none. A separate fixed-schedule experiment emitted the same per-direction cell count and zero inter-arrival variation for active and empty epochs. This is a narrow link-local schedule-shape result; it is not a proof of traffic-flow unlinkability and incurs substantial chaff overhead.
+The retained reply path uses independent first-hop reply keys, additive relay tweaks over the Ristretto255 group, nested ChaCha20-Poly1305 encryption, Ed25519 candidate authentication, and domain-separated HKDF-SHA-256. Deterministic experiments show that bounded selective recovery materially improves route activation under independent cell loss. Across 30 runs per configuration, both evaluated \Tone{} modes activated every route up to twelve hops at loss rates of two and five percent; at twelve hops and ten percent loss, selective recovery activated 96.7 percent and fixed scheduling 93.3 percent, while unrecovered delivery activated none.
 
-The paper also audits receiver-anonymous rerandomizable RCCA encryption and an updatable/randomizable public-key encryption proposal, with citations at the points where their results are used. Neither supplies an enabled endpoint-specific discovery primitive. The resulting protocol does not claim private directory lookup, protection from a colluding directory and gateway, global traffic-flow unlinkability, congestion safety, post-quantum security, or production readiness. Its purpose is to provide a coherent, testable baseline whose security claims, failures, recovery limits, bandwidth costs, and external dependencies are explicit.
+The \Ttwo{} model makes the scheduling trade-off explicit. Under equal overload, a low fixed class dropped 15 percent of offered work; a high fixed class delivered all work but emitted 1,600 chaff cells; and hysteretic adaptation delivered all work with a peak queue of 98 cells and 370 chaff cells. A simple observer distinguishing traces by public rate class had zero advantage against the evaluated fixed-high active/idle pair and perfect advantage against both evaluated adaptive policies. Fixed scheduling therefore retains only a conditional link-local slot-shape property; adaptive scheduling makes no activity-presence claim.
+
+The paper also audits receiver-anonymous rerandomizable RCCA encryption and an updatable/randomizable public-key encryption proposal, with citations at the points where their results are used. Neither supplies an enabled endpoint-specific discovery primitive. The resulting protocol does not claim private directory lookup, protection from a colluding directory and gateway, global traffic-flow unlinkability, end-to-end congestion control, post-quantum security, or production readiness. Its purpose is to provide a coherent, testable baseline whose security claims, failures, recovery limits, queue behavior, bandwidth costs, and external dependencies are explicit.
 \end{abstract}
 \linenumbers
 \modulolinenumbers[5]
@@ -252,7 +255,7 @@ The adversary cannot forge uncompromised adjacent-link authentication or break t
 \subsection{Claim classes}
 
 \begin{definition}[Per-cell length equality]
-Every \Tone{} transmission has the same complete length independently of frame class, logical message type, fragment position, protected-body length, retry status, or chaff status.
+Every active \Tone{}/\Ttwo{} transmission has the same complete length independently of frame class, logical message type, fragment position, protected-body length, retry status, or chaff status.
 \end{definition}
 
 \begin{definition}[Endpoint-independent forward field]
@@ -272,7 +275,7 @@ Every accepted event causes one deterministic state transition or rejection; eve
 \end{definition}
 
 \begin{definition}[Fixed-schedule trace shape]
-During a pre-existing schedule epoch with origin $T_0$, slot interval $\Delta$, finite end time, and no declared overload transition, one cell is emitted in each directed slot independently of whether the selected encrypted frame is \textsc{Data}, \textsc{Ack}, or \textsc{Chaff}.
+During a pre-existing schedule epoch with origin $T_0$, slot interval $\Delta$, finite end time, and no declared overload transition, one cell is emitted in each directed slot independently of whether the selected encrypted frame is \textsc{Data}, \textsc{Ack}, \textsc{Schedule}, or \textsc{Chaff}.
 \end{definition}
 
 \begin{definition}[Traffic-flow unlinkability]
@@ -287,12 +290,13 @@ An observer cannot correlate endpoints from direction, timing, volume, cell coun
 \toprule
 Property & Status & Basis or missing dependency \\
 \midrule
-Fixed cell length & Specified and tested & Every \Tone{} record is 1,052 bytes. \\
+Fixed cell length & Specified and tested & Every active \Tone{}/\Ttwo{} record is 1,052 bytes. \\
 Canonical message encoding & Specified and tested & Minimal lengths, exact containment, no trailing bytes, deterministic fragmentation. \\
 Endpoint-independent \textsc{Discover} field & Specified and tested & The \Rone{} service-query nonce is random, non-semantic, and replaced at every honest child transform. \\
 Passive structural unlinkability & Structural claim & Per-hop replacement of branch tokens, nonces, reply keys, transmission identifiers, padding, and link ciphertext. \\
 Hop-local loss recovery & Model-supported claim & Cumulative selective ACKs, bounded retries, finite cleanup, and fresh ciphertext for every emission. \\
 Fixed-schedule trace shape & Conditional model-supported claim & Same slot times, cell lengths, and per-direction counts during a pre-existing non-overloaded schedule epoch. \\
+Adaptive-rate activity hiding & Not claimed & Public rate classes and transition times are traffic-dependent in the evaluated adaptive profiles. \\
 Batch-local unlinkability & Conditional claim & Requires an honest transform and a declared mixing/scheduling and anonymity-set treatment. \\
 Lifecycle correctness & Model-supported claim & \Eone{} transitions, deadlines, and zero residual state in evaluated runs. \\
 Capability replay resistance & Model-supported claim & Atomic, single-use redemption with finite expiry. \\
@@ -318,10 +322,11 @@ The protocol binds the following profiles:
   \item \Rone{}: generic gateway discovery followed by one-time endpoint-capability redemption;
   \item \Mtwo{}: canonical variable-length logical messages without semantic padding;
   \item \Wtwo{}: canonical fragmentation, fixed payload bounds, and bounded reassembly;
-  \item \Tone{}: fixed-size encrypted \textsc{Data}, \textsc{Ack}, and \textsc{Chaff} cells, hop-local selective recovery, and release scheduling.
+  \item \Tone{}: fixed-size encrypted \textsc{Data}, \textsc{Ack}, and \textsc{Chaff} cells with hop-local selective recovery;
+  \item \Ttwo{}: fixed or quantized-adaptive epochs, encrypted \textsc{Schedule} control, weighted service, and bounded overload behavior.
 \end{itemize}
 
-The profiles are composed rather than substituted for one another. \Rone{} removes endpoint-specific material from forward discovery; \Uone{} replaces branch-local representations; \Mtwo{} defines semantic encoding; \Wtwo{} defines fragmentation and reassembly; \Tone{} defines link-local recovery and scheduling; and \Eone{} defines route-state evolution.
+The profiles are composed rather than substituted for one another. \Rone{} removes endpoint-specific material from forward discovery; \Uone{} replaces branch-local representations; \Mtwo{} defines semantic encoding; \Wtwo{} defines fragmentation and reassembly; \Tone{} defines link-local recovery; \Ttwo{} defines service and public cadence; and \Eone{} defines route-state evolution.
 
 \subsection{Principal notation}
 
@@ -360,7 +365,10 @@ $q(M)$ & cell count & $\lceil |M|/992\rceil$, bounded by 17. \\
 $R[\ell,\mu]$ & reassembly & Context for authenticated link scope $\ell$ and local identifier $\mu$. \\
 $z$ & T1 transmission & Fresh non-zero 128-bit identifier scoped to one directed link epoch and one \Mtwo{} message. \\
 $A$ & acknowledgement & Cumulative 32-bit bitmap; bit $i$ acknowledges canonical fragment $i$. \\
-$\Delta$ & schedule & Interval between two directed fixed-schedule slots. \\
+$\Delta$ & schedule & Duration or slot interval of a directed schedule epoch. \\
+$\mathcal{R},c_e$ & T2 schedule & Finite public rate menu and class active in epoch $e$. \\
+$Q_e,\rho_e$ & T2 pressure & Queued DATA work and bounded local queue-pressure signal. \\
+$w_f,d_f$ & T2 service & Local weight and deficit for a backlogged transmission class. \\
 $\widehat R,V_R$ & timer estimate & Smoothed round-trip time and round-trip variation. \\
 $RTO$ & timer & Bounded hop-local retransmission timeout. \\
 $[t_c,t_e)$ & lifetime & Half-open local validity interval. \\
@@ -383,6 +391,7 @@ Gateway pseudonym $\pi_G$ & Short descriptor epoch & Directory, gateway, authori
 Signing key $(sk_G,vk_G)$ & Descriptor epoch or shorter & Gateway; descriptor authenticates $vk_G$ & Link encryption or reply-key derivation. \\
 Reply key $(x_i,X_i)$ & One branch setup & Initiator eventually; public value on one hop & Another first-hop branch or logical discovery. \\
 T1 identifier $z$ & One M2 transmission on one directed link epoch & Adjacent peers only & Another link, forwarded message, or unrelated transmission. \\
+T2 negotiation ID & One proposed adjacent-link class transition & Adjacent peers only & Another link, later unrelated proposal, or routed message. \\
 Link traffic key & One directional link epoch & Adjacent peers & End-to-end responder authentication. \\
 \bottomrule
 \end{tabularx}
@@ -893,6 +902,173 @@ The public sequence number is subject to a non-mutating preliminary replay check
 
 A conforming deployment specifies finite values for schedule-epoch length and rate; sender transmissions and bytes per peer and node; queued new and retry fragments; pending ACKs; receiver contexts and reserved bytes; ACK delay; minimum, initial, and maximum $RTO$; recovery rounds and attempts per fragment; completion-cache lifetime; malformed-input work; and chaff bandwidth. Recovery and chaff are charged to the same physical-link and node-global budgets as first transmissions.
 
+\section{T2 congestion and quantized scheduling}
+\label{sec:t2}
+
+\subsection{Scope and design objective}
+
+\Ttwo{} binds the recovery mechanisms of \Tone{} to a finite adjacent-link service policy. Its purpose is not to reproduce an end-to-end transport controller. It determines how one authenticated directed link admits queued cells, divides service among concurrent local transmissions, reacts when offered load exceeds the current schedule, and states what the resulting public cadence reveals. The general requirement that a sender limit injected traffic and avoid inappropriate bursts under uncertain capacity is central to established congestion-control standards~\cite{rfc5681,rfc9002}; \Ttwo{} applies a deliberately smaller contract to equal-size cells on one adjacent link.
+
+The profile separates three questions that must not be conflated:
+\begin{enumerate}
+  \item \emph{recovery}: which missing fragment is sent again, as specified by \Tone{};
+  \item \emph{service}: which admitted cell receives the next available slot;
+  \item \emph{cadence}: how many public slots exist in an epoch.
+\end{enumerate}
+Recovery does not create capacity. Increasing cadence does not prove anonymity. Equal record length does not hide the number or timing of records.
+
+\subsection{Epochs, classes, and pressure}
+
+For one directed link, let
+\begin{equation}
+\mathcal{R}=(r_0,r_1,\ldots,r_K), \qquad 0<r_0<r_1<\cdots<r_K,
+\label{eq:ratemenu}
+\end{equation}
+be the finite public menu of cells per epoch. Epoch $e$ has duration $\Delta_e$, selected class $c_e\in\{0,\ldots,K\}$, and exactly $r_{c_e}$ physical slots in fixed or adaptive mode. The schedule may be fixed for a declared interval, quantized-adaptive across epochs, or work-conserving.
+
+\begin{table}[ht]
+\centering
+\caption{Principal \Ttwo{} notation}
+\label{tab:t2notation}
+\begin{tabularx}{\textwidth}{@{}p{0.16\textwidth}p{0.20\textwidth}X@{}}
+\toprule
+Symbol & Type and scope & Meaning \\
+\midrule
+$\Delta_e$ & time, link-local & Duration of schedule epoch $e$. \\
+$\mathcal{R}$ & finite public vector & Strictly increasing cells-per-epoch menu. \\
+$c_e$ & public class & Rate class active during epoch $e$. \\
+$Q_e$ & non-negative integer & Queued DATA work after service in epoch $e$. \\
+$\rho_e$ & $[0,1]$ & Bounded pressure $\min(Q_e/r_{c_e},1)$. \\
+$\theta_\uparrow,\theta_\downarrow$ & thresholds & High and low pressure thresholds, with $\theta_\downarrow<\theta_\uparrow$. \\
+$H_\uparrow,H_\downarrow,H_{\mathrm{hold}}$ & epoch counts & Consecutive-high, consecutive-low, and minimum-hold requirements. \\
+$w_f,d_f$ & local integers & Positive service weight and deficit counter for flow or transmission class $f$. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The pressure signal is intentionally local and bounded:
+\begin{equation}
+\rho_e=\min\!\left(\frac{Q_e}{r_{c_e}},1\right).
+\label{eq:t2pressure}
+\end{equation}
+It is not transmitted as a precise value. A peer observes the negotiated class and may infer coarse pressure from its transitions.
+
+\subsection{Encrypted schedule negotiation}
+
+\Ttwo{} adds one encrypted adjacent-link frame class, \textsc{Schedule}. It occupies the same 1,052-byte outer record as \textsc{Data}, \textsc{Ack}, and \textsc{Chaff}. The public header remains the directional link epoch and sequence. The encrypted common body identifies wire profile \code{04}, profile and suite identifiers, and frame type \code{03}. The type-specific fields are shown in \cref{tab:t2schedule}.
+
+\begin{table}[ht]
+\centering
+\caption{Encrypted \Ttwo{} \textsc{Schedule} fields}
+\label{tab:t2schedule}
+\begin{tabularx}{\textwidth}{@{}r r p{0.28\textwidth}X@{}}
+\toprule
+Offset & Bytes & Field & Requirement \\
+\midrule
+8--23 & 16 & negotiation identifier & Fresh, non-zero, and confined to one directed adjacent link. \\
+24--27 & 4 & effective epoch & Unsigned boundary at which an accepted transition takes effect. \\
+28 & 1 & current class & Sender's current canonical class. \\
+29 & 1 & requested class & Equal to or adjacent to the current class. \\
+30 & 1 & maximum class & Peer-advertised finite upper bound. \\
+31 & 1 & action & \textsc{Offer}, \textsc{Accept}, or \textsc{Reject}. \\
+32--1023 & 992 & protected padding & Fresh random bytes; no additional semantic fields. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+A transition is valid only when both peers authenticate matching \textsc{Offer} and \textsc{Accept} frames for the same negotiation identifier, requested class, and effective epoch. An unauthenticated, stale, conflicting, incomplete, or rejected negotiation leaves the next epoch at the current class. Negotiation identifiers, rate history, deficits, weights, and pressure measurements terminate at the adjacent relay and are never copied into an outgoing \Mtwo{} message.
+
+\subsection{Quantized adaptive rule}
+
+Adaptive mode updates two consecutive-pressure counters. Subject to a minimum hold interval, it may move by at most one class:
+
+\begin{algorithm}[ht]
+\caption{Quantized adaptive class proposal}
+\label{alg:t2adapt}
+\begin{algorithmic}[1]
+\Require current class $c_e$, pressure $\rho_e$, counters $h,\ell$, hold count $u$
+\If{$\rho_e\ge\theta_\uparrow$}
+  \State $h\gets h+1$; $\ell\gets0$
+\ElsIf{$\rho_e\le\theta_\downarrow$}
+  \State $\ell\gets\ell+1$; $h\gets0$
+\Else
+  \State $h\gets0$; $\ell\gets0$
+\EndIf
+\State $c'\gets c_e$
+\If{$u\ge H_{\mathrm{hold}}$ and $h\ge H_\uparrow$ and $c_e<c_{\max}$}
+  \State $c'\gets c_e+1$
+\ElsIf{$u\ge H_{\mathrm{hold}}$ and $\ell\ge H_\downarrow$ and $c_e>c_{\min}$}
+  \State $c'\gets c_e-1$
+\EndIf
+\State return an authenticated offer for $c'$ iff $c'\ne c_e$
+\end{algorithmic}
+\end{algorithm}
+
+Asymmetric thresholds and counters suppress rapid oscillation but do not make the class sequence independent of traffic. The rate menu and boundary alignment limit the vocabulary available to an observer; they do not erase the signal.
+
+\subsection{Bounded service and weighted fairness}
+
+Within each epoch, the physical-cell budget is exactly $r_{c_e}$. Cells are selected in this bounded order:
+\begin{enumerate}
+  \item due cumulative \textsc{Ack};
+  \item accepted or required \textsc{Schedule} control;
+  \item due missing-fragment retransmission;
+  \item new \textsc{Data} selected by weighted deficit round robin;
+  \item \textsc{Chaff} if the active cadence requires a slot and no real cell is eligible.
+\end{enumerate}
+ACK and schedule-control reserves are finite and cannot create undeclared slots. Their configured limits must leave non-zero service for admitted DATA.
+
+Deficit round robin provides efficient approximate fair queueing without per-packet finish-time sorting~\cite{drr}. Because every Trahens cell has the same outer length, one unit of deficit pays for one DATA cell. On a visit to a backlogged class $f$, the scheduler adds $w_fq_0$ to $d_f$, emits while $d_f\ge1$ and slots remain, and subtracts one per cell. Empty classes reset their deficit. Weights are local policy and never cross a relay.
+
+\begin{algorithm}[ht]
+\caption{One \Ttwo{} physical slot}
+\label{alg:t2service}
+\begin{algorithmic}[1]
+\Require bounded queues $Q_A,Q_S,Q_R$, backlogged DATA classes $\mathcal{F}$
+\If{$Q_A$ contains a due ACK within its reserve}
+  \State emit one \textsc{Ack}
+\ElsIf{$Q_S$ contains a due control within its reserve}
+  \State emit one \textsc{Schedule}
+\ElsIf{$Q_R$ contains a due retry within its reserve}
+  \State emit one retransmitted \textsc{Data}
+\ElsIf{some $f\in\mathcal{F}$ is backlogged}
+  \State select and emit by weighted deficit round robin
+\Else
+  \State emit \textsc{Chaff} in fixed/adaptive mode; emit nothing in work-conserving mode
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+The evaluation reports the Jain--Chiu--Hawe fairness index~\cite{jainfairness} over normalized throughputs $x_f=\operatorname{delivered}_f/w_f$:
+\begin{equation}
+J(x_1,\ldots,x_n)=\frac{(\sum_{i=1}^{n}x_i)^2}{n\sum_{i=1}^{n}x_i^2}.
+\label{eq:jain}
+\end{equation}
+This metric detects unequal normalized allocation in the modeled horizon; it does not establish strategic fairness, admission fairness, or resistance to forged identities.
+
+\subsection{Admission, overload, and burst loss}
+
+Before admitting a new \Mtwo{} transmission, the sender knows its canonical fragment count. A conforming implementation SHOULD reserve the complete first-send set atomically. If that reservation exceeds the per-flow, per-peer, or global queue budget, the transmission is rejected before its first fragment is emitted.
+
+At the maximum class, persistent overload MUST NOT silently accelerate the public cadence. The implementation expires stale contexts, rejects new over-budget work, bounds additional recovery rounds, expires queued work at finite deadlines, and reports a generic local transport failure. Dropping a slot from a declared fixed epoch is a visible profile break and terminates the fixed-trace claim for that interval.
+
+Loss is not automatically treated as congestion. Wireless corruption, burst errors, and adversarial dropping may produce the same timeout symptom. The reference stress test therefore compares independent loss with the two-state burst-noise family introduced by Gilbert and developed by Elliott~\cite{gilbert1960,elliott1963}. This is a reproducible model, not evidence that one channel process fits a deployment.
+
+\subsection{Privacy boundary}
+
+\begin{proposition}[Conditional fixed-epoch shape]
+During a pre-existing, non-overloaded fixed \Ttwo{} epoch, the public timestamps, directions, and lengths on one observed link are independent of whether each encrypted slot carries \textsc{Data}, \textsc{Ack}, \textsc{Schedule}, or \textsc{Chaff}.
+\end{proposition}
+
+\begin{proof}[Argument]
+The epoch declares exactly $r_c$ equal-size slots. Frame class is encrypted, and a real cell replaces an otherwise emitted chaff cell without changing the slot time or outer length. The statement excludes epoch establishment, boundary observation, overload, peer compromise, route completion, and correlation with another link.
+\end{proof}
+
+Adaptive mode has a different claim. Its class sequence $(c_0,c_1,\ldots)$ and transition times are public and are treated as coarse traffic evidence. Research on adaptive padding and website-fingerprinting defenses demonstrates that efficiency gains and classifier resistance are highly workload- and model-dependent~\cite{wtfpad}. Consequently, \Ttwo{} does not infer activity hiding from quantization or hysteresis. Work-conserving mode makes no constant-trace claim. No mode provides a global-observer theorem.
+
+A conforming deployment publishes finite values for the rate menu, epoch duration, negotiation guard time, hold and hysteresis counters, queue thresholds, weights, deficits, control reserves, retry work, residence deadlines, CHAFF budget, schedule lifetime, and malformed negotiation work.
+
+
 \section{Retained cryptographic components}
 \label{sec:crypto}
 
@@ -1121,6 +1297,95 @@ Hops & Cells/direction & Real cells & Active chaff & Empty chaff & Rate CV \\
 
 The table also exposes the cost. On the twelve-hop route, 106 real cells are carried inside 14,904 scheduled cells across all directed links in the active epoch. The profile therefore makes chaff bandwidth and epoch duration explicit deployment parameters rather than treating cover traffic as free. The equality result is link-local and conditional; schedule starts, ends, directions, topology, overload, and cross-link correlation remain observable.
 
+\subsection{T2 congestion and fair service}
+
+The congestion model uses 200-ms epochs and a public rate menu of 8, 16, 32, and 64 cells per epoch. Thirty deterministic runs were executed per profile. The equal-overload workload assigns equal weights and finite offered work. The weighted-saturation workload keeps three classes backlogged with weights $1{:}2{:}3$ for a fixed observation horizon; its residual queues are intentional and are not interpreted as a cleanup failure.
+
+\begin{table}[ht]
+\centering
+\caption{Equal-overload scheduling comparison, 30 deterministic runs}
+\label{tab:t2congestion}
+\begin{tabularx}{\textwidth}{@{}p{0.24\textwidth}rrrrrr@{}}
+\toprule
+Profile & Delivery & Drop & Peak queue & Mean delay & P95 delay & Chaff \\
+ & rate & rate & cells & epochs & epochs & cells \\
+\midrule
+Fixed low & 0.784 & 0.150 & 496 & 13.325 & 26 & 0 \\
+Fixed high & 1.000 & 0 & 0 & 0 & 0 & 1,600 \\
+Adaptive hysteresis & 1.000 & 0 & 98 & 0.642 & 2 & 370 \\
+Work-conserving & 1.000 & 0 & 0 & 0 & 0 & 0 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The result exhibits the intended trade-off rather than a universally preferred policy. Fixed-low protects its cadence but cannot serve the offered work. Fixed-high avoids queueing at the cost of persistent cover traffic. Adaptive service reaches the high class only after pressure persists and later returns toward the low class, reducing chaff while exposing those transitions. Work-conserving service is efficient in this model but abandons the fixed public trace.
+
+Under continuous saturation, fixed-high DRR obtained normalized fairness $J=0.999996$ and adaptive DRR obtained $J=1.000000$. Their delivery fractions, 0.267 and 0.233, reflect the finite horizon and large residual backlogs, not a loss of admitted cells. The experiment confirms the reference scheduler's weighted accounting; it does not evaluate strategic weight assignment or end-to-end flow fairness.
+
+\subsection{Adaptive schedule leakage}
+
+A deliberately simple classifier receives only the public rate-class trace and predicts ``active'' when any epoch exceeds the idle baseline. One hundred idle and one hundred active traces were generated per policy. The classifier is intentionally weak: failure against it is sufficient to reject an activity-hiding claim, while success against it would not establish privacy.
+
+\begin{table}[ht]
+\centering
+\caption{Public-rate activity classification}
+\label{tab:t2leakage}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Profile & Idle cells/epoch & Active cells/epoch & Active changes & Accuracy & Advantage \\
+\midrule
+Fixed high & 64.000 & 64.000 & 0 & 0.500 & 0 \\
+Adaptive fast & 8.000 & 14.000 & 6 & 1.000 & 1 \\
+Adaptive hysteresis & 8.000 & 14.857 & 4 & 1.000 & 1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Fixed-high traces are indistinguishable to this class-presence rule because active traffic only replaces chaff. Both adaptive profiles reveal activity perfectly under the evaluated workload. Hysteresis reduces transition count, not the existence of a public activity-dependent class sequence. This result is consistent with the broader caution that adaptive padding must be evaluated against concrete classifiers and workloads rather than assumed private by construction~\cite{wtfpad}.
+
+\subsection{Burst-loss stress model}
+
+The same nominal mean loss probability, approximately $0.1114$, was applied either independently or through a two-state Gilbert--Elliott process~\cite{gilbert1960,elliott1963}. Each row in \cref{tab:t2burst} summarizes 100 deterministic runs with two recovery rounds.
+
+\begin{table}[ht]
+\centering
+\caption{Independent and burst-correlated loss at equal nominal mean loss}
+\label{tab:t2burst}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Loss model & Delivery & Retry exhaustion & Retransmitted & Mean delay & P95 delay \\
+ & rate & events & cells & epochs & epochs \\
+\midrule
+Independent & 0.998625 & 0.66 & 59.89 & 0.339 & 1.02 \\
+Gilbert--Elliott & 0.996729 & 1.57 & 57.25 & 0.368 & 1.24 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Both rows reclaimed all transport state. Correlation increased retry-exhaustion events and delay even though the nominal mean loss was held constant. The comparison demonstrates why an independent-loss result is insufficient; it does not calibrate either process to a real link.
+
+\subsection{Two-link public-count correlation}
+
+A final model forwards the same offered workload across two consecutive links and computes lag-one Pearson correlation between their public per-epoch cell counts. One hundred deterministic runs were executed per profile.
+
+\begin{table}[ht]
+\centering
+\caption{Two-link public cell-count correlation}
+\label{tab:t2correlation}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Profile & Lag-one correlation & First link cells/epoch & Second link cells/epoch \\
+\midrule
+Fixed & 0.000 & 64.000 & 64.000 \\
+Adaptive & 0.478 & 30.419 & 26.237 \\
+Work-conserving & 1.000 & 14.500 & 14.443 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The fixed traces are constant and therefore have zero variance; the implementation records correlation as zero by convention rather than treating it as a statistical independence proof. The synchronized work-conserving baseline is perfectly correlated. Adaptive service reduces but does not eliminate public-count correlation. Realistic inference requires propagation delay, clock noise, heterogeneous cross traffic, route churn, shared bottlenecks, and stronger classifiers, none of which are represented here.
+
+
 \subsection{R1 and cryptographic controls}
 
 \begin{table}[ht]
@@ -1158,7 +1423,7 @@ A gateway can correlate registration time, redemption time, endpoint handle, and
 
 \subsection{Reliability, congestion, and scheduling}
 
-\Tone{} supplies bounded adjacent-link selective recovery and two scheduler modes, but it is not a congestion controller. Recovery can amplify load on a saturated link; a fixed epoch can waste substantial bandwidth; and changing a schedule in response to queue pressure can itself disclose activity. The profile does not yet define rate negotiation, overload admission, fair sharing between route setup and data traffic, burst-loss recovery, forward-error correction, or end-to-end deadline selection. Fixed scheduling hides only the class of a cell inside an already active, non-overloaded link epoch. Timing and count correlation across links remain outside the claim.
+\Tone{} supplies bounded adjacent-link selective recovery, and \Ttwo{} now defines finite fixed, adaptive, and work-conserving release policies. The result remains an experimental link-local model rather than an end-to-end congestion controller. Schedule-control loss, simultaneous offers, restart after peer state loss, strategic weight assignment, and adversarial ACK behavior require fuller state machines. Forward error correction and bounded redundancy remain unevaluated alternatives to retransmission. Fixed scheduling can waste substantial bandwidth, adaptive scheduling exposes public rate transitions, and work-conserving scheduling exposes cell presence directly. Timing and count correlation across links remain outside the claim.
 
 \subsection{Reply-key analysis}
 
@@ -1178,14 +1443,16 @@ The protocol does not define transit incentives, inter-domain policy, Sybil resi
 A staged implementation should preserve module boundaries:
 
 \begin{enumerate}
-  \item independent \Mtwo{}, \Wtwo{}, and \Tone{} codec implementations with differential tests and fuzzing;
+  \item independent \Mtwo{}, \Wtwo{}, \Tone{}, and \Ttwo{} codec implementations with differential tests and fuzzing;
   \item a typed eligibility-provider boundary containing active \Rone{} and research-only controls;
   \item a deterministic \Eone{} state machine separated from transport I/O;
   \item constant-time or timing-normalized cryptographic failure paths;
   \item a persistent, atomic gateway capability store with concurrency tests;
   \item an independent implementation of the reply KEM and candidate transcript;
   \item property-based and network-emulation tests for selective ACKs, timeout ambiguity, replay, and bounded retry cleanup;
-  \item a congestion, overload, and schedule-negotiation profile with burst-loss and cross-link correlation experiments;
+  \item a complete schedule-negotiation state machine covering loss, simultaneous offers, rejection, restart, and peer disagreement;
+  \item differential scheduler tests for weighted service, queue admission, maximum-class overload, and fixed-profile breaks;
+  \item traffic-analysis experiments using realistic delay, clock noise, heterogeneous cross traffic, route churn, and stronger multi-link classifiers;
   \item external cryptographic, transport, side-channel, and protocol review before any production claim.
 \end{enumerate}
 
@@ -1196,9 +1463,9 @@ The disabled C2 transcription should remain reproducible. An author query should
 
 \ProtoName{} defines bounded route discovery with no transmitted source route or network-wide discovery identifier. The protocol removes endpoint-specific material from forward exploration, discovers generic rendezvous gateways, authenticates candidates through nested reverse encryption, activates one selected route through \textsc{Commit} and \textsc{Ready}, and presents a single-use capability only after activation.
 
-The semantic, fragmentation, and transport layers are distinct. Logical messages remain canonical and variable length; canonical fragments are bounded and reassembled before route semantics execute; and every \Tone{} adjacent-link cell has fixed length. Cumulative selective acknowledgements and bounded retries repair missing fragments without copying a recovery identifier across a relay. Optional fixed scheduling replaces idle slots with chaff and gives a narrowly defined public-trace equality property during a pre-existing non-overloaded epoch.
+The semantic, fragmentation, recovery, and scheduling layers are distinct. Logical messages remain canonical and variable length; canonical fragments are bounded and reassembled before route semantics execute; and every adjacent-link cell has fixed length. Cumulative selective acknowledgements and bounded retries repair missing fragments without copying a recovery identifier across a relay. \Ttwo{} then chooses fixed, quantized-adaptive, or work-conserving release, bounds rate transitions and overload, and divides admitted new DATA with weighted deficit round robin.
 
-Route, reassembly, sender, acknowledgement, retry, schedule, registration, and redemption state have explicit lifetimes and budgets. The measured reliability improvement is accompanied by explicit retry and chaff costs. The security claims distinguish per-hop representation replacement and link-local schedule shape from global traffic-flow anonymity, and expose the directory/gateway and congestion-management trust boundaries.
+Route, reassembly, sender, acknowledgement, retry, negotiation, queue, schedule, registration, and redemption state have explicit lifetimes and budgets. The measured reliability and overload improvements are accompanied by explicit retry, queueing, chaff, and public-rate costs. The security claims distinguish per-hop representation replacement and conditional fixed-epoch shape from adaptive-rate leakage and global traffic-flow anonymity, exposing the directory/gateway and congestion-management trust boundaries rather than hiding them.
 
 The unresolved universal-rerandomization candidates remain cited, executable, and falsifiable but are not active dependencies. The resulting document is a coherent interoperability and review baseline, not a production-ready anonymity guarantee.
 
@@ -1208,7 +1475,7 @@ The unresolved universal-rerandomization candidates remain cited, executable, an
 
 The keywords ``MUST'', ``MUST NOT'', ``REQUIRED'', ``SHOULD'', ``SHOULD NOT'', and ``MAY'' are interpreted according to BCP~14~\cite{rfc2119,rfc8174}.
 
-An implementation claiming \Uone{}, \Eone{}, \Rone{}, \Mtwo{}, \Wtwo{}, and \Tone{} conformance MUST:
+An implementation claiming \Uone{}, \Eone{}, \Rone{}, \Mtwo{}, \Wtwo{}, \Tone{}, and \Ttwo{} conformance MUST:
 
 \begin{enumerate}
   \item omit endpoint capabilities, endpoint keys, endpoint addresses, descriptor commitments, gateway pseudonyms, global discovery identifiers, and complete routes from \textsc{Discover};
@@ -1223,7 +1490,7 @@ An implementation claiming \Uone{}, \Eone{}, \Rone{}, \Mtwo{}, \Wtwo{}, and \Ton
   \item encode each logical operation as one canonical \Mtwo{} message with no semantic padding or trailing bytes;
   \item enforce $1\le|M|\le16{,}384$ and canonical fragmentation into at most 17 \Wtwo{} cells;
   \item preserve the 992-byte \Wtwo{} fragment bound and encode every \Tone{} record as exactly 1,052 bytes;
-  \item support encrypted \textsc{Data}, \textsc{Ack}, and \textsc{Chaff} frame classes with a link-local non-zero transmission identifier;
+  \item support encrypted equal-size \textsc{Data}, \textsc{Ack}, \textsc{Schedule}, and \textsc{Chaff} frame classes; use non-zero link-local transmission or negotiation identifiers where defined;
   \item accept out-of-order fragments, process exact duplicates idempotently, invalidate conflicting duplicates, queue bounded cumulative acknowledgements, and bound contexts, bytes, fragments, and time;
   \item retransmit only missing fragments, retain no ambiguous retransmission RTT sample, apply bounded timer backoff, and use a new sequence number, padding region, AEAD tag, and ciphertext for every emission;
   \item terminate every recovery association at the adjacent relay and copy no transmission identifier, bitmap, timer, or retry state to an outgoing link;
@@ -1232,9 +1499,12 @@ An implementation claiming \Uone{}, \Eone{}, \Rone{}, \Mtwo{}, \Wtwo{}, and \Ton
   \item use half-open state lifetimes and the \Eone{} equal-time precedence order;
   \item map disabled suite, cryptographic, message, cell, reassembly, route, and redemption failures to externally normalized rejection behavior;
   \item keep C1, symbolic C2, and the C2-$k=2$ transcription disabled for operational network selection;
-  \item in fixed-schedule mode, emit exactly one equal-length cell per declared directional slot and specify finite epoch, rate, overload, and queue behavior;
+  \item publish a finite rate menu and bounds for epochs, negotiation, hold time, hysteresis, queue pressure, weights, deficits, controls, retries, residence time, and CHAFF;
+  \item change an adaptive rate only at an authenticated epoch boundary, by at most one class, after matching adjacent-link OFFER and ACCEPT state;
+  \item at the maximum class, reject or expire over-budget work rather than silently increasing cadence;
+  \item in fixed mode, emit exactly one equal-length cell per declared directional slot; in adaptive mode, treat public class transitions as observable evidence;
   \item make batch-local or fixed-schedule claims only for the declared scheduler, epoch, overload assumptions, and anonymity-set treatment;
-  \item refrain from private-directory, directory/gateway-collusion, global traffic-flow, congestion-safety, post-quantum, or production-security claims unless separately specified and reviewed.
+  \item refrain from private-directory, directory/gateway-collusion, global traffic-flow, hidden-adaptation, end-to-end congestion, post-quantum, or production-security claims unless separately specified and reviewed.
 \end{enumerate}
 
 \section{Message-class summary}
@@ -1262,7 +1532,7 @@ Operation & Direction & Principal purpose \\
 
 \begin{table}[ht]
 \centering
-\caption{T1 adjacent-link frame classes}
+\caption{T1/T2 adjacent-link frame classes}
 \label{tab:t1frames}
 \begin{tabularx}{\textwidth}{@{}p{0.18\textwidth}p{0.25\textwidth}X@{}}
 \toprule
@@ -1270,7 +1540,8 @@ Frame & Acknowledged & Principal purpose \\
 \midrule
 \textsc{Data} & Yes, cumulatively & Carry one canonical \Wtwo{} fragment under link-local transmission identifier $z$. \\
 \textsc{Ack} & No & Return fragment count, bounded acknowledgement delay, and cumulative bitmap $A$. \\
-\textsc{Chaff} & No & Occupy a declared fixed-schedule slot without route-semantic content. \\
+\textsc{Schedule} & No & Negotiate one adjacent-link rate-class transition at a finite epoch boundary. \\
+\textsc{Chaff} & No & Occupy a declared fixed or adaptive slot without route-semantic content. \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1298,7 +1569,7 @@ C2 $k=2$ transcription & \code{7f02} & Disabled & Reproduce source equations and
 
 \Mtwo{} uses minimal unsigned base-128 LEB128 for variable lengths. Every decoder rejects a longer encoding, an unterminated value, a value above its field limit, trailing bytes, or a nested length exceeding its container. Fixed-width numeric fields are unsigned big-endian values.
 
-\Wtwo{} defines the unique 992-byte fragment decomposition. \Tone{} uses fixed-width unsigned big-endian integers in the public 12-byte header and encrypted 32-byte common header. The suite identifier in every \textsc{Data} fragment must agree with the completed \Mtwo{} message. Every non-final fragment contains exactly 992 message bytes and the final fragment exactly the remainder. \textsc{Ack} bits outside the declared fragment count are invalid. The 1,052-byte record length hides frame class and exact per-cell content length; work-conserving mode still reveals cell count and timing, while fixed scheduling leaves epoch boundaries, direction, topology, and overload behavior visible.
+\Wtwo{} defines the unique 992-byte fragment decomposition. \Tone{} and \Ttwo{} use fixed-width unsigned big-endian integers in the public 12-byte header and encrypted 32-byte common header. The suite identifier in every \textsc{Data} fragment must agree with the completed \Mtwo{} message. Every non-final fragment contains exactly 992 message bytes and the final fragment exactly the remainder. \textsc{Ack} bits outside the declared fragment count are invalid. A \textsc{Schedule} request must name the current class and either the same or one adjacent class, and its maximum class must be canonical for the configured menu. The 1,052-byte record length hides frame class and exact per-cell content length. Work-conserving mode reveals cell presence; adaptive mode additionally reveals the public class sequence; fixed mode leaves epoch boundaries, direction, topology, and overload behavior visible.
 
 \begingroup
 \small
@@ -1329,6 +1600,40 @@ RFC 6675, August 2012.
 J. Iyengar and I. Swett,
 ``QUIC Loss Detection and Congestion Control,''
 RFC 9002, May 2021.
+
+\bibitem{rfc5681}
+M. Allman, V. Paxson, and E. Blanton,
+``TCP Congestion Control,''
+RFC 5681, September 2009.
+
+\bibitem{drr}
+M. Shreedhar and G. Varghese,
+``Efficient Fair Queueing Using Deficit Round Robin,''
+in \emph{ACM SIGCOMM}, 1995, pp. 231--242,
+doi:10.1145/217382.217453.
+
+\bibitem{jainfairness}
+R. Jain, D.-M. Chiu, and W. Hawe,
+``A Quantitative Measure of Fairness and Discrimination for Resource Allocation in Shared Computer Systems,''
+DEC Research Report TR-301, September 1984.
+
+\bibitem{gilbert1960}
+E. N. Gilbert,
+``Capacity of a Burst-Noise Channel,''
+\emph{Bell System Technical Journal}, vol. 39, no. 5, 1960, pp. 1253--1265,
+doi:10.1002/j.1538-7305.1960.tb03959.x.
+
+\bibitem{elliott1963}
+E. O. Elliott,
+``Estimates of Error Rates for Codes on Burst-Noise Channels,''
+\emph{Bell System Technical Journal}, vol. 42, no. 5, 1963, pp. 1977--1997,
+doi:10.1002/j.1538-7305.1963.tb00955.x.
+
+\bibitem{wtfpad}
+M. Juarez, M. Imani, M. Perry, C. Diaz, and M. Wright,
+``Toward an Efficient Website Fingerprinting Defense,''
+in \emph{Computer Security -- ESORICS 2016}, LNCS 9878, 2016, pp. 27--46,
+doi:10.1007/978-3-319-45744-4\_2.
 
 \bibitem{sphinx}
 G. Danezis and I. Goldberg,
