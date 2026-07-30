@@ -1,7 +1,7 @@
 # Trahens U1 non-adjacent message unlinkability profile
 
 - Status: Research profile
-- Applies to: Core v0.7 with M1 logical messages and W2 cells
+- Applies to: Core v0.8 with M2 logical messages, W2 cells, and the C2 eligibility contract
 - Property class: cryptographic and batch-local message unlinkability
 
 ## 1. Objective
@@ -23,7 +23,7 @@ Active tagging, selective delay, and global timing correlation are separate expe
 
 ## 3. Challenge game
 
-The challenger selects two conforming input discovery messages \(a_0,a_1\) entering an honest relay. The relay independently transforms both messages, encodes them as M1, places their W2 cells in an eligible mixing batch, samples a uniform permutation \(\pi\), and emits \(b_0,b_1\). The adversary receives the input and output observations but not \(\pi\), and returns a guess for the correspondence.
+The challenger selects two conforming input discovery messages \(a_0,a_1\) entering an honest relay. The relay independently transforms both messages, encodes them as M2, places their W2 cells in an eligible mixing batch, samples a uniform permutation \(\pi\), and emits \(b_0,b_1\). The adversary receives the input and output observations but not \(\pi\), and returns a guess for the correspondence.
 
 For a two-message challenge, the advantage is
 
@@ -43,7 +43,7 @@ An honest relay MUST, independently for each child branch:
 2. replace all candidate and setup capabilities;
 3. blind the reply public key;
 4. rerandomize the eligibility capsule;
-5. reconstruct one canonical M1 message rather than patching the received bytes;
+5. reconstruct one canonical M2 message rather than patching the received bytes;
 6. assign a fresh link-local W2 message identifier;
 7. fragment the message canonically and pad each W2 cell with fresh randomness;
 8. transmit every cell under a fresh adjacent-link nonce and ciphertext;
@@ -53,7 +53,7 @@ Any unchanged variable-length opaque field invalidates the U1 claim unless its s
 
 ## 5. Observable cell classes
 
-W2 defines one fixed adjacent-link cell length for `DISCOVER`, `CANDIDATE`, `COMMIT`, `READY`, `ABORT`, `CLOSE`, and `CHAFF`. M1 logical messages are variable length and may require different numbers of W2 cells. Individual cell length is therefore equalized, but total cell count and release timing are explicit leakage.
+W2 defines one fixed adjacent-link cell length for `DISCOVER`, `CANDIDATE`, `COMMIT`, `READY`, `ABORT`, `CLOSE`, and `CHAFF`. M2 logical messages are variable length and may require different numbers of W2 cells. Individual cell length is therefore equalized, but total cell count and release timing are explicit leakage.
 
 A traffic-scheduling profile MAY pad a message to a declared cell-count class or interleave fragments with unrelated traffic and CHAFF. Any cell-count class remains observable and must be included in the adversary model.
 
@@ -102,5 +102,5 @@ A U1 implementation requires:
 - statistical tests showing fresh output distributions;
 - a two-relay matching experiment;
 - active-tagging negative tests;
-- M1 size, W2 cell-count, fragment-interleaving, and queue-schedule captures;
-- independent cryptographic review of URE and reply-key blinding.
+- M2 size, W2 cell-count, fragment-interleaving, and queue-schedule captures;
+- a concrete C2 receiver-anonymous Rand-RCCA implementation and independent review of C2 and reply-key blinding.

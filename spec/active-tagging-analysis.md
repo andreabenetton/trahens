@@ -1,19 +1,19 @@
-# Active-tagging analysis for the C1 eligibility capsule
+# Active-tagging analysis and C1 negative control
 
 - Status: Blocking security analysis
-- Applies to: C1 universal rerandomizable eligibility encryption
+- Applies to: C1 universal rerandomizable eligibility encryption as a negative control for C2
 - Claim affected: active-adversary message unlinkability
 
 ## 1. Result
 
-The current C1 URE construction does not provide active-tagging resistance. A malicious relay can replace the consistency pair with a recognizable algebraic relation that survives any number of honest rerandomizations. A colluding downstream relay can test the relation without knowing the destination key.
+The C1 URE construction does not provide active-tagging resistance. A malicious relay can replace the consistency pair with a recognizable algebraic relation that survives any number of honest C1 rerandomizations. A colluding downstream relay can test the relation without knowing the destination key. C1 is therefore retained as a regression and attack oracle, not as the active-security eligibility profile.
 
 Consequently:
 
 - passive wire-image unlinkability remains a conditional research claim;
 - active-adversary message unlinkability is explicitly **not claimed**;
-- C1 is not eligible for production deployment;
-- the attack must be resolved or the URE design replaced before an active-security gate can pass.
+- C1 is not eligible for production deployment as an eligibility capsule;
+- C2 must satisfy the receiver-anonymous rerandomizable RCCA and C2-TAG requirements before an active-security gate can pass.
 
 ## 2. C1 consistency pair
 
@@ -71,7 +71,7 @@ The attack combines linkability with denial of service; generic error handling p
 
 The following checks are necessary but do not stop the ratio tag:
 
-- fixed W2 cell length and canonical M1 encoding;
+- fixed W2 cell length and canonical M2 encoding;
 - canonical point encoding;
 - non-identity points;
 - fresh adjacent-link AEAD;
@@ -122,3 +122,9 @@ The active-security gate remains closed until all of the following exist:
 - negative vectors for algebraic, truncation, replay, substitution, and selective-failure tags;
 - integration tests showing that malformed and tagged messages or cells cannot create a distinguishable forwarding or error behavior beyond unavoidable denial of service;
 - independent cryptographic review.
+
+## 9. C2 integration status
+
+C2 replaces the eligibility security contract with receiver-anonymous rerandomizable RCCA encryption. The protocol-facing C2-TAG experiment requires an arbitrary attacker modification either to be rejected by the first honest transformation or to become indistinguishable from a replay-equivalent honest rerandomization. The executable `c2-ideal` backend enforces the former outcome: a marker mutation is rejected before a separated downstream colluder receives a transformed capsule.
+
+This result validates the placement of validation, rerandomization, failure normalization, M2/W2 suite binding, and attack instrumentation. It is not a cryptographic proof. The C1 ratio tag remains in the test suite so that a future concrete C2 implementation must demonstrate a meaningful improvement against the same adversarial topology and observations.

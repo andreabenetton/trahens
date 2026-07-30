@@ -1,12 +1,12 @@
 # Trahens W2 fixed-size adjacent-link cell profile
 
 - Status: Active research profile
-- Applies to: Trahens Core v0.7 with U1, E1, C1, and M1
-- Reference implementation: `simulator/trahens_codec/m1w2.py`
+- Applies to: Trahens Core v0.8 with U1, E1, C2, and M2
+- Reference implementation: `simulator/trahens_codec/m2w2.py`
 
 ## 1. Purpose
 
-W2 carries canonical variable-length M1 messages over authenticated adjacent links while preserving one public transmission-unit length. It fragments an M1 message into fixed-size plaintext cells, pads every cell before encryption, and reassembles the message under explicit time and memory bounds.
+W2 carries canonical variable-length M2 messages over authenticated adjacent links while preserving one public transmission-unit length. It fragments an M2 message into fixed-size plaintext cells, pads every cell before encryption, and reassembles the message under explicit time and memory bounds.
 
 W2 removes exact per-cell length and plaintext message-class leakage. It does not hide the number, direction, or timing of cells. A traffic-scheduling profile is required to conceal those observables.
 
@@ -67,14 +67,15 @@ Current values:
 - protocol version: `0x01`;
 - U1: `0x01`;
 - E1: `0x01`;
-- C1: `0x0001`;
+- C1 negative-control suite: `0x0001`;
+- C2 active-security target: `0x0002`;
 - flags and reserved: zero.
 
 All fields in this header are adjacent-link encrypted. `message_local_id` is a non-zero 128-bit identifier generated independently for one message on one authenticated link direction. It MUST be replaced after relay reassembly and semantic transformation. It MUST NOT be derived from a discovery, candidate, endpoint, route, or prior-hop identifier.
 
 ## 5. Canonical fragmentation
 
-Let `L` be the complete M1 length and `P = 992` the fragment capacity. The fragment count is:
+Let `L` be the complete M2 length and `P = 992` the fragment capacity. The fragment count is:
 
 ```text
 q = ceil(L / P)
@@ -89,9 +90,9 @@ The profile requires:
 - the final fragment has length `L - 992 * (q - 1)`;
 - `fragment_count` equals the canonical value `ceil(L / 992)`.
 
-A sender MUST NOT create additional short fragments. A receiver rejects non-canonical counts or lengths even when concatenation could produce the declared total. Canonical fragmentation prevents alternative wire representations of the same M1 message.
+A sender MUST NOT create additional short fragments. A receiver rejects non-canonical counts or lengths even when concatenation could produce the declared total. Canonical fragmentation prevents alternative wire representations of the same M2 message.
 
-The remaining bytes after `fragment` are fresh random padding. A relay MUST discard received padding, reassemble the message, perform the specified transformation, encode a new M1 message, choose a fresh `message_local_id`, and generate new W2 padding and link ciphertexts.
+The remaining bytes after `fragment` are fresh random padding. A relay MUST discard received padding, reassemble the message, perform the specified transformation, encode a new M2 message, choose a fresh `message_local_id`, and generate new W2 padding and link ciphertexts.
 
 ## 6. Reassembly state
 
@@ -103,6 +104,7 @@ Reassembly is keyed by:
 
 A context records:
 
+- the immutable cryptographic suite identifier;
 - creation and half-open expiry times;
 - immutable `fragment_count` and `total_message_length`;
 - received fragment indexes and bytes;
@@ -116,7 +118,7 @@ The reference defaults are:
 | Concurrent incomplete messages | 64 |
 | Aggregate reserved logical bytes | 128 KiB |
 
-The simulator uses configurable bounds and reports peak reserved bytes. A deployment MAY lower these defaults. Raising the M1 message maximum or W2 fragment maximum requires a new profile identifier.
+The simulator uses configurable bounds and reports peak reserved bytes. A deployment MAY lower these defaults. Raising the M2 message maximum or W2 fragment maximum requires a new profile identifier.
 
 ## 7. Reassembly behavior
 
@@ -134,7 +136,9 @@ A receiver processes each authenticated cell as follows:
 10. invalidate the entire context on conflicting duplicate bytes or inconsistent metadata;
 11. concatenate fragments only when every index `0..q-1` is present;
 12. require the concatenated length to equal `total_message_length`;
-13. submit the result to M1 and remove the reassembly context.
+13. decode the complete M2 envelope;
+14. require the M2 suite identifier to equal the W2 reassembly suite;
+15. submit the decoded message to protocol semantics and remove the reassembly context.
 
 An incomplete context that reaches its deadline is removed without protocol error and without route-state allocation.
 
@@ -158,8 +162,8 @@ The protocol therefore distinguishes:
 
 - **cell-length equality**, provided by W2;
 - **message-size-class concealment**, not provided without scheduling;
-- **traffic-flow unlinkability**, not claimed by M1 or W2.
+- **traffic-flow unlinkability**, not claimed by M2 or W2.
 
 ## 10. Security boundary
 
-W2 does not repair the active ratio-tag weakness of the C1 eligibility capsule. A compromised relay can emit a new, correctly authenticated W2 representation containing a tagged cryptographic value. W2 ensures canonical framing, local identifier replacement, bounded reassembly, and link integrity; it does not make malleable end-to-end fields non-malleable.
+W2 is cryptographically suite-neutral. It does not repair active weaknesses in an end-to-end eligibility primitive: a compromised relay can emit a new, correctly authenticated W2 representation containing attacker-selected logical bytes. W2 provides canonical framing, local identifier replacement, bounded reassembly, suite-consistency checks, and adjacent-link integrity. Active eligibility security is supplied by C2. The current repository integrates C2 through an executable ideal functionality; a concrete anonymous Rand-RCCA implementation remains a deployment gate.

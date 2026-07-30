@@ -1,7 +1,7 @@
-# Trahens Core v0.7 cryptographic transcript
+# Trahens Core v0.8 reply, candidate, and route-control transcript
 
-- Status: Active C1 transcript profile
-- Applies to: Core v0.7, U1, E1, C1, M1, and W2
+- Status: Active transcript profile for C1 reply/signature components; C2 eligibility is specified separately
+- Applies to: Core v0.8, U1, E1, C2, M2, and W2
 
 ## 1. Purpose
 
@@ -16,7 +16,7 @@ No transcript hash is forwarded unchanged as a global route identifier. A hash m
 
 ## 2. Canonical encoding
 
-All C1 transcript inputs use `EncodeFields` from `crypto-profile-c1.md`. Field order is normative. Numeric values are encoded as fixed-width unsigned big-endian integers inside the transcript even though M1 uses compact canonical varints for its logical envelope.
+All C1 transcript inputs use `EncodeFields` from `crypto-profile-c1.md`. Field order is normative. Numeric values are encoded as fixed-width unsigned big-endian integers inside the transcript even though M2 uses compact canonical varints for its logical envelope.
 
 ## 3. Public profile context
 
@@ -34,7 +34,7 @@ Every end-to-end transcript begins with these fields to prevent cross-version or
 
 ## 4. DISCOVER branch body
 
-The M1 DISCOVER body, carried inside one or more link-encrypted W2 cells, contains:
+The M2 DISCOVER body, carried inside one or more link-encrypted W2 cells, contains:
 
 ```text
 branch_token
@@ -46,7 +46,7 @@ expiry_class
 options
 ```
 
-The branch token is a link-local capability, not an end-to-end transcript identifier. The relay validates and reconstructs the complete body for every child. C1 URE rerandomization changes all four eligibility points, and reply-key tweaking changes the reply public key.
+The branch token is a link-local capability, not an end-to-end transcript identifier. The relay validates and reconstructs the complete body for every child. The selected eligibility suite rerandomizes the capsule, and C1 reply-key tweaking changes the reply public key. For C2, eligibility syntax and security are defined in `crypto-profile-c2.md`; this transcript document does not redefine C2 ciphertext internals.
 
 ## 5. Candidate inner transcript
 

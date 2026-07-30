@@ -1,7 +1,7 @@
 # Trahens event lifecycle profile E1
 
 - Status: Active research design
-- Applies to: Core v0.7 with U1, C1, M1, and W2
+- Applies to: Core v0.8 with U1, C2, M2, and W2; C1 reply/signature components remain bound
 - Purpose: Define event time, candidate windows, reverse setup, activation, cancellation, and deterministic cleanup
 
 ## 1. Time model
@@ -72,7 +72,7 @@ For every relay traversed by CANDIDATE, the relay MUST:
 4. reserve tentative-route capacity;
 5. create a local tentative mapping with an independent deadline;
 6. replace the candidate capability and relevant labels;
-7. encode a fresh canonical M1 CANDIDATE and transmit it in one or more fixed-size W2 cells toward the parent.
+7. encode a fresh canonical M2 CANDIDATE and transmit it in one or more fixed-size W2 cells toward the parent.
 
 The responder's branch context is not a relay tentative mapping. Endpoint offer state is accounted separately.
 
