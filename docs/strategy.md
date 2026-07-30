@@ -6,13 +6,14 @@ Develop Trahens as a falsifiable privacy-preserving route-discovery protocol and
 
 ## Active architecture
 
-Core v1.0 binds U1, E1, R1, M2, and W2.
+Core v1.1 binds U1, E1, R1, M2, W2, and T1.
 
 - U1 replaces branch-local capabilities and representations at each honest relay.
 - E1 defines deterministic state transitions, half-open deadlines, candidate windows, COMMIT, READY, cancellation, and cleanup.
 - R1 discovers generic rendezvous gateways and presents a one-time endpoint capability only after READY.
 - M2 defines canonical variable-length logical messages.
-- W2 transports M2 in fixed 1,052-byte authenticated cells with bounded reassembly.
+- W2 defines canonical fragmentation and the fixed 1,052-byte adjacent-link record.
+- T1 adds encrypted selective ACKs, bounded retries, fresh retry ciphertexts, round-robin fragment interleaving, and fixed-schedule or work-conserving release.
 
 R1 is Gate B of the cryptographic decision. The active protocol no longer depends on receiver-anonymous universal rerandomization. C1, symbolic C2, and the C2 k=2 transcription remain research providers and mandatory negative or composition controls.
 
@@ -20,11 +21,11 @@ R1 is Gate B of the cryptographic decision. The active protocol no longer depend
 
 1. **No endpoint selector in active discovery.** The raw capability, commitment, endpoint key, address, gateway pseudonym, and endpoint handle are prohibited from DISCOVER.
 2. **Transform every branch-local handle.** Tokens, query nonces, reply keys, message identifiers, padding, and link ciphertexts are replaced for each child.
-3. **Separate messages from cells.** M2 is semantic and variable length; W2 is fixed-size observable framing.
+3. **Separate messages from transport.** M2 is semantic and variable length; W2 defines canonical fragments; T1 defines DATA, ACK, CHAFF, recovery, and release scheduling.
 4. **Separate route activation from rendezvous.** CANDIDATE is tentative, COMMIT reserves, READY activates, and only then may RENDEZVOUS_OPEN carry the capability.
 5. **Make trust boundaries explicit.** R1 requires a directory and gateways; private lookup and operator separation are separate profiles.
 6. **Keep counterexamples executable.** C1 and the C2 audit remain reproducible and fail closed.
-7. **Bound every resource.** Cells, bytes, fragments, contexts, branches, candidates, timers, queues, work, registrations, and failed redemptions have finite limits.
+7. **Bound every resource.** Cells, bytes, fragments, ACKs, retries, RTO timers, schedule slots, CHAFF, contexts, branches, candidates, queues, work, registrations, and failed redemptions have finite limits.
 8. **Normalize failure behavior.** Invalid capability, suite, message, cell, route, signature, and reassembly failures must not become detailed oracles.
 9. **Block production claims.** Reference code and deterministic simulations are not independent cryptographic or operational validation.
 
@@ -46,11 +47,11 @@ Evaluate multiple gateways, short epochs, operator separation, threshold registr
 
 ### C. Reliability
 
-Add bounded acknowledgements and retransmissions for W2 fragments. Every retransmission must use fresh adjacent-link encryption and must not introduce a cross-hop identifier. Measure amplification and stale-fragment behavior.
+T1 now provides bounded cumulative selective ACKs, RTO backoff, missing-fragment retransmission, fresh retry ciphertexts, and finite completion caches. The next reliability work is congestion interaction, schedule-capacity failure, forward error correction, and adversarial ACK behavior.
 
 ### D. Traffic scheduling
 
-Define fragment interleaving, batch release, count padding, chaff, queue fairness, and congestion response. Evaluate timing and cell-count classifiers before claiming flow unlinkability.
+T1 fixed-schedule mode defines round-robin fragment interleaving and CHAFF-filled slots. The current claim is only link-local schedule-shape equivalence inside a pre-existing non-overflowing epoch. Next work must evaluate schedule establishment, adaptive rates, randomized release, congestion, and global cross-link classifiers before any traffic-flow claim.
 
 ### E. Independent interoperability
 
@@ -71,10 +72,11 @@ Review the additive reply-key transform, custom KEM, nested candidate chain, tra
 
 ### Gate T1-reliability
 
-- bounded recovery improves multi-cell success;
-- retransmission creates no stable cross-hop handle;
-- retries, acknowledgements, and buffers have hard limits;
-- loss, duplication, reordering, and attacker-induced repair are tested.
+- bounded recovery improves multi-cell success; **baseline passed**;
+- retransmission creates no stable cross-hop handle; **specified and tested**;
+- retries, acknowledgements, queues, timers, and buffers have hard limits; **specified and tested**;
+- loss, duplication, retry exhaustion, deep fragmentation, and trace shape are tested; **baseline passed**;
+- congestion-aware overload and independent implementation remain open.
 
 ### Gate I1-interoperability
 

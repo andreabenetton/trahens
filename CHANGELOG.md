@@ -1,5 +1,17 @@
 # Changelog
 
+## Core v1.1 - 2026-07-30
+
+- Added T1 hop-local reliability with encrypted cumulative selective ACK bitmaps, bounded RTO recovery, and finite retry exhaustion.
+- Added exact fixed-size T1 DATA, ACK, and CHAFF frame encodings while retaining the 1,052-byte adjacent-link record.
+- Required fresh public sequences, random padding, authentication tags, and ciphertexts for every retransmission.
+- Added round-robin fragment interleaving and fixed-schedule or work-conserving release modes.
+- Added an explicit fixed-schedule claim boundary: active and empty traffic have identical per-direction modeled slot traces only inside a pre-existing non-overflowing epoch.
+- Added deterministic route-depth and 2%, 5%, and 10% cell-loss comparisons against unrecovered W2 delivery.
+- Added T1 codec, recovery, cleanup, retry-exhaustion, deep-fragmentation, trace-equivalence tests, and tracked deterministic framing/retry vectors.
+- Published Core v1.1, T1 transport, message, state-machine, invariant, and resource-accounting specifications.
+- Expanded the formal paper with T1 notation, frame layouts, algorithms, security boundaries, citations, and measured bandwidth/reliability trade-offs.
+
 ## Core v1.0 - 2026-07-30
 
 - Adopted R1 rendezvous capabilities as the active eligibility profile and removed endpoint-specific material from operational DISCOVER messages.

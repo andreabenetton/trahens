@@ -92,6 +92,28 @@ The Tor Project, **“The Rendezvous Protocol,”** Tor Specifications, section 
 
 Used for: client/service circuits joining at a rendezvous point and one-use rendezvous-cookie precedent. Trahens R1 is not a Tor protocol and does not inherit Tor's security analysis.
 
+## Transport recovery and scheduling
+
+### RFC6298
+
+Vern Paxson, Mark Allman, Jerry Chu, and Matt Sargent, **“Computing TCP's Retransmission Timer,”** RFC 6298, June 2011.
+
+Used for: the smoothed RTT/RTTVAR update order, variance margin, retransmission ambiguity rule, and bounded exponential RTO backoff. Trahens T1 uses the estimator structure for one adjacent-link message transmission; it is not TCP.
+
+### RFC6675
+
+Ethan Blanton, Mark Allman, Lili Wang, Ilpo Järvinen, Markku Kojo, and Yoshifumi Nishida, **“A Conservative Loss Recovery Algorithm Based on Selective Acknowledgment (SACK) for TCP,”** RFC 6675, August 2012.
+
+Used for: conservative retransmission of missing material based on selective acknowledgement. T1 uses a finite fragment bitmap rather than a TCP byte-stream scoreboard.
+
+### RFC9002
+
+Jana Iyengar and Ian Swett, **“QUIC Loss Detection and Congestion Control,”** RFC 9002, May 2021.
+
+Used for: acknowledgement-based loss detection, acknowledgement delay, timer/probe structure, and the explicit distinction between recovery and congestion control. T1 does not claim QUIC compatibility and does not yet adopt its end-to-end congestion controller.
+
+TARANET and Loopix, listed above, are also cited at the scheduler discussion. They motivate constant-rate shaping and stochastic mixing/cover-traffic comparisons respectively; neither result is attributed to T1.
+
 ## Standards and retained primitives
 
 - RFC 2119 and RFC 8174: normative requirement language.
@@ -110,6 +132,7 @@ The following are not attributed to external papers:
 - the C1 ratio-tag implementation and integrated regression result;
 - the exact finite-field counterexample and exhaustive small-chain checker;
 - M2/W2 encodings, fragmentation, reassembly, and route lifecycle;
-- all simulator performance and cleanup measurements.
+- T1 DATA/ACK/CHAFF framing, adjacent-link transmission identifiers, bounded selective recovery, retry ciphertext vectors, and scheduler algorithms;
+- the fixed-schedule active/empty trace-equivalence experiment and all simulator performance, bandwidth, and cleanup measurements.
 
 Each such result is accompanied by executable artifacts or tests. None is described as a cryptographic proof.

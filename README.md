@@ -4,17 +4,18 @@ Trahens is a research protocol for privacy-enabled route discovery in decentrali
 
 ## Status
 
-The active specification is **Trahens Core v1.0**, composed of:
+The active specification is **Trahens Core v1.1**, composed of:
 
 - **U1** - branch-local representation replacement and conditional passive unlinkability;
 - **E1** - deterministic event and route-state lifecycle;
 - **R1** - generic rendezvous-gateway discovery with post-READY one-time capability redemption;
 - **M2** - canonical suite-agile variable-length logical messages;
-- **W2** - fixed-size authenticated adjacent-link cells with bounded reassembly.
+- **W2** - canonical 992-byte fragmentation and fixed-size authenticated adjacent-link records;
+- **T1** - hop-local selective recovery, fresh retry ciphertexts, fragment interleaving, and optional fixed-rate CHAFF scheduling.
 
 Endpoint-specific material is absent from active `DISCOVER` messages. A destination issues a random, short-lived capability, registers its commitment at selected rendezvous gateways, and privately distributes a descriptor to an authorized initiator. Discovery returns authenticated gateway candidates. After `COMMIT` and `READY`, the initiator presents the capability through the active route; the gateway atomically consumes it and starts the local rendezvous procedure.
 
-This removes the active protocol's dependency on an unresolved receiver-anonymous universal-rerandomization construction. It introduces an explicit directory-and-gateway trust boundary. The protocol does not yet specify private descriptor lookup, protection from colluding directory and gateway operators, traffic-flow unlinkability, or a production implementation.
+This removes the active protocol's dependency on an unresolved receiver-anonymous universal-rerandomization construction. It introduces an explicit directory-and-gateway trust boundary. The protocol does not yet specify private descriptor lookup, protection from colluding directory and gateway operators, a global-observer traffic-flow theorem, production congestion control, or a production implementation.
 
 ## Cryptographic research status
 
@@ -30,7 +31,7 @@ The reply path continues to use independent first-hop reply keys, additive `rist
 
 Every forwarded branch receives a fresh adjacent capability, a tweaked reply public key, a replacement R1 service-query nonce, a new canonical M2 message, a fresh W2 message-local identifier, new padding, and new adjacent-link ciphertexts. `CANDIDATE` returns through nested authenticated reply layers. `COMMIT` reserves the selected tentative route, `READY` activates it, and every state has a finite local deadline.
 
-M2 separates semantic encoding from observable framing. W2 fragments a message into 992-byte payload fragments, pads each cell plaintext to 1,024 bytes, and emits 1,052-byte adjacent-link records. Cell count and timing remain observable unless a later scheduling profile conceals them.
+M2 separates semantic encoding from observable framing. W2 defines canonical 992-byte fragments. T1 carries them in 1,052-byte encrypted DATA records, returns same-size encrypted selective ACKs, and fills fixed-schedule idle slots with same-size CHAFF. Retries retain only the same-link transmission identifier and fragment index; every emission uses a new public sequence, fresh padding, and fresh ciphertext. A fixed schedule hides slot class within a declared epoch but does not hide epoch start, end, rate, topology, congestion changes, or global cross-link timing.
 
 ## Repository map
 
@@ -49,10 +50,11 @@ M2 separates semantic encoding from observable framing. W2 fragments a message i
 make test
 make r1-vectors
 make r1-compare
+make t1-compare
 make c2-k2-exhaustive
 make fragmentation-compare
 make paper
 make check
 ```
 
-Start with [`spec/core-v1.0.md`](spec/core-v1.0.md), [`spec/rendezvous-capability-r1.md`](spec/rendezvous-capability-r1.md), [`spec/eligibility-suite-interface-v1.md`](spec/eligibility-suite-interface-v1.md), [`spec/message-codec-m2.md`](spec/message-codec-m2.md), [`spec/wire-cell-w2.md`](spec/wire-cell-w2.md), [`spec/event-lifecycle-profile-e1.md`](spec/event-lifecycle-profile-e1.md), [`docs/threat-model.md`](docs/threat-model.md), and [`docs/citation-audit.md`](docs/citation-audit.md).
+Start with [`spec/core-v1.1.md`](spec/core-v1.1.md), [`spec/rendezvous-capability-r1.md`](spec/rendezvous-capability-r1.md), [`spec/eligibility-suite-interface-v1.md`](spec/eligibility-suite-interface-v1.md), [`spec/message-codec-m2.md`](spec/message-codec-m2.md), [`spec/wire-cell-w2.md`](spec/wire-cell-w2.md), [`spec/transport-profile-t1.md`](spec/transport-profile-t1.md), [`spec/event-lifecycle-profile-e1.md`](spec/event-lifecycle-profile-e1.md), [`docs/threat-model.md`](docs/threat-model.md), and [`docs/citation-audit.md`](docs/citation-audit.md).

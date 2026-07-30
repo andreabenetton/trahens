@@ -1,6 +1,6 @@
 # Threat model
 
-- Status: Core v1.0 research model
+- Status: Core v1.1 research model
 - Date: 2026-07-30
 
 ## 1. Scope
@@ -28,7 +28,7 @@ This model covers bounded gateway discovery, U1 branch-local replacement, nested
 6. The private descriptor reaches an authorized initiator without being exposed through the route protocol.
 7. A fully compromised endpoint cannot preserve its own secrets or anonymity.
 
-The directory and gateway are explicit trust roles. Core v1.0 makes no privacy claim against their collusion.
+The directory and gateway are explicit trust roles. Core v1.1 makes no privacy claim against their collusion.
 
 ## 4. Adversary classes
 
@@ -87,7 +87,7 @@ A compromised relay learns its ingress and selected egress peers, local branch a
 
 ## 8. Claims not made
 
-Core v1.0 does not claim:
+Core v1.1 does not claim:
 
 - sender or destination anonymity against a global timing observer;
 - private descriptor lookup;

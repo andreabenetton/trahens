@@ -1,0 +1,56 @@
+{
+  "chaff": {
+    "decoded_frame": "T1ChaffFrame",
+    "encrypted_header_plaintext": "0301010101010200ffeeddccbbaa998877665544332211000000000000000000",
+    "epoch": 7,
+    "record_sha256": "cf5f59ed9ef39d96d761e6826b95bfaa282d2b99bec34dc8dedb85168791d439",
+    "sequence": 44,
+    "transmission_id": "ffeeddccbbaa99887766554433221100"
+  },
+  "crypto_suite": "0101",
+  "data_first_emission": {
+    "body_sha256": "df5eeaea3abb76827863ad417e1ffe0a56a2e4d2f75901cce23fa4d802193b21",
+    "decoded_frame": "T1DataFrame",
+    "encrypted_header_plaintext": "0301010101010000102132435465768798a9bacbdcedfe0f00010002027e065e",
+    "epoch": 7,
+    "record_sha256": "e6ef517306b18f1b7ebd59b5eaf35345fa315ece066777c4c854dd250da5b9bc",
+    "sequence": 41,
+    "transmission_id": "102132435465768798a9bacbdcedfe0f"
+  },
+  "data_retry": {
+    "body_sha256": "70cf40eeb2da6ffb1960e7362c5423a5ac96226e6b2f1417099f9e89b2902745",
+    "epoch": 7,
+    "fresh_body": true,
+    "fresh_record": true,
+    "record_sha256": "daf0e0cad97c0602bffcecaddcb3ed71bf0c05b38e32d3cc1ccc2bab81b3ca0a",
+    "same_fragment": true,
+    "same_transmission_id": true,
+    "sequence": 42
+  },
+  "logical_message": {
+    "fragment_count": 2,
+    "fragment_lengths": [
+      992,
+      638
+    ],
+    "length": 1630,
+    "sha256": "c7dcc09d3ade2e5e9d108816a282667e3662591e8e9189154034cc8364555a80",
+    "type": "CANDIDATE"
+  },
+  "profile": "Trahens-T1",
+  "record_bytes": 1052,
+  "selective_ack": {
+    "ack_delay_ms": 6,
+    "acknowledged_indexes": [
+      0,
+      1
+    ],
+    "bitmap": 3,
+    "decoded_frame": "T1AckFrame",
+    "encrypted_header_plaintext": "0301010101010100102132435465768798a9bacbdcedfe0f0002000600000003",
+    "epoch": 7,
+    "record_sha256": "a0d273a8c637198baa51a53d373700a4cce1ae53ab13fb4ca0f46309e9a736f5",
+    "sequence": 43
+  },
+  "transport_profile": 3
+}

@@ -1,7 +1,7 @@
 # Trahens event lifecycle profile E1
 
 - Status: Active research design
-- Applies to: Core v1.0 with U1, R1, M2, and W2; C1 reply/signature components remain bound
+- Applies to: Core v1.1 with U1, R1, M2, W2, and T1; C1 reply/signature components remain bound
 - Purpose: Define event time, candidate windows, reverse setup, activation, cancellation, and deterministic cleanup
 
 ## 1. Time model

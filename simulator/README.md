@@ -8,6 +8,9 @@ The simulator is deterministic. It is a protocol-research and conformance model,
 - `trahens_crypto/eligibility.py` - provider boundary, active R1 implementation, C1 negative control, symbolic C2 control, and disabled C2 k=2 provider.
 - `trahens_codec/m2w2.py` - suite-agile M2 messages, fixed W2 cells, link protection, and bounded reassembly.
 - `trahens_sim/r1_compare.py` - R1 literal-marker experiment and C1/C2 controls.
+- `trahens_codec/t1.py` - fixed-size encrypted DATA, ACK, and CHAFF frames.
+- `trahens_sim/t1_model.py` - hop-local selective recovery, RTO backoff, interleaving, fixed scheduling, and CHAFF accounting.
+- `trahens_sim/t1_compare.py` - W2/T1 route-depth and cell-loss comparison plus active/empty trace equivalence.
 
 ## Research components
 
@@ -23,6 +26,7 @@ The event model retains complete paths and legitimate/malicious classifications 
 ```bash
 make test
 make r1-compare
+make t1-compare
 make c2-k2-exhaustive
 make fragmentation-compare
 make unlinkability-compare
@@ -32,4 +36,4 @@ make paper
 
 ## Limitations
 
-The R1 directory and gateway network are represented only by capability issuance and atomic redemption primitives; private lookup and distributed storage are not simulated. The C2 ideal functionality stores semantic ciphertext state in a process-local registry and is not cryptography. The C2 k=2 module is an audit, not a network backend. The model uses abstract event delays and has no real transport, traffic scheduler, side-channel-resistant runtime, or complete rendezvous handshake.
+The R1 directory and gateway network are represented only by capability issuance and atomic redemption primitives; private lookup and distributed storage are not simulated. The C2 ideal functionality stores semantic ciphertext state in a process-local registry and is not cryptography. The C2 k=2 module is an audit, not a network backend. The event lifecycle and T1 model use abstract delays and independent loss. T1 now models a transport scheduler, but not a real congestion controller, kernel queue, clock drift, cross-traffic, side-channel-resistant runtime, global observer, or complete rendezvous handshake. CHAFF slots are charged as complete records; the large comparison omits a receive-side AEAD operation for semantically empty CHAFF after separate codec conformance has verified the encoding.

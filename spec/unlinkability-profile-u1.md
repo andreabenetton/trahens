@@ -1,7 +1,7 @@
 # Trahens U1 branch-local unlinkability profile
 
 - Status: Active research profile
-- Applies to: Core v1.0 with R1, M2, and W2
+- Applies to: Core v1.1 with R1, M2, W2, and T1
 - Property class: structural and conditional batch-local message unlinkability
 
 ## 1. Objective

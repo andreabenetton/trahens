@@ -25,3 +25,7 @@ The first implementation should:
 Before network I/O, the project should implement a second independent M1/W2 codec, cross-check the C1 vectors, fuzz canonical and malformed messages/cells, and verify reassembly cleanup under adversarial fragment streams. The first prototype MUST NOT claim active-adversary unlinkability or production U1 security while the ratio-tag counterexample remains unresolved.
 
 No implementation language has been selected. Selection should follow memory safety, constant-time library support, generated-codec support, fuzzing quality, bounded-allocation control, and fault-injection needs.
+
+## T1 implementation requirements
+
+An implementation MUST expose bounded per-link sender and receiver state, cumulative selective ACKs, fresh ciphertexts on retry, RTO backoff, finite completion caches, and a scheduler with explicit fixed-rate or work-conserving mode. DATA, ACK, and CHAFF MUST use the same complete record length. Fixed-schedule deployments MUST reserve CHAFF bandwidth and report any schedule break caused by overload.

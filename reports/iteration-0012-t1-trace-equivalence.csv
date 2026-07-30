@@ -1,0 +1,5 @@
+route_hops,active_trace_cells_min,active_trace_cells_max,empty_trace_cells_min,empty_trace_cells_max,active_rate_cv,empty_rate_cv,same_public_schedule,active_real_cells,active_chaff_cells,empty_chaff_cells
+2,351,351,351,351,0.0,0.0,1,16,1388,1404
+5,376,376,376,376,0.0,0.0,1,42,3718,3760
+8,481,481,481,481,0.0,0.0,1,66,7630,7696
+12,621,621,621,621,0.0,0.0,1,106,14798,14904
