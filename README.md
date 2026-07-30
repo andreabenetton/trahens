@@ -91,3 +91,15 @@ Start with [`spec/core-v1.5.md`](spec/core-v1.5.md), [`spec/p1-prototype-profile
 ## Development-record note
 
 The version sequence and files under `docs/review-log/` are a compressed internal reconstruction of design decisions and deterministic experiments. They must not be cited as independent external review. See [`docs/development-record.md`](docs/development-record.md) and the separately stored [`30 July 2026 independent review`](docs/external-review-2026-07-30.md).
+
+
+## License
+
+| Material | License |
+|---|---|
+| Source code — `implementation/`, `simulator/`, `tools/`, `formal/` | [Apache License 2.0](LICENSE) |
+| Specifications, docs, and current paper — `spec/`, `docs/`, `paper/rewrite/` | [CC BY 4.0](LICENSE-CC-BY-4.0.txt) |
+
+Apache-2.0 covers the code for its explicit patent grant, which independent implementers of a cryptographic protocol need. CC BY 4.0 covers the written material so specifications and results can be redistributed with attribution.
+
+`paper/legacy/` is excluded from both grants and remains confidential author material. See [`NOTICE.md`](NOTICE.md).

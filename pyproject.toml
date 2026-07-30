@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,6 +9,8 @@ description = "Trahens v1.5 frozen P1 registry, reference models, conformance ve
 requires-python = ">=3.11"
 dependencies = ["cryptography>=43"]
 authors = [{name = "Andrea Benetton", email = "andrea.benetton@blueteam.ee"}]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 
 [project.scripts]
 trahens-sim = "trahens_sim.cli:main"
