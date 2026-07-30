@@ -31,6 +31,10 @@
 \usepackage[most]{tcolorbox}
 
 \makeatletter
+% hyperref only defines \theHALG@line when it has already seen a hyperlinked
+% algorithmic line; on TeX Live 2023 it is undefined at preamble time, so a
+% bare \renewcommand aborts the build. Declare it first, then override.
+\providecommand{\theHALG@line}{}
 \renewcommand{\theHALG@line}{\thealgorithm.\arabic{ALG@line}}
 \makeatother
 
