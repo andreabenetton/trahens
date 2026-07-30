@@ -11,24 +11,40 @@
 *.synctex.gz
 *.toc
 
-# Generated artifacts
+# Rust
+target/
+implementation/rust/fuzz/target/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# General build artifacts
 build/
 dist/
 
 # Editors and operating systems
 .DS_Store
+Thumbs.db
 .idea/
 .vscode/
 *~
+*.swp
+*.swo
 
-# Python caches
-__pycache__/
-*.py[cod]
-
-# Raw generated experiment output
+# Reports — raw experiment outputs default to untracked;
+# committed conformance and release summaries are explicitly unignored.
 reports/*.json
-# Tracked release/conformance summaries
-!reports/iteration-*-crypto-conformance.json
+!reports/v1.5-bounded-state-models.json
+!reports/v1.5-t3-anonymity-metrics.json
 !reports/c2-k2-transcription-audit.json
-
 !reports/c2-k2-small-chain-exhaustive.json
+!reports/iteration-*-crypto-conformance.json
+
+# Per-developer Claude Code overrides — host machine details, personal
+# scratch notes, never committed.
+CLAUDE.local.md
+**/CLAUDE.local.md
