@@ -1,0 +1,616 @@
+\PassOptionsToPackage{table}{xcolor}
+\documentclass[12pt,oneside]{wlscirep}
+\usepackage{etex}
+\usepackage{tikz}
+\usepackage{msc}
+\usepackage{float}
+
+\usepackage[modulo]{lineno}
+\usepackage{wrapfig}
+\usepackage{csquotes}
+\usepackage{indentfirst}
+\usepackage{bytefield}
+\usepackage{graphics}
+\usepackage{booktabs}
+\usepackage{algorithm,algpseudocode,float}
+\algdef{SE}{On}{EndOn}[1]{\textbf{on} \(\mbox{#1}\) \textbf{do}}{\textbf{end on}}%
+\algnewcommand\Raise[2]{\textbf{raise} \textproc{#1}(#2)}
+\usepackage{tabularx}
+\usepackage{varwidth}
+\usepackage{setspace}
+
+\newfloat{MSC}{t}{lop}
+
+\renewcommand{\mkbegdispquote}[2]{\itshape}
+
+\usepackage[
+    type={CC},
+    modifier={by},
+    version={4.0},
+]{doclicense}
+\usepackage{listings}
+\usepackage{layout}
+
+\usepackage{xcolor}
+\usepackage{draftwatermark}
+\SetWatermarkText{CONFIDENTIAL DRAFT}
+\SetWatermarkScale{1.5}
+\SetWatermarkColor[gray]{0.85}
+
+\DeclareRobustCommand{\degree}[1]{{\lvert{#1}\rvert}}
+\DeclareRobustCommand{\odegree}[1]{{\langle{#1}\rangle}}
+
+\newcommand\xdots{\makebox[1em][c]{.\hfil.\hfil.}}
+
+\DeclareRobustCommand{\kder}[1]{{\overrightarrow{{#1}}}}
+
+\newcommand{\colorwordbox}[4][rlbt]{%
+    \rlap{\wordbox[#1]{#3}{\color{#2}\rule{\width}{\height}}}%
+    \wordbox[#1]{#3}{#4}}
+\newcommand{\colorbitbox}[4][lrbt]{%
+    \rlap{\bitbox[#1]{#3}{\color{#2}\rule{\width}{\height}}}%
+    \bitbox[#1]{#3}{#4}}
+
+\newcommand{\ProtoName}{Trah\={e}ns }
+    
+
+\definecolor{lightgray}{gray}{0.8}
+
+
+\title{\ProtoName \\ a privacy enabled route discovery protocol}
+\date{2020\\ October}
+\author[1,*]{Andrea Benetton}
+
+\affil[1]{BlueTeam OÜ, Tallinn, Estonia}
+\affil[*]{andrea.benetton@blueteam.ee}
+
+
+
+%\keywords{Keyword1, Keyword2, Keyword3}
+
+\begin{abstract}
+Low-latency network-layer anonymity systems are a recent proposal for anonymous communication. They are plugged in as a service of infrastructures in next-generation network architectures which also provides ISP managed mechanisms necessaries to discover the sequence of addresses from the origin to the destination to forward data packets.
+The approach in these architectures migrates the current Internet operating model based on Autonomous Systems (AS) and, by considering anonymity systems as a service implies that privacy is opt-in. 
+We propose a route discovery mechanism that is privacy by design; it avoids disseminating information that can be used later to deanonymize the communications. It is trustless; no entities are required to manage routing tables, the network self-organizes.
+\end{abstract}
+\begin{document}
+      
+\flushbottom
+\maketitle
+% * <john.hammersley@gmail.com> 2015-02-09T12:07:31.197Z:
+%
+%  Click the title above to edit the author information and abstract
+%
+% ^ <andrea@bhb.network> 2017-04-25T19:21:58.080Z.
+\thispagestyle{empty}
+\vfill
+\noindent 
+%\doclicenseThis
+\clearpage
+\linenumbers
+
+\section{Introduction}
+\label{sec:intro}
+
+\clearpage
+\section{Background and related work}
+\label{sec:background}
+
+\clearpage
+\section{Problem Definition}
+\subsection{Network Assumptions}
+\ProtoName protocol operates at an equivalent to the ISO-OSI layer 3, discovering routes between two nodes connected within a graph topology. Suppose \ProtoName is applied to a network communication stack, as we will take for granted in the follow. In that case, the graph could be achieved by an upper uniformity extension at the top of the underlying heterogeneous ISO-OSI layer 2 ("Data Link Layer"). This white-paper does not cover this extension (named Nexus in the following), but we provide its must have.\par
+\subsection{Underlaying layer extension requirements}
+\ProtoName has a prerequisite that the adversary cannot attack the edges (cannot read communications in transit) but only the nodes themselves. To secure graph edges, Nexus MUST provide an encrypted, reliable, flow-controlled, full duplex connection between two adjacent node on the same underlying medium while solving all issues related to packet fragmentation. \par 
+It can be imagined as a technology agnostic generalization of MACsec\cite{noauthor_802.1ae:2018} (IEEE 802.1AE) as it mitigates attacks directed against the physical link by defining a secure channel between peers to provide data confidentiality, data integrity, and data origin authentication.\par
+Like TARANET\cite{chen_taranet:_2018} "Link Encryption and Padding", it MUST prevent an adversary from observing a data flow between two honest adjacent nodes from distinguishing chaff (used to avoid traffic analysis from actual data, control plane messages from data and different types of messages.\par
+Also, when Nexus notify the upper layer of the availability of a new adjacent node, it MUST include the number adjacent of the connecting node, obfuscated by adding positive noise, to hide the network topology. By eventually employing a private intersection set technique, Nexus also detects and remove from the counting mutual adjacent that leads to $d\leq 2$ cycles (common in a highly interconnected local topology like LAN).\par
+
+\subsection{Addressing schema}
+The upper layer, which \ProtoName is part of, defines an own addressing schema. \par
+Each endpoint embeds a set of long-term digital asymmetric key-pair generated locally, one for each cryptographic set supported by the node. Multiple cryptographic sets are required to move forward in managing technological obsolescence. Instead, a router rely on multiple sets of ephemeral key-pairs to encrypt and authenticate when performing routing. \par
+A \textbf{endpoint address} is obtained by concatenating a \textit{varint} preamble that encodes the identifier of the cryptographic set used and the corresponding hash of the long term public key. A node has many node addresses as it can implement different cryptographic sets to be utilized (see section \ref{annex:cryptoset}); these addresses are concatenated in a \textbf{node address string}. The node address string is the information that another node must know in order to start a communication with it. When it is used outside the stack (i.e., DNS records, QRCode) a checksummed base32 encoding like BECH32\cite{BECH32} SHOULD be used.\par
+Even if technically the same thing, the term \textbf{routing label} is used instead to indicate the hash of the ephemeral public key used for routing.\par
+\subsection{Layer communications}
+We can classify data exchange at layer 3 as: 
+\begin{itemize}
+\item \textbf{Control plane}, ones necessary to enable the transfer of data submitted to a node and to run the network.
+\item \textbf{Data plane}, ones that convey data submitted to the receiver. 
+\end{itemize}\par
+The purpose and the \ProtoName activities make it a protocol that operates at Control Plane. Control plane protocols data unit is a \textbf{Message}. \par
+A node does not send a message individually but queues them into batches of size $m$. As TARANET\cite{chen_taranet:_2018} setup phase, each node implements mixing before transmitting, here extended to all messages of the control plane and not just ones of the flow setup. Once there are enough messages to form a batch, the sender first performs a Fisher-Yates shuffle of them and then transmits the batch as a single \textbf{Packet}. \par 
+Chaffs defenses are used to defy traffic analysis attack aimed to identify communicating endpoints based on metadata such as volume, traffic patterns, and timing by adding padding traffic. This is obtained by injecting chaff messages that implement the padding of the batches in the mixing process; a pair of close coordinates the injection to maintain a constant sending rate on a edge. The rate is calculated by probing underlying Nexus layer performances. \par 
+This layer implements a $C$ clock function, which assigns a natural number $C(p)$ to any packet g, a Lamport timestamp\cite{Lamport:1978:TCO:359545.359563}) that defines an irreflexive partial ordered set of all packets circulated in the network. The timestamp is incremented before each network event, ie, the sending or receiving of a packet.\par
+
+
+\subsection{Threat Model}
+We consider an active global adversary able to force a certain number of nodes to surrender, that is, on the compromised node the adversary sees all keys and settings and has bulk access to contents and timing information of traversing protocol traffic and can also there inject, drop, delay, replay, redirect, and modify messages. 
+\subsection{\ProtoName Goals}
+\textbf{Pseudo Anonymity.} 
+Using Pfitzmann and Köhntopp\cite{pfitzmann2001anonymity} formalized terminology, in the scope of functions expected by a route discovery protocol, \ProtoName provides to each application "pseudo-anonymity" using a unlocalizable "initially person unlinked pseudonym" (the address) and short life "transaction pseudonym" on intermediates nodes effectively preventing the determination of the route beyond the directly adjacent nodes.\par 
+\textbf{Forward Authentication.} 
+Discovering a node means not only knowing its pseudonym but exchanging respective ephemeral public keys in the process. Once a node declares its identity at the beginning of the process, a "man in the middle attack" due to the physical replacement or insertion of nodes in the path cannot be conducted.\par 
+\textbf{Message Unlinkability.}
+The messages used for exploration and the exchange of ephemeral keys must possess the maximum achievable degree of bit-pattern unlinkability. Our schema guarantees message unlinkability between $m_i$ and $m_{i \pm k}$  with k>2.\par
+\textbf{Topology Concealing.}
+To avoid the identification of the node position in the network topology by third-party nodes while maintaining the scalability of the solution, \ProtoName disperses local onionized routing information in neighboring nodes and stores long-range ones in distributed facilities. A node would not need to know the entire network topology because it does not use source-based routing, but a hybrid that distributes the routing information in intermediates nodes, still allowing the sender to choose the routes to use.\par
+
+\clearpage
+\section{Protocol Design}
+\label{sec:design}
+The basic idea is to have a distributed system that carried out the process in different phases in which different nodes take on the role of sender and receiver in the transmission of control plane messages. The challenge is to preserve privacy; it is not desirable to announce exact node position to the whole network, nor scalable that any node try to collects information about all nodes of the network.\par 
+
+\subsection{Terms and Notations}
+We first describe our notation.\par
+A \textbf{node} $n$ is any element which operates one or more associated activities related to the network layer in which \ProtoName operates. An \textbf{edge} is any element through which two adjacent nodes can passively send unit of information. \par 
+A node act as an \textbf{endpoint} if originates or it is the destination of the layer traffic. An exchange of messages occurs between two endpoints, initiating by the \textbf{sender} $n^s$ and terminating at the \textbf{receiver} $n^r$. An endpoint transmits data originating from itself or receives data intended to him. It consumes a network service. \par 
+A \textbf{route} between $n^s$ and $n^r$ is a unweighted and undirected sequence of nodes whose pairwise relationships connect the two endpoints. Since there may be multiple routes from $n^s$ to $n^r$ through the same close with different follow up, and a node may have multiple closes each on a different route to the other endpoint, to disambiguate, a route is encoded as a tuple ($n^s,n^1,\dots,n^i,\dots,n^r$). \par 
+
+
+\begin{table}[ht]
+\begin{tabular}{@{}lp{10cm}l@{}}
+\toprule
+Sym     & Meaning &  Example                          \\ \midrule
+$\mathcal{R}$ & a cryptographically secure pseudo-random number generator & $r \gets \mathcal{R}()$ \\
+$\mathcal{G}$ & a key generation algorithm that on input $1^k$ seed outputs public key/secret key pair& $(pk,sk) \gets \mathcal{G}(1^n)$ \\ 
+$\mathcal{MG}$ & a key generation algorithm that  on input $1^k$ seed outputs master key pair and the master chain code & $(pk,sk,cc) \gets \mathcal{MG}(1^n)$ \\
+$\mathcal{CKD}$ & a child key derivation algorithm that on input parent extended key $k^i$, parent chaincode $cc^i$ a child index $j$ outputs derived key $k_j^{i+1}$ and associated chaincode $cc_j^{i+1}$ & $(k_j^{i+1}, cc_j^{i+1}) \gets \mathcal{CKD}(k^i, cc^i, j)$ \\
+$\mathcal{E}$ & an encryption algorithm that on input key $k$ and message $m$ outputs ciphertext $c$ & $c \gets \mathcal{E}(k, m)$ \\
+$\mathcal{D}$ & a decryption algorithm that on input key $k$ and ciphertext $c$ outputs message $m$ & $m \gets \mathcal{D}(k, c)$ \\
+$\mathcal{S}$ & a signing algorithm that on input key $k$ and message $m$ outputs a signature $s$ & $s \gets \mathcal{S}(k, m)$ \\
+$\mathcal{V}$ & a signature verification algorithm that on input key $k$, message $m$ and its signature $s$ outputs true if the signature is verified & $(true \lor false) \gets \mathcal{V}(k, m, s)$ \\
+$\mathcal{H}$ & a cryptographically hashing algorithm that on input message $m$ outputs its hash $h$ & $h \gets \mathcal{H}(m)$ \\
+\bottomrule
+\end{tabular}
+\caption{Algorithms notation}
+\label{AlgorithmNotation}
+\end{table}
+A \textbf{router} node $n^i$ is the node at a distance $i$ from node $n^s$ on a route. A router receives data that is not intended to it and that it forward along the route to the actual destination. It provides a service to the network (i.e., other nodes). Any node can participate in the routing if it's willing to do so and is connected to at least two other nodes.\par
+\begin{table}[ht]
+\begin{tabular}{@{}lp{13cm}@{}}
+\toprule
+Sym     & Meaning  \\ \midrule
+$\degree{n}$ & the degree of node $n$  \\
+$\odegree{n}$ & the obfuscated degree of node $n$ (see section )\\
+$j$ & an iterator on a degree  \\
+$k$ & an iterator on an obfuscated degree  \\
+$z$ & a distance iterator \\
+$k$, $k^i$, $k^{i+2}_k$ & a key, the same of the $i$ node on the route, the same for the node $n^{i+2}$ reached along $k$-th edge from $n^{i+1}$ \\
+$k^\kder{s, i}$, $k_k^\kder{s, i+2}$ & a key of the node $n^s$ derived via $\mathcal{CKD}$ for the node $n^i$, the same derived for the node $n^{i+2}$ reached along $k$-th edge from $n^{i+1}$ \\
+$pk$, $sk$  & a public key, a secret key\\
+$cc$, $cc^i$, $cc^{i+2}_k$  & the chain code, used by $\mathcal{CKD}$ to generate the next depth level of keys, the same of the $i$ node on the route, the same for the node $n^{i+2}$ reached along $k$-th edge from $n^{i+1}$\\
+
+$w$, $w^{i+2}_k$ & a random number used as index to generate keys in $\mathcal{CKD}$, the same for the node $n^{i+2}$ reached along $k$-th edge from $n^{i+1}$ \\
+$ed$, $ed^{i+2}_k$ & the corresponding $w$ encrypted \\
+$p^i$ & an unencrypted payload generated at node $n^i$ \\
+$e^i$ & an encrypted payload generated at node $n^i$ \\
+$s^i$ & a signature generated at node $n^i$ \\
+$L$, $lpk$, $lsk$, $led$ & the left label and the left pk sk and ed. \\
+$R$, $rpk$, $rsk$, $red$ & the right label and the right pk sk and ed. \\
+\bottomrule
+\end{tabular}
+\caption{Symbols in the \ref{ssec:flooding} section}
+\label{AlgorithmSymbols}
+\end{table}
+The \textbf{distance} $d$ is the number of hops between two nodes $n^s$ and $n^r$ on route. A \textbf{neighbor} is a node within a defined distance from $n^s$. A \textbf{close} is the node $n^1$ at a distance 1 from node $n^s$. \par
+The \textbf{degree} of a node $\degree{n}$ is the number of closes connected with $n$ that is, the number of edges connected to it. A \textbf{leaf} node is a node with degree 1, typically an endpoint application running on a device. \par
+
+The keywords “MUST”, “MUST NOT”, “REQUIRED”, “SHALL”, “SHALL NOT”, “SHOULD”, “SHOULD NOT”, “RECOMMENDED”, “NOT RECOMMENDED”, “MAY”, and “OPTIONAL” in this document are to be interpreted as described in BCP 14 namely RFC2119\cite{RFC2119} and RFC8174\cite{RFC8174} when, and only when, they appear in all capitals, as shown here.\par
+Message Sequence Charts (MSC) format is described in ITU Z.120\cite{noauthor_z.120_2011} recommendation. \par 
+Packet diagrams in this document use the format described in Section 3.1 of RFC2360\cite{RFC2360}.\par
+
+\subsection{Protocol Phases}
+The \textbf{flooding phase}(\ref{ssec:flooding}) operates in the neighborhood of the originator node and keeps anonymized information about routes between to \textbf{Gateway}s in a distributed and redundant form. A gateway is a node that when presented with the hash of the address of the originator node, it will forward it through an anonymous route. The phase starts when Nexus of the node $n^s$ notifies \ProtoName that a new edge is available and then is repeated periodically; the originator reaches out gateways along the new branch of the network reachable through that edge, a process that takes place symmetrically in opposite directions on both closes of an edge when it is established. \par
+In the \textbf{registration phase}(\ref{ssec:registering}), the gateway files own label and the hash of the initiator's address on Beacons known to him. A \textbf{Beacon} is a node on which a B-facility runs, that is, simplifying a database table that accepts updates to a record by providing proof of ownership of the same and that accepts queries to the double-hash of originator's address. Statistically, while the topology near the originators can change often, beacons, as any network service provider, are of high availability and relative stability in the local topology. Up to this point the information on how to reach the originator is only available in nodes that know a beacon that has the necessary record. \par
+In the subsequent \textbf{propagation phase}(\ref{ssec:propagation}), the beacon posts its address and the triple-hash of originator's address to an authority node, in which runs the A-facility. If it is authoritative for the triple-hash of originator's address then it proceed to register else it forward the request to others known authorities. Being authoritative of address space means that it holds a list of originators which 3address matches a bit pattern through a bit-wise AND-masking. The masking depth, namely the number of bits not set in the mask, partition the address space  and therefore defines the memory and computational resources needed by the A-Facility.\par
+At last the \textbf{resolving phase}(\ref{ssec:resolving}) is executed when a node have to retrieve the route to a destination. The querying node first checks that a destination is between neighboring nodes, that is those identified during the execution of a flooding phase. If not, contact your beacons to find out if and which gateways they registered to lead to the destination. In the absence of feedback, the querying node asks beacons for the list of available authorities. If it does not find any authoritative, then it queries the non-authoritative ones for the authoritative ones. From there, they obtain the address of the beacons having gateways registered there that lead to the destination.\par
+
+
+
+
+
+
+
+
+\clearpage
+\section{Protocol Details}
+\label{sec:details}
+This section presents the details of \ProtoName  message formats and processing functions. We show how to create messages that fulfill design goals on the sender, how intermediate nodes process these messages, and how Beacon nodes construct the reply.
+
+
+
+
+\subsection{Flooding neighborhood to find Beacon and Gateways}
+\label{ssec:flooding}
+As the sender $n^s$ knows nothing about the topology reachable through the new edge, as soon as the CLOSEADDED event is raised, it floods its neighbor nodes along the new edge till $d_{max}$ with T-FLOOD messages.  When a T-FLOOD message is received by a node, it computes a route label $L^i$, that is the hash of an ephemeral public key generated at $n^i$; this label is forwarded to all $n^{i+1}$ in the flooding process. By repeating this subsequently on each node of the route, $i$-th node can address a message to head back to the sender $n^s$. For this reason we call it the \textbf{left} label of the route at \textit{i}-th node. This label is kept in an entry of the routing table \textbf{RouteT} of a node (see table \ref{RouteT}); if the OutLabel is set to 0 then any incoming message headed to $L$ is arrived back at the original sender.\par
+
+\begin{table}[ht]
+\begin{tabularx}{\textwidth}{lllX}
+\toprule
+Field & {\scriptsize T-FLOOD} & {\scriptsize T-ACK-L} & Description \\ \midrule
+Node & $n^{i-1}$ & $n^{i-1}$ & The edge on which message come from \\
+InLabel & $L^i$ & $R^{i+1}$ & The label of the route in the incoming message \\
+OutLabel & $L^{i-1}$ & $R^i$ & The label of route in the outgoing message \\
+OriginPK & $pk^\kder{s,i}$ & $pk^\kder{r,i}$ & The child public key of message originator   derived to be used on $i^{th}$ node \\
+Edge & $led^i$ & $red^i$ & A unique identifier of the outgoing edge \\
+Created & $T_{created}$ & $T_{created}$ & The creation timestamp of the entry    \\ \bottomrule
+\end{tabularx}
+\caption{RouteT table fields on node $n^i$}
+\label{RouteT}
+\end{table}
+
+The same process of label creation happens when the message T-ACK-L come back from the receiver to the sender. A label $R^i$ is created at each hop, called the \textbf{right} label of the route at \textit{i}-th node. The sender is now able to send a message to a replying node.\par
+Once the T-FLOOD packet has been received by a gateway or a beacon, on each intermediate node, have been defined all $L$ labels necessary for a receiver to send back a message to the sender. Similarly, when the sender get back the T-ACK-L message, on each intermediate node have been defined all $R$  labels required for a sender to send a message to the receiver .\par
+
+Thirdly, the sender and the recipient must exchange public keys so that, once a node has declared its identity at the beginning of the session, the exchange of information is encrypted and authenticated. It is not possible for the intermediates nodes to retransmit the same sender key because messages along that route discovery would have a common bit pattern, breaking bitwise unlinkability. To solve it, at each hop we should generate a child public key $lpk^\kder{s, i}$ from the sender key $lpk^s$ according to the deterministic schema provided by the Bitcoin Improvement proposal 32\citep{BIP:32} using the HMAC-SHA512 function as specified in RFC4231\cite{RFC:4231}. The schema can eventually be adapted for Curve25519\cite{7966967}. All keys are non-hardened for the sake of this document. \par
+
+To still apply the randomization technique described in the original paper, the node $n^i$ have to know how many messages are needed by $n^{i+1}$ to be sent to $n^{i+2}$. The retrieving of this information from the close $n^{i+1}$ is performed by the underlying Nexus and exposed in the CLOSEADDED event as the obfuscated degree (\textbf{ODegree}), hereafter with the notation $\odegree{n^{i+1}}$. Nexus also detects and doesn't expose mutual closes that leads to $d\leq 2$ cycles and add a positive noise to hide the network topology. \par
+Hence, the node $n^i$ creates a set of tuple $lpk^{s \to i+2}$,$lcc^{i+2}$ of cardinality $\odegree{n_{i+1}}$, using a random number as child index for the public key derivation function $\mathcal{CKD}_p$. 
+The node $n^{i+1}$ performs a shuffle on this set before the forwarding, resulting in further hiding the following topology.\par 
+Furthermore the message from $n^i$ to $n^{i+1}$ doesn't include $lcc^{i+1}$ so it's impossible for $n^{i+1}$ to generate keys for $n^{i+2}$. \par
+
+
+
+\begin{table}[ht]
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+Field     & Value &  Description                          \\ \midrule
+Label & $L^i$ & The label of a route at the given node \\
+SK & $sk^i$ & The private key of $n^i$  \\
+PK & $pk^i$ & The public key of $n^i$  \\
+Created    & $T_{created}$ & The creation timestamp of the entry    \\ \bottomrule
+\end{tabularx}
+\caption{NodeT table fields on node $n^i$}
+\label{NodeT}
+\end{table}
+
+\newpage
+Algorithm \ref{alg:1} describe how the elements necessary to build the starting T-FLOOD message are computed on node $n^s$ when the event CLOSEADDED is raised. \par
+The originating node performs the master key generation function $\mathcal{MG}()$ to generate the master key pair $pk^s$ and $sk^s$ and the master chain code $cc^s$.\par 
+With these it can use $\mathcal{CKD}_p(lpk^s, lcc^s, j)$ function to computes the child extended public key $lpk^\kder{s, 1}$ and the child chaincode $cc^1$ from the parent extended public key $lpk^s$ and parent $lcc^s$ for the new edge $j$.\par
+It also generates the label $L^s$ by hashing $\mathcal{H}(lpk^s)$ which becomes the route local label on that edge for the sake of routing back any message to $n^s$ from $n^1$.\par
+
+\begin{algorithm}
+\caption{On sender node $n^s$, start T-FLOOD direct propagation.}
+\label{alg:1}
+\begin{spacing}{1.1}
+\begin{algorithmic}[1]
+\Require $\odegree{n^1}$, the ODegree of the next node
+\Statex
+
+\On{CLOSEADDED($n^1, \odegree{n^1}$)}
+\If{$\odegree{n^1} > 0$} 
+	\State $(~lpk^s,~lsk^s,~lcc^s) \gets \mathcal{MG}()$
+	\State $d \gets 1$
+    \State $w^1 \gets \mathcal{R}()$
+	\State $(lpk^\kder{s,1},~lcc^1) \gets \mathcal{CKD}_p(lpk^s, lcc^s, w^1)$
+    \State $led^1 \gets \mathcal{E}(lpk^s,~w^1)$
+	\State $L^s \gets \mathcal{H}(lpk^s)$
+	\State Insert in RouteT $[0,~L^s,~0,~0,~0,~T_{now}]$ 
+	\State Insert in NodeT $[L^s,~lsk^s,~lcc^s,~T_{now}]$ 
+    \For{$k\gets 1, \odegree{n^1}$} 
+    	\State $w_k^2 \gets \mathcal{R}()$
+        \State $(lpk_k^\kder{s,2},~lcc_k^2) \gets \mathcal{CKD}_p(lpk^\kder{s,1},~lcc^1,~w_k^2)$
+        \State $led_k^2 \gets \mathcal{E}(lpk^s,~w_k^2)$
+    \EndFor
+	\State $p^s \gets (d \Vert ~lpk^s \Vert ~lpk^\kder{s,1} \Vert ~led^1 \Vert (lpk_1 \Vert \xdots \Vert lpk_\odegree{n^1})^\kder{s,2} \Vert (lcc_1 \Vert \xdots \Vert  lcc_\odegree{n^1})^2\Vert~(led_1 \Vert \xdots \Vert led_\odegree{n^1})^2)$ 
+	\State $s^s \gets \mathcal{S}(lsk^s,\mathcal{H}(p^s))$
+	\State Send to $n_1$: $(p^s,~s^s)$
+\EndIf
+\EndOn
+\end{algorithmic}
+\end{spacing}
+\end{algorithm}
+
+\newpage
+Algorithm \ref{alg:2} describes what happens on any node $n^i$ upon the reception of the message from the close $n^{i-1}$. The message contains the label $L^{i-1}$, the public key $lpk^{s \to i}$ of $n^s$ as seen by $n^i$, and a set of tuples of public key and chaincode, each one to be sent by $n^{i+1}$ with a message to a close except the originating one. The set is shuffled before the forwarding so the previous generating hop $n^{i-1}$ cannot do any assumptions on which key go to each node.\par
+Similarly to what we saw at the sender, the intermediate node calculate the label $L^i$ such any message that contain it incoming from node $n^{i+1}$ can be forwarded to $n^{i-1}$ headed to $L^{i-1}$. For each edge, except the originator, the process forward the flood, generating the public keys $lpk^{s \to i+2}$ and inserting an ephemeral entry ($L^i,~L^{i-1},~L^{i+1},~lpk^{s \to i},~keyseed^i,~T_{eph}$). \par
+$T_{eph}$ is a short-term deadline after which the entry will be removed from the table. The life of the entry will be extended if an T-ACK-L eventually come back along the route.\par
+
+
+\begin{algorithm}
+\caption{On intermediate node $n^i$, T-FLOOD direct propagation.}
+\label{alg:2}
+\begin{spacing}{1.1}
+\begin{algorithmic}[1] 
+\Require $\odegree{n_j^{i+1}}$, the ODegree of the next node along the edge of index $j$
+\Statex
+     
+\On{reception from $n^{i-1}: (p^{i-1},~s^{i-1})$ }  
+	\State $p^{i-1} \to (d, lpk^{i-1}, lpk^\kder{s,i}, led^i, (lpk_1, \xdots, lpk_\odegree{n_j^i})^\kder{s,i+1}, (lcc_1, \xdots, lcc_\odegree{n_j^i})^{i+1}, (led_1, \xdots, led_\odegree{n_j^i})^{i+1})$
+	\If{$\mathcal{V}(lpk^{i-1},~p^{i-1},~s^{i-1})$}
+	\State $L^{i-1} \gets \mathcal{H}(lpk^{i-1})$
+    \If{$d = d_{max}$ or $\odegree{n^i} = 0$} 	
+        \State Insert in RouteT $[n^{i-1},0,~L^{i-1},~lpk^\kder{s,i},~led^i,~T_{now}]$ 
+    \ElsIf{$d < d_{max}$}
+        \State $(lpk^i,~lsk^i) \gets \mathcal{G}()$
+    	\State $L^i \gets \mathcal{H}(lpk^i)$
+        \State Insert in RouteT $[n^{i-1},~L^i,~L^{i-1},~lpk^\kder{s,i},~led^i,~T_{now}]$ 
+		\State Insert in NodeT $[L^i,~lsk^i,~0,~T_{now}]$ 
+    	\State Shuffle $~\{(lpk,~lcc,~led)_1, \xdots, (lpk,~lcc,~led)_{\odegree{n^i}}\}^\kder{s,i+1}$
+        \For{$j~\gets~(1 \ldots ~\degree{n^i}), n_j^i\neq n^{i-1}$} 
+			\State $p_j^i \gets (d+1 \Vert ~lpk^i \Vert ~lpk_j^\kder{s,i+1} \Vert ~led_j^{i+1})$
+            \If{$ \odegree{n_j^{i+1}} > 0 $ and $d < (d_{max}-1)$} 
+            	\For{$k\gets 1, \odegree{n_j^{i+1}}$} 
+    				\State $w_k^{i+2} \gets \mathcal{R}()$
+        			\State $(lpk_k^\kder{s,i+2}, lcc_k^{i+2}) \gets \mathcal{CKD}_p(lpk^\kder{s,i+1}, lcc^{si+1}, w_k^{i+2})$
+                    \State $led_k^{i+2} \gets \mathcal{E}(lpk^\kder{s,i},~w_k^{i+2})$
+    			\EndFor
+                \State $p_j^i  \gets p_j^i~\Vert~(led_1 \Vert \xdots \Vert led_\odegree{n_j^{i+1}})^{i+2} \Vert (lpk_1 \Vert \xdots \Vert lpk_\odegree{n_j^{i+1}})^\kder{s,i+2} \Vert (lcc_1 \Vert \xdots \Vert  lcc_\odegree{n_j^{i+1}})^{i+2}$
+            \EndIf
+			\State $s_j^i \gets \mathcal{S}(lsk^i,\mathcal{H}(p_j^i))$
+            \State Send to $n_j^i$: $(p_j^i,~s_j^i)$
+        \EndFor
+        \If{($n^i\ is\ Gateway) \lor (n^i\ is\ Beacon)$}
+			\State \Raise{SendAnswer}{$L^{i-1}$}
+    	\EndIf
+    \EndIf
+    \EndIf
+\EndOn
+\end{algorithmic}
+\end{spacing}
+\end{algorithm}
+
+
+\begin{algorithm}
+\caption{On receiver node $n^r$, start of T-ACK-L reverse propagation.}
+\label{alg:3}
+\begin{spacing}{1.1}
+\begin{algorithmic}[1] 
+
+\Procedure{SendAnswer}{$L^{r-1}$}
+	\State ($n^{r-1},~lpk^\kder{s,r},~led^r) \gets$ for RouteT.OLabel=$L^{r-1}$ 
+	\State $(rpk^r,~rsk^r,~rcc^r) \gets \mathcal{MG}()$
+	\State $w^{r-1} \gets \mathcal{R}()$
+	\State $(rpk^\kder{r,r-1},~rcc^{r-1}) \gets \mathcal{CKD}_p(rpk^r, ~rcc^r, w^{r-1})$
+    \State $red^{r-1} \gets \mathcal{E}(rpk^r,~w^{r-1})$
+	\State $R^r \gets \mathcal{H}(rpk^r)$
+	\State Insert in RouteT $[0,~R^r,~0,~0,~0,~T_{now}]$ 
+	\State Insert in NodeT $[R^r,~rsk^r,~rcc^r,~T_{now}]$ 
+	\State $w^{r-2} \gets \mathcal{R}()$
+	\State $(rpk^\kder{r,r-2},~rcc^{r-2}) \gets \mathcal{CKD}_p(rpk^\kder{r,r-1}, ~rcc^{r-1}, w^{r-2})$
+    \State $red^{r-2} \gets \mathcal{E}(rpk^r,~w^{r-1})$
+	\State $p^r \gets (L^{r-1}~\Vert~d~\Vert~rpk^r~\Vert~rpk^\kder{r,r-1}~\Vert~red^{r-1}~\Vert~rpk^\kder{r,r-2}~\Vert~rcc^{r-2}~\Vert~red^{r-2})$
+	\State $e^r \gets \mathcal{E}(lpk^\kder{s,r},~($"Rcver"$~\Vert~d~\Vert~\mathcal{H}(n^r)~\Vert~rpk^r))$
+	\State $s^r \gets \mathcal{S}(rsk^r,\mathcal{H}(e^r))$
+	\State Send to $n^{r-1}: (p^r,~e^r,~s^r)$ 
+\EndProcedure
+\end{algorithmic}
+\end{spacing}
+\end{algorithm}
+The node creates and includes in each message also a set of child public key of the sender $lpk^{s \to i+2}$ and related chaincodes $lcc^{i+2}$ that the node $n^{i+1}$ have to provide to each of his $n^{i+2}$ close. \par
+\clearpage
+The relay back of T-ACK-L is described in algorithm \ref{alg:4} the message is conveyed back to the originating node $n^s$.\par
+The key $lpk^{s \to i}$ is used to onion encrypting information contained in a route-back message T-ACK-L so that the ODegree of $n^i$  required by $n^s$ to efficiently build the route is not disclosed to any intermediate node.\par
+
+\begin{algorithm}[H]
+\caption{Intermediate node $n^i$, reverse propagation of T-ACK-L.}
+\label{alg:4}
+\begin{spacing}{1.1}
+\begin{algorithmic}[1]
+
+\On{reception from $n^{i+1}: (p^{i+1},~e^{i+1},~s^{i+1})$}
+	\State $p^{i+1} \to (L^i,~d,~rpk^{i+1},~rpk^\kder{r,i},~red^i,~rpk^\kder{i,i-1},~rcc^{i-1}),~red^{i-1}$
+	\If{$\mathcal{V}(rpk^{i+1},~e^{i+1},~s^{i+1})$}
+	\State $d \gets d - 1$
+    \If{$d \leq d_{max}$}
+		\State ($L^{i-1}) \gets$ for RouteT.InLabel=$L^i$ 
+        \State ($led^i) \gets$ for NodeT.Label=$L^i$ 
+		\If{$\exists L^{i-1}$}
+        	\State $R^{i+1} = \mathcal{H}(rpk^{i+1})$
+			\If{$L^{i-1} \neq 0$}
+            	\State $(rpk^i,~rsk^i) \gets \mathcal{G}()$
+    			\State $R^i \gets \mathcal{H}(rpk^i)$           
+				\State $w^{i-2} \gets \mathcal{R}()$
+            	\State $(rpk^\kder{r,i-1},~rcc^{i-1}) \gets \mathcal{CKD}_p(rpk^i, ~rcc^i, w^{i-2})$
+                \State $red^{i-2} \gets \mathcal{E}(rpk^\kder{r,i},~w^{i-2})$
+				\State Insert in RouteT $[n^{i+1},~R^i,~R^{i+1},~rpk^\kder{k,i},~red^i,~T_{now}]$ 
+				\State Insert in NodeT $[R^i,~rpk^i,~rsk^i,~0,~T_{now}]$ 
+				\State ($lpk^\kder{s,i}, led^i) \gets$ for NodeT.Label=$L^i$ 
+				\State $p^i \gets (L^{i-1}~\Vert~d~\Vert~rpk^i~\Vert~rpk^\kder{r,i-1}\Vert~red^{i-1}~\Vert~rpk^\kder{i,i-2}~\Vert~rcc^{i-2}~\Vert~red^{i-2})$
+                \State $e^i \gets \mathcal{E}(lpk^\kder{s,i},~($"INode"$~\Vert~d~\Vert~lpk^i~\Vert~led^i~\Vert~e^{i+1}))$
+            	\State $s^i \gets \mathcal{S}(rsk^i,\mathcal{H}(e^i))$
+				\State Send to $n^{i-1}: (p^i,~e^i,~s^i)$ 
+			\ElsIf{$d = 0$ and $L^{i-1} = 0$}
+				\State Insert in RouteT $[n^{i+1},~0,~R^{i+1},~rpk^\kder{r,i},~red^i,~T_{now}]$ 
+				\If{\Call{ProcessAnswer}{$L^i,~e^{i+1}$} = success}
+                	\State \Call{SendConfirmation}{$R^{i+1},~\mathcal{E}(rpk^\kder{r,s},~($"Rcver"$~\Vert~d~\Vert~\mathcal{H}(n^s)~\Vert~lpk^s)$}
+                \EndIf
+			\EndIf
+    	\EndIf
+    \EndIf
+    \EndIf
+\EndOn
+\end{algorithmic}
+\end{spacing}
+\end{algorithm}
+\newpage
+In sync with receiving T-ACK-L messages, the sender populates a table of possible routes (see algorithm \ref{alg:5}). \par
+
+\begin{algorithm}[H]
+\caption{Sender s, acknowledge reception processing.}
+\label{alg:5}
+\begin{algorithmic}[1]
+\Function{ProcessAnswer}{$L^s,~e^1$}
+	\State $(lsk^s,~lcc^s) \gets$ for NodeT.Label=$L^s$ 
+	\For{$z~\gets~1,~d_{max}$} 
+    	\State $(pre^z,~d_{exp}^z,~lpk^z,~p[\xdots]) \gets \mathcal{D}(lsk^\kder{s,z-1},~e^z)$
+        \If{$d_{exp}^z \neq z$}
+			\State \Return failure
+		\EndIf 
+    	\If{$pre^z =$ "Rcver"}
+    		\State $p[\xdots] \to n^{z}$
+            \State Insert in NeighborT $[n^{z},~R^1,\{((lsk^\kder{s,1}, lpk^1, led^1),\xdots,(lsk^\kder{s,z}, lpk^z, led^z)\},~T_{now}]$ 
+            \State \Return success
+        \ElsIf{$pre^z =$ "INode"}
+        	\State $p[\xdots] \to (led^z,~e^{z})$
+			\State $w^z \gets \mathcal{D}(lsk^\kder{s,z},led^z)$
+			\State $(lsk^\kder{s,z},~lcc^z) \gets \mathcal{CKD}_s(lsk^\kder{s,z-1}, ~lcc^{z-1}, w^z)$
+        \Else
+			\State \Return failure
+        \EndIf 
+    \EndFor
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+The last step provided in algorithm \ref{alg:4} is the sending of an end to end encrypted T-ACK-R message so receiver is aware that the T-ACK-L is effectively received by sender.\par
+From the moment $n^r$ receives T-ACK-R, that contains $n^s$ node address and public key, it is therefore possible to establish a bidirectional and encrypted communication with a gateway or a beacon. By doing ECDH, we can use symmetric encryption for better performance.\par
+
+\subsection{Registering a route}
+\label{ssec:registering}
+The last step of this phase consists in registering gateways in beacons. Each gateway discovered, when receives T-ACK-R, sends to every known beacon a GATEWAY-REGISTER message consisting in the concealed address of the other end of the route $n^s$ and in the signature of the $n^s$ plain address done by the same node. \par
+To go further in the analysis of following steps, we brief about  the facilities involved in the process.\par 
+Beacon nodes run B-Facility; its purpose is to run a process to gather information on the neighborhood topology proactively and to keep data updated in the \textbf{authority} nodes.\par
+It is not necessary that all nodes run facilities; it is only necessary that there is a certain "density" of nodes running each of them within the network.\par
+A B-Facility maintains a set of tables:
+\begin{itemize}
+\item a gateways table (\textbf{GTable}) that contains a list of gateways to a given nodes present in its neighbor,
+\item an authorities table (\textbf{ATable}) of authority nodes and their authoritative address spaces. 
+\end{itemize}
+When a beacon receives the GATEWAY-REGISTER message, it looks up in the ATable for authority nodes that are authoritative for that address. Authoritative means that authority has previously advertised the network via an AUTHORITY-REGISTER message that it holds a list of gateway wich hash of the address matches the pattern field contained in the message through a bitwise AND-masking. In this way, each authority is configured to be authoritative of a subset of node address namespace.  The \textbf{masking depth}, namely the number of bits not set (0) in the mask, defines the memory and computational resources needed by the authority. \par
+The beacon send to each authority, that is authoritative for the hash of the gateway address, a GATEWAY-ENLIST message.
+
+
+An authority maintains a set of tables:
+\begin{itemize}
+\item a gateways table (\textbf{GTable}) that contains a list of gateways to a given nodes present in its neighbor,
+\item an authorities table (\textbf{ATable}) of authority nodes and their authoritative address spaces. 
+\end{itemize}
+
+\subsection{Propagate}
+\label{ssec:propagation}
+
+\subsection{Resolving an address in a sequence of intermediate nodes}
+\label{ssec:resolving}
+
+\begin{enumerate}
+
+\item notifying the authoritative TD-Nodes known when the address of a node that respects this form is registered with a TD-Node.
+\item making an authoritative TD-Node notify the other known authoritative TD-Nodes when a mask-compliant address is registered.
+\end{enumerate}
+
+
+
+
+
+
+
+
+
+
+
+
+\clearpage
+\appendix
+\section{Annexes}
+\subsection{Variable lenght unsigned integer}
+\label{annex:varint}
+Bytes are a MSB base-128 encoding of the number. The high bit in each byte signifies whether another digit follows. To make sure the encoding is one-to-one, one is subtracted from all but the last digit. Thus, the byte sequence a[] with length len, where all but the last byte has bit 128 set, encodes the number:\par
+
+\begin{equation} \label{eq:5}
+(a[len-1] \& 0x7F) + \sum_{i=1}^{len-1}(128^i \cdot (a[len-i-1] \& 0x7F)+1))
+\end{equation}\par
+
+Properties:\par
+\begin{itemize}
+    \item Very small (0-127: 1 byte, 128-16511: 2 bytes, 16512-2113663: 3 bytes)
+    \item Every integer has exactly one encoding
+    \item Encoding does not depend on size of original integer type
+    \item No redundancy: every (infinite) byte sequence corresponds to a list of encoded integers.
+\end{itemize}
+\begin{verbatim}
+    0:      [0x00]  
+    1:      [0x01]  
+    127:    [0x7F]  
+    128:    [0x80 0x00]  
+    255:    [0x80 0x7F]  
+    256:    [0x81 0x00]
+    16383:  [0xFE 0x7F]
+    16384:  [0xFF 0x00]
+    16511:  [0xFF 0x7F]
+    65535:  [0x82 0xFE 0x7F]
+    2^32:   [0x8E 0xFE 0xFE 0xFF 0x00]
+\end{verbatim}
+
+Refer to \citep{bitcoins38:online} for a C++ implementation.
+
+\subsection{Candidate Cryptosystems}
+\label{annex:cryptoset}
+In this document, it's not necessary to make any final choice regarding cryptographic systems, but some points may already be highlighted. \par
+Routers often embed part of the network protocols, adopting hardware solutions to accelerate the processing of the packets. Cryptography algorithms are exemplary candidates for this optimization. Therefore the design of a TCP-IP replacement poses the technological challenge compared to implementations that are thought to be only software regarding the hardware higher inertia to change.\par
+Although one cryptographic system may reasonably be preferred today rather than another, no one can exclude that a vulnerability can be identified in the future. In particular, the approach of quantum computing represents a real threat that does not allow choices made now and forever. \par 
+For these reasons, the implementation of Nova will probably have to offer from the beginning at least two non-quantum resistant sets, each one containing for the same function a different cryptographic algorithm. The initial handshake of the related stratum communication let's two nodes agree which set to use.  \par 
+\begin{table}[ht]
+\centering
+\begin{tabular}{|p{5cm}|p{5cm}|p{5cm}|} \hline
+Function & Set 1 & Set 2 
+ \\ \hline \hline
+Key Exchange Scheme & DH & DH \\ \hline
+Asymmetric Cryptography Algorithm & X25519 & Secp256k1 \\ \hline
+Authenticated Encryption with Associated Data  & AES\_256\_GCM\cite{GCM} & CHACHA20\_POLY1305\cite{RFC7539}  \\ \hline
+Hash function & SHA3-256 &  BLAKE2s \\ \hline
+\end{tabular}
+\caption{Nova suggested initial cryptographic sets}
+\end{table}
+As the purpose of this paper is to demonstrate the consistency and feasibility of Nova stack, in the following of this paper we assume the use of "Set 1" for examples.\par
+
+\subsection{Packet header specification}
+\label{annex:pckheadspec}
+
+This is the packet header specification: 
+\begin{description}
+\item{\textbf{Ver}} (VarUInt) Each sent packet starts with a VarUInt, which indicates the version of the header specifications used. A version > 0x00 suggests that the node has deviated from the specification within this document. A node MUST ignore packets with an unknown version. 
+\item{\textbf{Timestamp}} (ULong) The Lamport timestamp.
+\item{\textbf{Number}} (VarUInt) The number of messages.
+\item{\textbf{Message 0}}
+\begin{description}
+    \item{\textbf{Type}} (VarUInt) The type of message. Refer to table \ref{MessageType} for messages related to \ProtoName. A node MUST ignore packets with an undefined class for the given version.
+    \item{\textbf{Length}} (VarUInt) The length of message in bytes. It is necessary to skip in the parsing unrecognized messages.
+\end{description}
+\item{\textbf{Message 1 (...)}}
+\end{description}
+VarUInt format is summarized in annex \ref{annex:varint}.
+\par
+
+\begin{table}[ht]
+\arrayrulecolor[HTML]{DB5800}
+\centering
+\begin{tabular}{lll}\\\toprule  
+Message Types & Message Types name & See section \\\midrule
+0x00 & DATAFLOW & \\  \midrule
+0x01 & CHAFF & \\  \midrule
+0x20 & T-FLOOD & \ref{ssec:flooding}\\  \midrule
+0x21 & T-ACK-L & \ref{ssec:flooding}\\  \midrule
+0x22 & T-ACK-R & \\  \midrule
+  
+\end{tabular}
+\caption{Message Types}
+\label{MessageType}
+\end{table}
+
+\nolinenumbers
+
+
+\bibliography{sample}
+
+
+\section*{Acknowledgements (not compulsory)}
+
+Acknowledgements should be brief, and should not include thanks to anonymous referees and editors, or effusive comments. Grant or contribution numbers may be acknowledged.
+
+\section*{Author contributions statement}
+
+Must include all authors, identified by initials, for example:
+A.A. conceived the experiment(s),  A.A. and B.A. conducted the experiment(s), C.A. and D.A. analysed the results.  All authors reviewed the manuscript. 
+
+\section*{Additional information}
+
+To include, in this order: \textbf{Accession codes} (where applicable); \textbf{Competing financial interests} (mandatory statement). 
+
+The corresponding author is responsible for submitting a \href{http://www.nature.com/srep/policies/index.html#competing}{competing financial interests statement} on behalf of all authors of the paper. This statement must be included in the submitted article file.
+
+
+
+
+
+\end{document}
