@@ -71,7 +71,7 @@ The attack combines linkability with denial of service; generic error handling p
 
 The following checks are necessary but do not stop the ratio tag:
 
-- fixed record length;
+- fixed W2 cell length and canonical M1 encoding;
 - canonical point encoding;
 - non-identity points;
 - fresh adjacent-link AEAD;
@@ -110,7 +110,7 @@ No remedy is adopted yet. The next cryptographic design review must compare at l
 4. a different destination-discovery mechanism that avoids universally malleable ciphertexts;
 5. a Sphinx-like authenticated packet mechanism adapted to discovery without revealing the destination or complete route.
 
-Any replacement must preserve destination-key privacy, public rerandomization, fixed-size encoding, branch-local transformation, and bounded verification cost. A solution that merely detects the tag at the destination is insufficient because the colluding-relay correlation has already occurred.
+Any replacement must preserve destination-key privacy, public rerandomization, bounded variable-message encoding, fixed-size cells, branch-local transformation, and bounded verification cost. A solution that merely detects the tag at the destination is insufficient because the colluding-relay correlation has already occurred.
 
 ## 8. Security gate
 
@@ -120,5 +120,5 @@ The active-security gate remains closed until all of the following exist:
 - a construction satisfying the selected game under stated assumptions;
 - a proof or independently reviewed reduction;
 - negative vectors for algebraic, truncation, replay, substitution, and selective-failure tags;
-- integration tests showing that malformed and tagged records cannot create a distinguishable forwarding or error behavior beyond unavoidable denial of service;
+- integration tests showing that malformed and tagged messages or cells cannot create a distinguishable forwarding or error behavior beyond unavoidable denial of service;
 - independent cryptographic review.

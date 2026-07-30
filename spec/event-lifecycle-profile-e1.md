@@ -1,7 +1,7 @@
 # Trahens event lifecycle profile E1
 
 - Status: Active research design
-- Applies to: Core v0.5 with U1
+- Applies to: Core v0.7 with U1, C1, M1, and W2
 - Purpose: Define event time, candidate windows, reverse setup, activation, cancellation, and deterministic cleanup
 
 ## 1. Time model
@@ -72,7 +72,7 @@ For every relay traversed by CANDIDATE, the relay MUST:
 4. reserve tentative-route capacity;
 5. create a local tentative mapping with an independent deadline;
 6. replace the candidate capability and relevant labels;
-7. forward a fresh fixed-size record toward the parent.
+7. encode a fresh canonical M1 CANDIDATE and transmit it in one or more fixed-size W2 cells toward the parent.
 
 The responder's branch context is not a relay tentative mapping. Endpoint offer state is accounted separately.
 
@@ -149,6 +149,7 @@ The following states require independent finite deadlines:
 - pending-ready reservation;
 - active route mapping;
 - adjacent-link replay marker;
+- W2 reassembly context;
 - initiator route-setup transaction.
 
 Expiry MUST be local and non-blocking. A node MUST reclaim state without waiting for a peer acknowledgement.
@@ -162,7 +163,7 @@ At the end of a bounded E1 execution, all branch, tentative, pending, and active
 E1 permits adjacent-link loss, exact duplication, and reordering.
 
 - Loss may prevent discovery, candidate return, COMMIT, or READY.
-- Exact duplication MUST NOT allocate a second branch or route context.
+- Exact cell duplication MUST NOT allocate a second fragment, branch, or route context. A complete duplicated logical message MUST be handled idempotently.
 - Reordering MUST NOT allow an earlier state generation to overwrite a later generation.
 - Delayed messages MUST fail closed after the relevant state deadline.
 
@@ -174,7 +175,8 @@ An attacker may generate syntactically valid DISCOVER records with fresh link-lo
 
 Before expensive cryptographic work or full branch allocation, a relay MUST enforce:
 
-- adjacent-link byte and record limits;
+- adjacent-link byte and cell limits;
+- W2 reassembly context, fragment-count, aggregate-byte, and timeout limits;
 - per-ingress-peer token bucket or equivalent fair-share admission;
 - per-node branch-context limit;
 - node-global branch capacity;
@@ -194,14 +196,14 @@ An E1 evaluation MUST report at least:
 - candidate count and late-candidate count;
 - candidate drops caused by cancellation or expiry;
 - COMMIT and READY failure counts;
-- legitimate and attack transmissions separately;
+- legitimate and attack logical messages and W2 cells separately;
 - cumulative branch allocations by traffic class;
-- peak branch, responder-offer, initiator-candidate, tentative, pending, and active state;
-- replay, loss, token-bucket, capacity, and per-node drops;
+- peak branch, responder-offer, initiator-candidate, tentative, pending, active, and reassembly state;
+- replay, cell loss, reassembly timeout, reassembly capacity, token-bucket, and per-node drops;
 - final state counts and cleanup completion rate.
 
 A success result without final cleanup measurements is incomplete.
 
 ## 11. Security scope
 
-E1 specifies lifecycle correctness and bounded cleanup. It does not strengthen U1 against global timing correlation or active cryptographic tagging. Event timing itself is observable unless a separate traffic-scheduling profile hides or quantizes it.
+E1 specifies lifecycle correctness and bounded cleanup. It does not strengthen U1 against global timing correlation or active cryptographic tagging. Event timing, W2 cell count, and fragment burst shape are observable unless a separate traffic-scheduling profile hides or quantizes them.

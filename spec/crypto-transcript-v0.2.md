@@ -1,13 +1,13 @@
-# Trahens Core v0.5 cryptographic transcript
+# Trahens Core v0.7 cryptographic transcript
 
-- Status: Concrete C1 transcript draft
-- Applies to: Core v0.5, U1, E1, and C1
+- Status: Active C1 transcript profile
+- Applies to: Core v0.7, U1, E1, C1, M1, and W2
 
 ## 1. Purpose
 
 This document separates four different binding domains:
 
-1. adjacent-link record authentication;
+1. adjacent-link W2 cell authentication;
 2. forward DISCOVER transformation;
 3. nested CANDIDATE confidentiality and responder authentication;
 4. end-to-end COMMIT/READY confirmation.
@@ -16,7 +16,7 @@ No transcript hash is forwarded unchanged as a global route identifier. A hash m
 
 ## 2. Canonical encoding
 
-All C1 transcript inputs use `EncodeFields` from `crypto-profile-c1.md`. Field order is normative. Numeric values are encoded as fixed-width unsigned big-endian integers inside the transcript even when a future wire codec uses a different internal representation.
+All C1 transcript inputs use `EncodeFields` from `crypto-profile-c1.md`. Field order is normative. Numeric values are encoded as fixed-width unsigned big-endian integers inside the transcript even though M1 uses compact canonical varints for its logical envelope.
 
 ## 3. Public profile context
 
@@ -24,7 +24,7 @@ The constant profile tuple is:
 
 ```text
 protocol_version = 0x01
-core_version     = ASCII("0.5")
+core_version     = ASCII("0.7")
 privacy_profile  = ASCII("U1")
 lifecycle_profile = ASCII("E1")
 crypto_suite     = 0x0001
@@ -34,7 +34,7 @@ Every end-to-end transcript begins with these fields to prevent cross-version or
 
 ## 4. DISCOVER branch body
 
-The link-encrypted DISCOVER body contains:
+The M1 DISCOVER body, carried inside one or more link-encrypted W2 cells, contains:
 
 ```text
 branch_token
@@ -44,7 +44,6 @@ reply_public_key
 eligibility_capsule
 expiry_class
 options
-padding
 ```
 
 The branch token is a link-local capability, not an end-to-end transcript identifier. The relay validates and reconstructs the complete body for every child. C1 URE rerandomization changes all four eligibility points, and reply-key tweaking changes the reply public key.
@@ -97,7 +96,7 @@ info = EncodeFields("candidate-layer-info", [
 ])
 
 aad = EncodeFields("candidate-layer-aad", [
-    record_class,
+    message_class,
     parent_peer_epoch,
     offer_expiry_class
 ])
@@ -114,7 +113,7 @@ child_forward_binding
 layer_padding
 ```
 
-`parent_peer_epoch` is not an endpoint identity. It is adjacent-link context and is not sent beyond the parent link. A change to the candidate token, label, depth class, record class, or expiry class causes AEAD failure.
+`parent_peer_epoch` is not an endpoint identity. It is adjacent-link context and is not sent beyond the parent link. A change to the candidate token, label, depth class, message class, or expiry class causes AEAD failure. W2 fragment metadata is authenticated independently by the adjacent-link cell AEAD and is not inserted into the end-to-end C1 transcript.
 
 ## 7. Responder candidate layer
 
@@ -129,7 +128,7 @@ info = EncodeFields("candidate-responder-info", [
 ])
 
 aad = EncodeFields("candidate-responder-aad", [
-    record_class,
+    message_class,
     offer_expiry_class
 ])
 ```
