@@ -33,6 +33,8 @@ jobs:
         run: cargo clippy --manifest-path implementation/rust/Cargo.toml --all-targets
       - name: Build and test all Rust targets
         run: cargo test --manifest-path implementation/rust/Cargo.toml --all-targets
+      - name: Type-check the excluded fuzz crate
+        run: cargo check --manifest-path implementation/rust/fuzz/Cargo.toml --all-targets
 
   linux-interop:
     runs-on: ubuntu-latest
