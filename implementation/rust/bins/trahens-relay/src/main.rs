@@ -36,7 +36,10 @@ impl Drop for RelayRoute {
 fn forward_control(message: Control, label: [u8; 16]) -> Envelope {
     Envelope {
         suite_id: SUITE_R1,
-        message: Message::Control(Control { local_label: label, ..message }),
+        message: Message::Control(Control {
+            local_label: label,
+            ..message
+        }),
     }
 }
 
@@ -119,165 +122,212 @@ fn run() -> Result<(), Box<dyn Error>> {
                     .filter_map(|(label, route)| (route.expires_at_ms <= now).then_some(*label))
                     .collect();
                 for label in expired {
-                    cleanup_route(label, &mut routes, &mut reverse, &mut states, Event::Timeout);
+                    cleanup_route(
+                        label,
+                        &mut routes,
+                        &mut reverse,
+                        &mut states,
+                        Event::Timeout,
+                    );
                 }
                 continue;
             }
             Err(RecvTimeoutError::Disconnected) => break,
         };
         match event {
-            LinkEvent::Message { peer_id, envelope, .. } if peer_id == upstream_id => {
-                match envelope.message {
-                    Message::Discover(discover) => {
-                        if discover.hop_remaining == 0
-                            || usize::from(discover.options) >= LIMIT_MAX_CANDIDATE_LAYERS
-                            || routes.contains_key(&discover.branch_token)
-                        {
-                            structured_event("relay", "discover_rejected", &[("reason", "limit_or_duplicate".to_owned())]);
-                            continue;
-                        }
-                        let factor = random_scalar()?;
-                        let child_public = blind_public(&discover.reply_public_key, &factor)?;
-                        let child_label = random_nonzero_16()?;
-                        let parent_discovery_nonce: [u8; 32] = discover
-                            .discovery_field
-                            .as_slice()
-                            .try_into()
-                            .map_err(|_| "invalid R1 discovery nonce")?;
-                        let child_discovery_nonce = loop {
-                            let value = trahens_crypto::random_bytes::<32>()?;
-                            if value != [0_u8; 32] { break value; }
-                        };
-                        let depth = discover.options.saturating_add(1);
-                        let expires_at_ms = unix_time_ms().saturating_add(LIMIT_ROUTE_TTL_MS as u64);
-                        states.begin(discover.branch_token, upstream_id, 0, expires_at_ms)?;
-                        let route = RelayRoute {
-                            parent_label: discover.branch_token,
-                            child_label,
-                            incoming_reply_public: discover.reply_public_key,
-                            blinding_factor: factor,
-                            depth,
-                            parent_discovery_nonce,
-                            child_discovery_nonce,
-                            generation: 0,
-                            expires_at_ms,
-                        };
-                        reverse.insert(child_label, discover.branch_token);
-                        routes.insert(discover.branch_token, route);
-                        downstream.send(Envelope {
-                            suite_id: SUITE_R1,
-                            message: Message::Discover(Discover {
-                                branch_token: child_label,
-                                hop_remaining: discover.hop_remaining.saturating_sub(1),
-                                fanout_class: discover.fanout_class,
-                                expiry_class: discover.expiry_class,
-                                options: depth,
-                                reply_public_key: child_public,
-                                discovery_field: child_discovery_nonce.to_vec(),
-                            }),
-                        })?;
+            LinkEvent::Message {
+                peer_id, envelope, ..
+            } if peer_id == upstream_id => match envelope.message {
+                Message::Discover(discover) => {
+                    if discover.hop_remaining == 0
+                        || usize::from(discover.options) >= LIMIT_MAX_CANDIDATE_LAYERS
+                        || routes.contains_key(&discover.branch_token)
+                    {
+                        structured_event(
+                            "relay",
+                            "discover_rejected",
+                            &[("reason", "limit_or_duplicate".to_owned())],
+                        );
+                        continue;
                     }
-                    Message::Control(control) => {
-                        let Some(route) = routes.get(&control.local_label).cloned() else { continue };
-                        if control.generation != route.generation {
-                            continue;
+                    let factor = random_scalar()?;
+                    let child_public = blind_public(&discover.reply_public_key, &factor)?;
+                    let child_label = random_nonzero_16()?;
+                    let parent_discovery_nonce: [u8; 32] = discover
+                        .discovery_field
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| "invalid R1 discovery nonce")?;
+                    let child_discovery_nonce = loop {
+                        let value = trahens_crypto::random_bytes::<32>()?;
+                        if value != [0_u8; 32] {
+                            break value;
                         }
-                        match control.message_type {
-                            MessageType::Commit => {
-                                states.apply(route.parent_label, Event::CommitAccepted)?;
+                    };
+                    let depth = discover.options.saturating_add(1);
+                    let expires_at_ms = unix_time_ms().saturating_add(LIMIT_ROUTE_TTL_MS as u64);
+                    states.begin(discover.branch_token, upstream_id, 0, expires_at_ms)?;
+                    let route = RelayRoute {
+                        parent_label: discover.branch_token,
+                        child_label,
+                        incoming_reply_public: discover.reply_public_key,
+                        blinding_factor: factor,
+                        depth,
+                        parent_discovery_nonce,
+                        child_discovery_nonce,
+                        generation: 0,
+                        expires_at_ms,
+                    };
+                    reverse.insert(child_label, discover.branch_token);
+                    routes.insert(discover.branch_token, route);
+                    downstream.send(Envelope {
+                        suite_id: SUITE_R1,
+                        message: Message::Discover(Discover {
+                            branch_token: child_label,
+                            hop_remaining: discover.hop_remaining.saturating_sub(1),
+                            fanout_class: discover.fanout_class,
+                            expiry_class: discover.expiry_class,
+                            options: depth,
+                            reply_public_key: child_public,
+                            discovery_field: child_discovery_nonce.to_vec(),
+                        }),
+                    })?;
+                }
+                Message::Control(control) => {
+                    let Some(route) = routes.get(&control.local_label).cloned() else {
+                        continue;
+                    };
+                    if control.generation != route.generation {
+                        continue;
+                    }
+                    match control.message_type {
+                        MessageType::Commit => {
+                            states.apply(route.parent_label, Event::CommitAccepted)?;
+                            downstream.send(forward_control(control, route.child_label))?;
+                        }
+                        MessageType::RendezvousOpen => {
+                            if states.get(&route.parent_label).map(|state| state.phase)
+                                == Some(Phase::Ready)
+                            {
                                 downstream.send(forward_control(control, route.child_label))?;
                             }
-                            MessageType::RendezvousOpen => {
-                                if states.get(&route.parent_label).map(|state| state.phase) == Some(Phase::Ready) {
-                                    downstream.send(forward_control(control, route.child_label))?;
-                                }
-                            }
-                            MessageType::Data => {
-                                if states.get(&route.parent_label).map(|state| state.phase) == Some(Phase::Open) {
-                                    states.apply(route.parent_label, Event::DataAccepted)?;
-                                    downstream.send(forward_control(control, route.child_label))?;
-                                }
-                            }
-                            MessageType::Close | MessageType::Cancel | MessageType::Abort => {
-                                downstream.send(forward_control(control.clone(), route.child_label))?;
-                                cleanup_started = Some(Instant::now());
-                                observed_close = true;
-                                let event = if control.message_type == MessageType::Close {
-                                    Event::CloseAccepted
-                                } else {
-                                    Event::CancelAccepted
-                                };
-                                cleanup_route(route.parent_label, &mut routes, &mut reverse, &mut states, event);
-                            }
-                            _ => {}
                         }
+                        MessageType::Data => {
+                            if states.get(&route.parent_label).map(|state| state.phase)
+                                == Some(Phase::Open)
+                            {
+                                states.apply(route.parent_label, Event::DataAccepted)?;
+                                downstream.send(forward_control(control, route.child_label))?;
+                            }
+                        }
+                        MessageType::Close | MessageType::Cancel | MessageType::Abort => {
+                            downstream.send(forward_control(control.clone(), route.child_label))?;
+                            cleanup_started = Some(Instant::now());
+                            observed_close = true;
+                            let event = if control.message_type == MessageType::Close {
+                                Event::CloseAccepted
+                            } else {
+                                Event::CancelAccepted
+                            };
+                            cleanup_route(
+                                route.parent_label,
+                                &mut routes,
+                                &mut reverse,
+                                &mut states,
+                                event,
+                            );
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
-            }
-            LinkEvent::Message { peer_id, envelope, .. } if peer_id == downstream_id => {
-                match envelope.message {
-                    Message::Candidate(candidate) => {
-                        let Some(parent_label) = reverse.get(&candidate.candidate_token).copied() else { continue };
-                        let Some(route) = routes.get(&parent_label).cloned() else { continue };
-                        if usize::from(candidate.layer_count) > LIMIT_MAX_CANDIDATE_LAYERS {
-                            cleanup_route(parent_label, &mut routes, &mut reverse, &mut states, Event::CancelAccepted);
-                            continue;
-                        }
-                        let wrapped = wrap_candidate(
-                            &route.incoming_reply_public,
-                            route.depth,
-                            route.blinding_factor,
-                            route.child_label,
-                            route.parent_label,
-                            route.parent_discovery_nonce,
-                            route.child_discovery_nonce,
-                            candidate.candidate_blob,
-                        )?;
-                        states.apply(parent_label, Event::CandidateAccepted)?;
-                        upstream.send(Envelope {
-                            suite_id: SUITE_R1,
-                            message: Message::Candidate(Candidate {
-                                candidate_token: parent_label,
-                                expiry_class: candidate.expiry_class,
-                                layer_count: candidate.layer_count.saturating_add(1),
-                                candidate_blob: wrapped,
-                            }),
-                        })?;
+                _ => {}
+            },
+            LinkEvent::Message {
+                peer_id, envelope, ..
+            } if peer_id == downstream_id => match envelope.message {
+                Message::Candidate(candidate) => {
+                    let Some(parent_label) = reverse.get(&candidate.candidate_token).copied()
+                    else {
+                        continue;
+                    };
+                    let Some(route) = routes.get(&parent_label).cloned() else {
+                        continue;
+                    };
+                    if usize::from(candidate.layer_count) > LIMIT_MAX_CANDIDATE_LAYERS {
+                        cleanup_route(
+                            parent_label,
+                            &mut routes,
+                            &mut reverse,
+                            &mut states,
+                            Event::CancelAccepted,
+                        );
+                        continue;
                     }
-                    Message::Control(control) => {
-                        let Some(parent_label) = reverse.get(&control.local_label).copied() else { continue };
-                        let Some(route) = routes.get(&parent_label).cloned() else { continue };
-                        if control.generation != route.generation {
-                            continue;
+                    let wrapped = wrap_candidate(
+                        &route.incoming_reply_public,
+                        route.depth,
+                        route.blinding_factor,
+                        route.child_label,
+                        route.parent_label,
+                        route.parent_discovery_nonce,
+                        route.child_discovery_nonce,
+                        candidate.candidate_blob,
+                    )?;
+                    states.apply(parent_label, Event::CandidateAccepted)?;
+                    upstream.send(Envelope {
+                        suite_id: SUITE_R1,
+                        message: Message::Candidate(Candidate {
+                            candidate_token: parent_label,
+                            expiry_class: candidate.expiry_class,
+                            layer_count: candidate.layer_count.saturating_add(1),
+                            candidate_blob: wrapped,
+                        }),
+                    })?;
+                }
+                Message::Control(control) => {
+                    let Some(parent_label) = reverse.get(&control.local_label).copied() else {
+                        continue;
+                    };
+                    let Some(route) = routes.get(&parent_label).cloned() else {
+                        continue;
+                    };
+                    if control.generation != route.generation {
+                        continue;
+                    }
+                    match control.message_type {
+                        MessageType::Ready => {
+                            states.apply(parent_label, Event::ReadyAccepted)?;
+                            upstream.send(forward_control(control, parent_label))?;
                         }
-                        match control.message_type {
-                            MessageType::Ready => {
-                                states.apply(parent_label, Event::ReadyAccepted)?;
+                        MessageType::RendezvousResult => {
+                            states.apply(parent_label, Event::CapabilityAccepted)?;
+                            upstream.send(forward_control(control, parent_label))?;
+                        }
+                        MessageType::Data => {
+                            if states.get(&parent_label).map(|state| state.phase)
+                                == Some(Phase::Open)
+                            {
+                                states.apply(parent_label, Event::DataAccepted)?;
                                 upstream.send(forward_control(control, parent_label))?;
                             }
-                            MessageType::RendezvousResult => {
-                                states.apply(parent_label, Event::CapabilityAccepted)?;
-                                upstream.send(forward_control(control, parent_label))?;
-                            }
-                            MessageType::Data => {
-                                if states.get(&parent_label).map(|state| state.phase) == Some(Phase::Open) {
-                                    states.apply(parent_label, Event::DataAccepted)?;
-                                    upstream.send(forward_control(control, parent_label))?;
-                                }
-                            }
-                            MessageType::Close | MessageType::Cancel | MessageType::Abort => {
-                                upstream.send(forward_control(control.clone(), parent_label))?;
-                                cleanup_started = Some(Instant::now());
-                                observed_close = true;
-                                cleanup_route(parent_label, &mut routes, &mut reverse, &mut states, Event::CloseAccepted);
-                            }
-                            _ => {}
                         }
+                        MessageType::Close | MessageType::Cancel | MessageType::Abort => {
+                            upstream.send(forward_control(control.clone(), parent_label))?;
+                            cleanup_started = Some(Instant::now());
+                            observed_close = true;
+                            cleanup_route(
+                                parent_label,
+                                &mut routes,
+                                &mut reverse,
+                                &mut states,
+                                Event::CloseAccepted,
+                            );
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
-            }
+                _ => {}
+            },
             LinkEvent::TransmissionFailed { peer_id } => {
                 return Err(format!("T1 retry budget exhausted for peer {peer_id}").into());
             }
@@ -298,7 +348,13 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     let remaining: Vec<[u8; 16]> = routes.keys().copied().collect();
     for label in remaining {
-        cleanup_route(label, &mut routes, &mut reverse, &mut states, Event::Timeout);
+        cleanup_route(
+            label,
+            &mut routes,
+            &mut reverse,
+            &mut states,
+            Event::Timeout,
+        );
     }
     upstream.shutdown()?;
     downstream.shutdown()?;
@@ -306,7 +362,13 @@ fn run() -> Result<(), Box<dyn Error>> {
     let cleanup_ms = cleanup_started
         .map(|value| value.elapsed().as_millis().try_into().unwrap_or(u64::MAX))
         .unwrap_or(0);
-    write_link_metrics(&metrics_path, "relay", states.live_routes(), cleanup_ms, &metrics)?;
+    write_link_metrics(
+        &metrics_path,
+        "relay",
+        states.live_routes(),
+        cleanup_ms,
+        &metrics,
+    )?;
     structured_event(
         "relay",
         "stopped",

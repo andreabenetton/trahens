@@ -83,9 +83,20 @@ fn canonical_fragment_length(index: u16, count: u16, total: u16) -> Option<usize
 
 pub fn encode_frame(frame: &Frame) -> Result<[u8; BYTES_CELL_BODY], TransportError> {
     let (suite, frame_type, transmission_id) = match frame {
-        Frame::Data { suite, transmission_id, .. } => (*suite, T1_FRAME_DATA, *transmission_id),
-        Frame::Ack { suite, transmission_id, .. } => (*suite, T1_FRAME_ACK, *transmission_id),
-        Frame::Chaff { suite, transmission_id } => (*suite, T1_FRAME_CHAFF, *transmission_id),
+        Frame::Data {
+            suite,
+            transmission_id,
+            ..
+        } => (*suite, T1_FRAME_DATA, *transmission_id),
+        Frame::Ack {
+            suite,
+            transmission_id,
+            ..
+        } => (*suite, T1_FRAME_ACK, *transmission_id),
+        Frame::Chaff {
+            suite,
+            transmission_id,
+        } => (*suite, T1_FRAME_CHAFF, *transmission_id),
     };
     if !suite_valid(suite) {
         return Err(TransportError::UnsupportedSuite);
@@ -112,8 +123,9 @@ pub fn encode_frame(frame: &Frame) -> Result<[u8; BYTES_CELL_BODY], TransportErr
             fragment,
             ..
         } => {
-            let expected = canonical_fragment_length(*fragment_index, *fragment_count, *total_length)
-                .ok_or(TransportError::Malformed)?;
+            let expected =
+                canonical_fragment_length(*fragment_index, *fragment_count, *total_length)
+                    .ok_or(TransportError::Malformed)?;
             if fragment.len() != expected {
                 return Err(TransportError::Malformed);
             }
@@ -123,7 +135,12 @@ pub fn encode_frame(frame: &Frame) -> Result<[u8; BYTES_CELL_BODY], TransportErr
             output[30..32].copy_from_slice(&total_length.to_be_bytes());
             output[32..32 + fragment.len()].copy_from_slice(fragment);
         }
-        Frame::Ack { fragment_count, ack_delay_ms, bitmap, .. } => {
+        Frame::Ack {
+            fragment_count,
+            ack_delay_ms,
+            bitmap,
+            ..
+        } => {
             if *fragment_count == 0 || usize::from(*fragment_count) > LIMIT_MAX_FRAGMENTS {
                 return Err(TransportError::Malformed);
             }
@@ -189,13 +206,22 @@ pub fn decode_frame(input: &[u8; BYTES_CELL_BODY]) -> Result<Frame, TransportErr
             if bitmap & !valid_mask != 0 {
                 return Err(TransportError::Malformed);
             }
-            Ok(Frame::Ack { suite, transmission_id, fragment_count, ack_delay_ms, bitmap })
+            Ok(Frame::Ack {
+                suite,
+                transmission_id,
+                fragment_count,
+                ack_delay_ms,
+                bitmap,
+            })
         }
         T1_FRAME_CHAFF => {
             if input[24..32] != [0_u8; 8] {
                 return Err(TransportError::Malformed);
             }
-            Ok(Frame::Chaff { suite, transmission_id })
+            Ok(Frame::Chaff {
+                suite,
+                transmission_id,
+            })
         }
         _ => Err(TransportError::Malformed),
     }
@@ -220,7 +246,11 @@ pub struct Sender {
 
 impl Sender {
     pub fn new() -> Self {
-        Self { pending: HashMap::new(), new_queue: VecDeque::new(), retry_queue: VecDeque::new() }
+        Self {
+            pending: HashMap::new(),
+            new_queue: VecDeque::new(),
+            retry_queue: VecDeque::new(),
+        }
     }
 
     pub fn enqueue(
@@ -238,7 +268,10 @@ impl Sender {
         {
             return Err(TransportError::ResourceLimit);
         }
-        let fragments: Vec<Vec<u8>> = message.chunks(BYTES_CELL_PAYLOAD).map(<[u8]>::to_vec).collect();
+        let fragments: Vec<Vec<u8>> = message
+            .chunks(BYTES_CELL_PAYLOAD)
+            .map(<[u8]>::to_vec)
+            .collect();
         if fragments.is_empty() || fragments.len() > LIMIT_MAX_FRAGMENTS {
             return Err(TransportError::ResourceLimit);
         }
@@ -322,14 +355,11 @@ impl Sender {
     pub fn poll_timeouts(&mut self, now_ms: u64) -> Result<usize, TransportError> {
         let mut queued = 0;
         for (id, outbound) in &mut self.pending {
-            let due = outbound
-                .sent_at_ms
-                .iter()
-                .enumerate()
-                .any(|(index, sent)| {
-                    outbound.acknowledged & (1_u32 << index) == 0
-                        && sent.is_some_and(|time| now_ms.saturating_sub(time) >= LIMIT_T1_RTO_MS as u64)
-                });
+            let due = outbound.sent_at_ms.iter().enumerate().any(|(index, sent)| {
+                outbound.acknowledged & (1_u32 << index) == 0
+                    && sent
+                        .is_some_and(|time| now_ms.saturating_sub(time) >= LIMIT_T1_RTO_MS as u64)
+            });
             if !due {
                 continue;
             }
@@ -393,7 +423,10 @@ pub struct Receiver {
 
 impl Receiver {
     pub fn new() -> Self {
-        Self { inbound: HashMap::new(), reserved_bytes: 0 }
+        Self {
+            inbound: HashMap::new(),
+            reserved_bytes: 0,
+        }
     }
 
     pub fn expire(&mut self, now_ms: u64) -> usize {
@@ -401,18 +434,25 @@ impl Receiver {
             .inbound
             .iter()
             .filter_map(|(id, value)| {
-                (now_ms.saturating_sub(value.created_ms) >= LIMIT_REASSEMBLY_TIMEOUT_MS as u64).then_some(*id)
+                (now_ms.saturating_sub(value.created_ms) >= LIMIT_REASSEMBLY_TIMEOUT_MS as u64)
+                    .then_some(*id)
             })
             .collect();
         for id in &expired {
             if let Some(value) = self.inbound.remove(id) {
-                self.reserved_bytes = self.reserved_bytes.saturating_sub(usize::from(value.total_length));
+                self.reserved_bytes = self
+                    .reserved_bytes
+                    .saturating_sub(usize::from(value.total_length));
             }
         }
         expired.len()
     }
 
-    pub fn accept(&mut self, frame: Frame, now_ms: u64) -> Result<Option<ReceiveResult>, TransportError> {
+    pub fn accept(
+        &mut self,
+        frame: Frame,
+        now_ms: u64,
+    ) -> Result<Option<ReceiveResult>, TransportError> {
         let Frame::Data {
             suite,
             transmission_id,
@@ -420,13 +460,15 @@ impl Receiver {
             fragment_count,
             total_length,
             fragment,
-        } = frame else {
+        } = frame
+        else {
             return Ok(None);
         };
         self.expire(now_ms);
         if !self.inbound.contains_key(&transmission_id) {
             if self.inbound.len() >= LIMIT_MAX_REASSEMBLY_MESSAGES_PER_PEER
-                || self.reserved_bytes + usize::from(total_length) > LIMIT_MAX_REASSEMBLY_BYTES_GLOBAL
+                || self.reserved_bytes + usize::from(total_length)
+                    > LIMIT_MAX_REASSEMBLY_BYTES_GLOBAL
             {
                 return Err(TransportError::ResourceLimit);
             }
@@ -443,14 +485,11 @@ impl Receiver {
             );
         }
 
-        let metadata_mismatch = self
-            .inbound
-            .get(&transmission_id)
-            .is_none_or(|entry| {
-                entry.suite != suite
-                    || entry.fragment_count != fragment_count
-                    || entry.total_length != total_length
-            });
+        let metadata_mismatch = self.inbound.get(&transmission_id).is_none_or(|entry| {
+            entry.suite != suite
+                || entry.fragment_count != fragment_count
+                || entry.total_length != total_length
+        });
         if metadata_mismatch {
             self.remove_inbound(transmission_id);
             return Err(TransportError::Malformed);
@@ -467,7 +506,10 @@ impl Receiver {
             return Err(TransportError::Malformed);
         }
         let (bitmap, complete_now) = {
-            let entry = self.inbound.get_mut(&transmission_id).ok_or(TransportError::Malformed)?;
+            let entry = self
+                .inbound
+                .get_mut(&transmission_id)
+                .ok_or(TransportError::Malformed)?;
             if entry.fragments[position].is_none() {
                 entry.fragments[position] = Some(fragment);
             }
@@ -488,8 +530,13 @@ impl Receiver {
             bitmap,
         };
         let complete = if complete_now {
-            let removed = self.inbound.remove(&transmission_id).ok_or(TransportError::Malformed)?;
-            self.reserved_bytes = self.reserved_bytes.saturating_sub(usize::from(removed.total_length));
+            let removed = self
+                .inbound
+                .remove(&transmission_id)
+                .ok_or(TransportError::Malformed)?;
+            self.reserved_bytes = self
+                .reserved_bytes
+                .saturating_sub(usize::from(removed.total_length));
             let mut message = Vec::with_capacity(usize::from(removed.total_length));
             for fragment in removed.fragments {
                 message.extend_from_slice(fragment.as_deref().ok_or(TransportError::Malformed)?);
@@ -506,7 +553,9 @@ impl Receiver {
 
     fn remove_inbound(&mut self, transmission_id: [u8; 16]) {
         if let Some(removed) = self.inbound.remove(&transmission_id) {
-            self.reserved_bytes = self.reserved_bytes.saturating_sub(usize::from(removed.total_length));
+            self.reserved_bytes = self
+                .reserved_bytes
+                .saturating_sub(usize::from(removed.total_length));
         }
     }
 
@@ -529,7 +578,10 @@ pub fn fresh_chaff(suite: [u8; 2]) -> Result<Frame, TransportError> {
     for _ in 0..32 {
         let transmission_id = random_bytes::<16>()?;
         if nonzero(&transmission_id) {
-            return Ok(Frame::Chaff { suite, transmission_id });
+            return Ok(Frame::Chaff {
+                suite,
+                transmission_id,
+            });
         }
     }
     Err(TransportError::Randomness)
@@ -551,15 +603,37 @@ mod tests {
         }
         assert_eq!(frames.len(), 3);
         let mut receiver = Receiver::new();
-        let first = receiver.accept(frames[0].clone(), 0)?.ok_or(TransportError::Malformed)?;
-        let third = receiver.accept(frames[2].clone(), 0)?.ok_or(TransportError::Malformed)?;
-        let Frame::Ack { fragment_count, bitmap, .. } = third.ack else { return Err(TransportError::Malformed) };
+        let first = receiver
+            .accept(frames[0].clone(), 0)?
+            .ok_or(TransportError::Malformed)?;
+        let third = receiver
+            .accept(frames[2].clone(), 0)?
+            .ok_or(TransportError::Malformed)?;
+        let Frame::Ack {
+            fragment_count,
+            bitmap,
+            ..
+        } = third.ack
+        else {
+            return Err(TransportError::Malformed);
+        };
         sender.on_ack(id, fragment_count, bitmap)?;
         sender.poll_timeouts(LIMIT_T1_RTO_MS as u64)?;
-        let retry = sender.next_retry(LIMIT_T1_RTO_MS as u64).ok_or(TransportError::Malformed)?;
-        let completed = receiver.accept(retry, LIMIT_T1_RTO_MS as u64)?.ok_or(TransportError::Malformed)?;
+        let retry = sender
+            .next_retry(LIMIT_T1_RTO_MS as u64)
+            .ok_or(TransportError::Malformed)?;
+        let completed = receiver
+            .accept(retry, LIMIT_T1_RTO_MS as u64)?
+            .ok_or(TransportError::Malformed)?;
         assert_eq!(completed.complete, Some((SUITE_R1, message)));
-        let Frame::Ack { fragment_count, bitmap, .. } = completed.ack else { return Err(TransportError::Malformed) };
+        let Frame::Ack {
+            fragment_count,
+            bitmap,
+            ..
+        } = completed.ack
+        else {
+            return Err(TransportError::Malformed);
+        };
         assert!(sender.on_ack(id, fragment_count, bitmap)?);
         assert_eq!(sender.pending_count(), 0);
         let _ = first;
@@ -578,7 +652,10 @@ mod tests {
             let _retry = sender.next_retry(now).ok_or(TransportError::Malformed)?;
         }
         let exhausted_at = ((LIMIT_MAX_T1_RETRIES + 1) * LIMIT_T1_RTO_MS) as u64;
-        assert_eq!(sender.poll_timeouts(exhausted_at), Err(TransportError::RetryExhausted));
+        assert_eq!(
+            sender.poll_timeouts(exhausted_at),
+            Err(TransportError::RetryExhausted)
+        );
         assert_eq!(sender.abort_all(), 1);
         assert_eq!(sender.pending_count(), 0);
         assert_eq!(sender.queue_depth(), 0);

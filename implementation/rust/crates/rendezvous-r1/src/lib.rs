@@ -107,7 +107,8 @@ impl Registry {
 
     pub fn expire(&mut self, now_ms: u64) -> usize {
         let before = self.records.len();
-        self.records.retain(|_, record| now_ms < record.expires_at_ms);
+        self.records
+            .retain(|_, record| now_ms < record.expires_at_ms);
         before - self.records.len()
     }
 

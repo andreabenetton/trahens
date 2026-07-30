@@ -18,9 +18,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
-use trahens_crypto::{
-    initialize, random_bytes, random_nonzero_16, signing_keypair, SecretBytes,
-};
+use trahens_crypto::{initialize, random_bytes, random_nonzero_16, signing_keypair, SecretBytes};
 
 struct GatewayRoute {
     label: [u8; 16],
@@ -56,8 +54,18 @@ fn send_control(
     message_type: MessageType,
     payload: &P1Payload,
 ) -> Result<(), Box<dyn Error>> {
-    let protected = seal_control(&route.route_secret.0, message_type, route.generation, payload)?;
-    link.send(control(message_type, route.label, route.generation, protected))?;
+    let protected = seal_control(
+        &route.route_secret.0,
+        message_type,
+        route.generation,
+        payload,
+    )?;
+    link.send(control(
+        message_type,
+        route.label,
+        route.generation,
+        protected,
+    ))?;
     Ok(())
 }
 
@@ -85,8 +93,13 @@ fn run() -> Result<(), Box<dyn Error>> {
     let gateway_id = args.u32("gateway-id")?;
     let epoch = args.u32("epoch")?;
     let timeout_ms = args.u64_or("timeout-ms", 30_000)?;
-    let metrics_path = args.optional("metrics", "rendezvous-metrics.json").to_owned();
-    let endpoint_handle = args.optional("endpoint-handle", "p1-endpoint").as_bytes().to_vec();
+    let metrics_path = args
+        .optional("metrics", "rendezvous-metrics.json")
+        .to_owned();
+    let endpoint_handle = args
+        .optional("endpoint-handle", "p1-endpoint")
+        .as_bytes()
+        .to_vec();
 
     let signing_seed = SecretBytes(parse_hex::<32>(args.required("signing-seed")?)?);
     let (signing_public, signing_secret) = signing_keypair(&signing_seed.0)?;
@@ -140,164 +153,206 @@ fn run() -> Result<(), Box<dyn Error>> {
             Err(RecvTimeoutError::Disconnected) => break,
         };
         match event {
-            LinkEvent::Message { peer_id: received_peer, envelope, .. } if received_peer == peer_id => {
-                match envelope.message {
-                    Message::Discover(discover) => {
-                        if routes.contains_key(&discover.branch_token) {
+            LinkEvent::Message {
+                peer_id: received_peer,
+                envelope,
+                ..
+            } if received_peer == peer_id => match envelope.message {
+                Message::Discover(discover) => {
+                    if routes.contains_key(&discover.branch_token) {
+                        continue;
+                    }
+                    let discovery_nonce: [u8; 32] = discover
+                        .discovery_field
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| "invalid R1 discovery nonce")?;
+                    let route_secret = random_bytes::<32>()?;
+                    let challenge = random_bytes::<32>()?;
+                    let pseudonym = random_nonzero_16()?;
+                    if route_secret == [0_u8; 32] || challenge == [0_u8; 32] {
+                        return Err("gateway generated an invalid route secret".into());
+                    }
+                    let expires_at_ms = unix_time_ms().saturating_add(LIMIT_ROUTE_TTL_MS as u64);
+                    let blob = seal_gateway_offer(
+                        &discover.reply_public_key,
+                        gateway_id,
+                        expires_at_ms,
+                        pseudonym,
+                        route_secret,
+                        challenge,
+                        discovery_nonce,
+                        signing_public,
+                        &signing_secret,
+                    )?;
+                    states.begin(discover.branch_token, peer_id, 0, expires_at_ms)?;
+                    states.apply(discover.branch_token, Event::CandidateAccepted)?;
+                    routes.insert(
+                        discover.branch_token,
+                        GatewayRoute {
+                            label: discover.branch_token,
+                            generation: 0,
+                            route_secret: SecretBytes(route_secret),
+                            challenge,
+                            pseudonym,
+                            expires_at_ms,
+                            failed_redemptions: 0,
+                        },
+                    );
+                    link.send(Envelope {
+                        suite_id: SUITE_R1,
+                        message: Message::Candidate(Candidate {
+                            candidate_token: discover.branch_token,
+                            expiry_class: discover.expiry_class,
+                            layer_count: 1,
+                            candidate_blob: blob,
+                        }),
+                    })?;
+                }
+                Message::Control(control_message) => {
+                    let route_label = control_message.local_label;
+                    let mut cleanup_event = None;
+                    {
+                        let Some(route) = routes.get_mut(&route_label) else {
+                            continue;
+                        };
+                        if control_message.generation != route.generation {
                             continue;
                         }
-                        let discovery_nonce: [u8; 32] = discover
-                            .discovery_field
-                            .as_slice()
-                            .try_into()
-                            .map_err(|_| "invalid R1 discovery nonce")?;
-                        let route_secret = random_bytes::<32>()?;
-                        let challenge = random_bytes::<32>()?;
-                        let pseudonym = random_nonzero_16()?;
-                        if route_secret == [0_u8; 32] || challenge == [0_u8; 32] {
-                            return Err("gateway generated an invalid route secret".into());
-                        }
-                        let expires_at_ms = unix_time_ms().saturating_add(LIMIT_ROUTE_TTL_MS as u64);
-                        let blob = seal_gateway_offer(
-                            &discover.reply_public_key,
-                            gateway_id,
-                            expires_at_ms,
-                            pseudonym,
-                            route_secret,
-                            challenge,
-                            discovery_nonce,
-                            signing_public,
-                            &signing_secret,
-                        )?;
-                        states.begin(discover.branch_token, peer_id, 0, expires_at_ms)?;
-                        states.apply(discover.branch_token, Event::CandidateAccepted)?;
-                        routes.insert(
-                            discover.branch_token,
-                            GatewayRoute {
-                                label: discover.branch_token,
-                                generation: 0,
-                                route_secret: SecretBytes(route_secret),
-                                challenge,
-                                pseudonym,
-                                expires_at_ms,
-                                failed_redemptions: 0,
-                            },
-                        );
-                        link.send(Envelope {
-                            suite_id: SUITE_R1,
-                            message: Message::Candidate(Candidate {
-                                candidate_token: discover.branch_token,
-                                expiry_class: discover.expiry_class,
-                                layer_count: 1,
-                                candidate_blob: blob,
-                            }),
-                        })?;
-                    }
-                    Message::Control(control_message) => {
-                        let route_label = control_message.local_label;
-                        let mut cleanup_event = None;
-                        {
-                            let Some(route) = routes.get_mut(&route_label) else { continue };
-                            if control_message.generation != route.generation {
+                        let payload = match open_control(
+                            &route.route_secret.0,
+                            control_message.message_type,
+                            route.generation,
+                            &control_message.protected_body,
+                        ) {
+                            Ok(value) => value,
+                            Err(_) => {
+                                structured_event(
+                                    "rendezvous",
+                                    "security_event",
+                                    &[("code", "e2e_authentication_failed".to_owned())],
+                                );
                                 continue;
                             }
-                            let payload = match open_control(
-                                &route.route_secret.0,
-                                control_message.message_type,
-                                route.generation,
-                                &control_message.protected_body,
-                            ) {
-                                Ok(value) => value,
-                                Err(_) => {
-                                    structured_event("rendezvous", "security_event", &[("code", "e2e_authentication_failed".to_owned())]);
-                                    continue;
+                        };
+                        match (control_message.message_type, payload) {
+                            (MessageType::Commit, P1Payload::Commit { proof }) => {
+                                let expected = commit_proof(
+                                    &route.route_secret.0,
+                                    &route.challenge,
+                                    &route.pseudonym,
+                                )?;
+                                verify_proof(&expected, &proof)?;
+                                states.apply(route.label, Event::CommitAccepted)?;
+                                let ready = ready_proof(
+                                    &route.route_secret.0,
+                                    &route.challenge,
+                                    &route.pseudonym,
+                                )?;
+                                send_control(
+                                    &link,
+                                    route,
+                                    MessageType::Ready,
+                                    &P1Payload::Ready { proof: ready },
+                                )?;
+                                states.apply(route.label, Event::ReadyAccepted)?;
+                            }
+                            (
+                                MessageType::RendezvousOpen,
+                                P1Payload::RendezvousOpen {
+                                    gateway_pseudonym,
+                                    capability,
+                                },
+                            ) => {
+                                let started = Instant::now();
+                                let phase = states.get(&route.label).map(|state| state.phase);
+                                let mut status = ERROR_STATE_VIOLATION;
+                                if phase == Some(Phase::Ready)
+                                    && gateway_pseudonym == route.pseudonym
+                                {
+                                    let presented = SecretBytes(capability);
+                                    status = match registry.redeem(
+                                        gateway_id,
+                                        &presented,
+                                        unix_time_ms(),
+                                    )? {
+                                        Some(_handle) => {
+                                            states.apply(route.label, Event::CapabilityAccepted)?;
+                                            0
+                                        }
+                                        None => {
+                                            route.failed_redemptions =
+                                                route.failed_redemptions.saturating_add(1);
+                                            ERROR_CAPABILITY_INVALID
+                                        }
+                                    };
                                 }
-                            };
-                            match (control_message.message_type, payload) {
-                                (MessageType::Commit, P1Payload::Commit { proof }) => {
-                                    let expected = commit_proof(
-                                        &route.route_secret.0,
-                                        &route.challenge,
-                                        &route.pseudonym,
-                                    )?;
-                                    verify_proof(&expected, &proof)?;
-                                    states.apply(route.label, Event::CommitAccepted)?;
-                                    let ready = ready_proof(
-                                        &route.route_secret.0,
-                                        &route.challenge,
-                                        &route.pseudonym,
-                                    )?;
-                                    send_control(&link, route, MessageType::Ready, &P1Payload::Ready { proof: ready })?;
-                                    states.apply(route.label, Event::ReadyAccepted)?;
-                                }
-                                (
-                                    MessageType::RendezvousOpen,
-                                    P1Payload::RendezvousOpen { gateway_pseudonym, capability },
-                                ) => {
-                                    let started = Instant::now();
-                                    let phase = states.get(&route.label).map(|state| state.phase);
-                                    let mut status = ERROR_STATE_VIOLATION;
-                                    if phase == Some(Phase::Ready) && gateway_pseudonym == route.pseudonym {
-                                        let presented = SecretBytes(capability);
-                                        status = match registry.redeem(gateway_id, &presented, unix_time_ms())? {
-                                            Some(_handle) => {
-                                                states.apply(route.label, Event::CapabilityAccepted)?;
-                                                0
-                                            }
-                                            None => {
-                                                route.failed_redemptions = route.failed_redemptions.saturating_add(1);
-                                                ERROR_CAPABILITY_INVALID
-                                            }
-                                        };
-                                    }
-                                    redemption_latency_ms = started.elapsed().as_micros().try_into().unwrap_or(u64::MAX);
-                                    send_control(
-                                        &link,
-                                        route,
-                                        MessageType::RendezvousResult,
-                                        &P1Payload::RendezvousResult { status },
-                                    )?;
-                                    if route.failed_redemptions >= LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE {
-                                        cleanup_started = Some(Instant::now());
-                                        cleanup_event = Some(Event::CancelAccepted);
-                                    }
-                                }
-                                (MessageType::Data, P1Payload::Data { direction: 0, sequence, payload }) => {
-                                    if states.get(&route.label).map(|state| state.phase) != Some(Phase::Open) {
-                                        continue;
-                                    }
-                                    states.apply(route.label, Event::DataAccepted)?;
-                                    send_control(
-                                        &link,
-                                        route,
-                                        MessageType::Data,
-                                        &P1Payload::Data { direction: 1, sequence, payload },
-                                    )?;
-                                }
-                                (MessageType::Close, P1Payload::Close { .. }) => {
-                                    cleanup_started = Some(Instant::now());
-                                    observed_close = true;
-                                    cleanup_event = Some(Event::CloseAccepted);
-                                }
-                                (MessageType::Cancel | MessageType::Abort, _) => {
+                                redemption_latency_ms =
+                                    started.elapsed().as_micros().try_into().unwrap_or(u64::MAX);
+                                send_control(
+                                    &link,
+                                    route,
+                                    MessageType::RendezvousResult,
+                                    &P1Payload::RendezvousResult { status },
+                                )?;
+                                if route.failed_redemptions
+                                    >= LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE
+                                {
                                     cleanup_started = Some(Instant::now());
                                     cleanup_event = Some(Event::CancelAccepted);
                                 }
-                                _ => {}
                             }
-                        }
-                        if let Some(event) = cleanup_event {
-                            routes.remove(&route_label);
-                            states.apply(route_label, event)?;
+                            (
+                                MessageType::Data,
+                                P1Payload::Data {
+                                    direction: 0,
+                                    sequence,
+                                    payload,
+                                },
+                            ) => {
+                                if states.get(&route.label).map(|state| state.phase)
+                                    != Some(Phase::Open)
+                                {
+                                    continue;
+                                }
+                                states.apply(route.label, Event::DataAccepted)?;
+                                send_control(
+                                    &link,
+                                    route,
+                                    MessageType::Data,
+                                    &P1Payload::Data {
+                                        direction: 1,
+                                        sequence,
+                                        payload,
+                                    },
+                                )?;
+                            }
+                            (MessageType::Close, P1Payload::Close { .. }) => {
+                                cleanup_started = Some(Instant::now());
+                                observed_close = true;
+                                cleanup_event = Some(Event::CloseAccepted);
+                            }
+                            (MessageType::Cancel | MessageType::Abort, _) => {
+                                cleanup_started = Some(Instant::now());
+                                cleanup_event = Some(Event::CancelAccepted);
+                            }
+                            _ => {}
                         }
                     }
-                    _ => {}
+                    if let Some(event) = cleanup_event {
+                        routes.remove(&route_label);
+                        states.apply(route_label, event)?;
+                    }
                 }
-            }
+                _ => {}
+            },
             LinkEvent::TransmissionFailed { .. } => {
                 return Err("T1 retry budget exhausted".into());
             }
-            LinkEvent::SecurityEvent { peer_id: source, code } => {
+            LinkEvent::SecurityEvent {
+                peer_id: source,
+                code,
+            } => {
                 structured_event(
                     "rendezvous",
                     "security_event",
@@ -322,7 +377,13 @@ fn run() -> Result<(), Box<dyn Error>> {
     let cleanup_ms = cleanup_started
         .map(|value| value.elapsed().as_millis().try_into().unwrap_or(u64::MAX))
         .unwrap_or(0);
-    write_link_metrics(&metrics_path, "rendezvous", states.live_routes(), cleanup_ms, &metrics)?;
+    write_link_metrics(
+        &metrics_path,
+        "rendezvous",
+        states.live_routes(),
+        cleanup_ms,
+        &metrics,
+    )?;
     structured_event(
         "rendezvous",
         "stopped",

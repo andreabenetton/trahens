@@ -4,9 +4,7 @@
 pub mod p1;
 
 use codec_m2::{decode, encode, Envelope};
-use protocol_registry::{
-    FIXED_T2_QUEUE_CELLS_PER_PEER, LIMIT_T1_RTO_MS, SUITE_R1,
-};
+use protocol_registry::{FIXED_T2_QUEUE_CELLS_PER_PEER, LIMIT_T1_RTO_MS, SUITE_R1};
 use scheduling_t2::{FixedSchedule, ScheduleMetrics, SlotClass};
 use std::collections::VecDeque;
 use std::io::ErrorKind;
@@ -48,9 +46,17 @@ pub enum LinkEvent {
         envelope: Envelope,
         received_at_ms: u64,
     },
-    TransmissionFailed { peer_id: u32 },
-    SecurityEvent { peer_id: u32, code: &'static str },
-    Stopped { peer_id: u32, metrics: LinkMetrics },
+    TransmissionFailed {
+        peer_id: u32,
+    },
+    SecurityEvent {
+        peer_id: u32,
+        code: &'static str,
+    },
+    Stopped {
+        peer_id: u32,
+        metrics: LinkMetrics,
+    },
 }
 
 #[derive(Debug)]
@@ -67,7 +73,9 @@ pub struct LinkHandle {
 
 impl LinkHandle {
     pub fn send(&self, envelope: Envelope) -> Result<(), RuntimeError> {
-        self.commands.try_send(LinkCommand::Send(envelope)).map_err(|_| RuntimeError::QueueFull)
+        self.commands
+            .try_send(LinkCommand::Send(envelope))
+            .map_err(|_| RuntimeError::QueueFull)
     }
 
     pub fn shutdown(mut self) -> Result<(), RuntimeError> {
@@ -151,7 +159,10 @@ pub fn unix_time_ms() -> u64 {
     }
 }
 
-pub fn spawn_link(config: LinkConfig, events: SyncSender<LinkEvent>) -> Result<LinkHandle, RuntimeError> {
+pub fn spawn_link(
+    config: LinkConfig,
+    events: SyncSender<LinkEvent>,
+) -> Result<LinkHandle, RuntimeError> {
     let socket = UdpSocket::bind(config.bind)?;
     socket.connect(config.peer)?;
     socket.set_nonblocking(true)?;
@@ -160,9 +171,25 @@ pub fn spawn_link(config: LinkConfig, events: SyncSender<LinkEvent>) -> Result<L
     let (command_sender, command_receiver) = mpsc::sync_channel(FIXED_T2_QUEUE_CELLS_PER_PEER);
     let peer_id = config.peer_id;
     let worker = thread::Builder::new()
-        .name(format!("trahens-link-{}-{}", config.local_id, config.peer_id))
-        .spawn(move || run_link(config, socket, send_key, receive_key, command_receiver, events))?;
-    Ok(LinkHandle { peer_id, commands: command_sender, worker: Some(worker) })
+        .name(format!(
+            "trahens-link-{}-{}",
+            config.local_id, config.peer_id
+        ))
+        .spawn(move || {
+            run_link(
+                config,
+                socket,
+                send_key,
+                receive_key,
+                command_receiver,
+                events,
+            )
+        })?;
+    Ok(LinkHandle {
+        peer_id,
+        commands: command_sender,
+        worker: Some(worker),
+    })
 }
 
 fn run_link(
@@ -199,13 +226,18 @@ fn run_link(
                         }
                     };
                     let Some(id) = next_transmission_id() else {
-                        let _ = events.try_send(LinkEvent::TransmissionFailed { peer_id: config.peer_id });
+                        let _ = events.try_send(LinkEvent::TransmissionFailed {
+                            peer_id: config.peer_id,
+                        });
                         continue;
                     };
                     if sender.enqueue(envelope.suite_id, id, &encoded).is_err() {
-                        let _ = events.try_send(LinkEvent::TransmissionFailed { peer_id: config.peer_id });
+                        let _ = events.try_send(LinkEvent::TransmissionFailed {
+                            peer_id: config.peer_id,
+                        });
                     } else {
-                        metrics.logical_messages_sent = metrics.logical_messages_sent.saturating_add(1);
+                        metrics.logical_messages_sent =
+                            metrics.logical_messages_sent.saturating_add(1);
                     }
                 }
                 Ok(LinkCommand::Shutdown) => {
@@ -227,12 +259,23 @@ fn run_link(
                         Ok((_received_sequence, body)) => {
                             metrics.received_cells = metrics.received_cells.saturating_add(1);
                             match decode_frame(&body) {
-                                Ok(Frame::Ack { transmission_id, fragment_count, bitmap, .. }) => {
-                                    if sender.on_ack(transmission_id, fragment_count, bitmap).is_err() {
-                                        metrics.malformed_cells = metrics.malformed_cells.saturating_add(1);
+                                Ok(Frame::Ack {
+                                    transmission_id,
+                                    fragment_count,
+                                    bitmap,
+                                    ..
+                                }) => {
+                                    if sender
+                                        .on_ack(transmission_id, fragment_count, bitmap)
+                                        .is_err()
+                                    {
+                                        metrics.malformed_cells =
+                                            metrics.malformed_cells.saturating_add(1);
                                     }
                                 }
-                                Ok(frame @ Frame::Data { .. }) => match receiver.accept(frame, elapsed_ms(origin)) {
+                                Ok(frame @ Frame::Data { .. }) => match receiver
+                                    .accept(frame, elapsed_ms(origin))
+                                {
                                     Ok(Some(result)) => {
                                         if ack_queue.len() < FIXED_T2_QUEUE_CELLS_PER_PEER {
                                             ack_queue.push_back(result.ack);
@@ -240,7 +283,9 @@ fn run_link(
                                         if let Some((suite, message)) = result.complete {
                                             match decode(&message) {
                                                 Ok(envelope) if envelope.suite_id == suite => {
-                                                    metrics.logical_messages_received = metrics.logical_messages_received.saturating_add(1);
+                                                    metrics.logical_messages_received = metrics
+                                                        .logical_messages_received
+                                                        .saturating_add(1);
                                                     let _ = events.try_send(LinkEvent::Message {
                                                         peer_id: config.peer_id,
                                                         envelope,
@@ -248,22 +293,25 @@ fn run_link(
                                                     });
                                                 }
                                                 _ => {
-                                                    let _ = events.try_send(LinkEvent::SecurityEvent {
-                                                        peer_id: config.peer_id,
-                                                        code: "m2_decode_or_suite_mismatch",
-                                                    });
+                                                    let _ =
+                                                        events.try_send(LinkEvent::SecurityEvent {
+                                                            peer_id: config.peer_id,
+                                                            code: "m2_decode_or_suite_mismatch",
+                                                        });
                                                 }
                                             }
                                         }
                                     }
                                     Ok(None) => {}
                                     Err(_) => {
-                                        metrics.malformed_cells = metrics.malformed_cells.saturating_add(1);
+                                        metrics.malformed_cells =
+                                            metrics.malformed_cells.saturating_add(1);
                                     }
                                 },
                                 Ok(Frame::Chaff { .. }) => {}
                                 Err(_) => {
-                                    metrics.malformed_cells = metrics.malformed_cells.saturating_add(1);
+                                    metrics.malformed_cells =
+                                        metrics.malformed_cells.saturating_add(1);
                                 }
                             }
                         }
@@ -289,8 +337,11 @@ fn run_link(
         let now_ms = elapsed_ms(origin);
         if sender.poll_timeouts(now_ms).is_err() {
             let failed = sender.abort_all();
-            metrics.transmission_failures = metrics.transmission_failures.saturating_add(failed as u64);
-            let _ = events.try_send(LinkEvent::TransmissionFailed { peer_id: config.peer_id });
+            metrics.transmission_failures =
+                metrics.transmission_failures.saturating_add(failed as u64);
+            let _ = events.try_send(LinkEvent::TransmissionFailed {
+                peer_id: config.peer_id,
+            });
         }
         receiver.expire(now_ms);
         metrics.peak_queue_cells = metrics
@@ -314,9 +365,10 @@ fn run_link(
                     }
                 }
             };
-            match encode_frame(&frame)
-                .and_then(|body| seal_record(&send_key, config.epoch, sequence, &body).map_err(|_| transport_t1::TransportError::Malformed))
-            {
+            match encode_frame(&frame).and_then(|body| {
+                seal_record(&send_key, config.epoch, sequence, &body)
+                    .map_err(|_| transport_t1::TransportError::Malformed)
+            }) {
                 Ok(record) => {
                     if socket.send(&record).is_ok() {
                         metrics.sent_cells = metrics.sent_cells.saturating_add(1);
@@ -337,7 +389,10 @@ fn run_link(
                 }
             }
         } else {
-            let wait = schedule.next_deadline().saturating_duration_since(now).min(Duration::from_millis(1));
+            let wait = schedule
+                .next_deadline()
+                .saturating_duration_since(now)
+                .min(Duration::from_millis(1));
             thread::sleep(wait);
         }
     }
@@ -346,7 +401,10 @@ fn run_link(
     zeroize(&mut send_key);
     zeroize(&mut receive_key);
     zeroize(&mut config.base_key);
-    let _ = events.send(LinkEvent::Stopped { peer_id: config.peer_id, metrics });
+    let _ = events.send(LinkEvent::Stopped {
+        peer_id: config.peer_id,
+        metrics,
+    });
 }
 
 pub fn event_channel() -> (SyncSender<LinkEvent>, ChannelReceiver<LinkEvent>) {
@@ -399,7 +457,9 @@ impl CliArgs {
         let mut arguments = std::env::args().skip(1);
         while let Some(name) = arguments.next() {
             if !name.starts_with("--") {
-                return Err(RuntimeError::Arguments(format!("unexpected argument: {name}")));
+                return Err(RuntimeError::Arguments(format!(
+                    "unexpected argument: {name}"
+                )));
             }
             let value = arguments
                 .next()
@@ -449,7 +509,8 @@ pub fn write_link_metrics(
     cleanup_ms: u64,
     links: &[(u32, LinkMetrics)],
 ) -> Result<(), RuntimeError> {
-    let mut output = format!(
+    let mut output =
+        format!(
         "{{\n  \"node\": \"{}\",\n  \"live_routes\": {},\n  \"cleanup_ms\": {},\n  \"links\": [\n",
         node.replace('"', "'"), live_routes, cleanup_ms
     );

@@ -40,7 +40,11 @@ unsafe extern "C" {
     fn sodium_memzero(buf: *mut c_void, size: usize);
     fn sodium_memcmp(left: *const c_void, right: *const c_void, size: usize) -> c_int;
 
-    fn crypto_hash_sha256(out: *mut c_uchar, input: *const c_uchar, input_len: c_ulonglong) -> c_int;
+    fn crypto_hash_sha256(
+        out: *mut c_uchar,
+        input: *const c_uchar,
+        input_len: c_ulonglong,
+    ) -> c_int;
     fn crypto_auth_hmacsha256(
         out: *mut c_uchar,
         input: *const c_uchar,
@@ -85,7 +89,11 @@ unsafe extern "C" {
         point: *const c_uchar,
     ) -> c_int;
 
-    fn crypto_sign_seed_keypair(public: *mut c_uchar, secret: *mut c_uchar, seed: *const c_uchar) -> c_int;
+    fn crypto_sign_seed_keypair(
+        public: *mut c_uchar,
+        secret: *mut c_uchar,
+        seed: *const c_uchar,
+    ) -> c_int;
     fn crypto_sign_detached(
         signature: *mut c_uchar,
         signature_len: *mut c_ulonglong,
@@ -107,7 +115,11 @@ pub fn initialize() -> Result<(), CryptoError> {
     *SODIUM.get_or_init(|| {
         // SAFETY: sodium_init is process-global and explicitly safe to call repeatedly.
         let result = unsafe { sodium_init() };
-        if result < 0 { Err(CryptoError::Initialization) } else { Ok(()) }
+        if result < 0 {
+            Err(CryptoError::Initialization)
+        } else {
+            Ok(())
+        }
     })
 }
 
@@ -147,9 +159,17 @@ pub fn sha256(input: &[u8]) -> Result<[u8; 32], CryptoError> {
     let mut output = [0_u8; 32];
     // SAFETY: pointers are valid for their declared lengths and do not overlap mutably.
     let result = unsafe {
-        crypto_hash_sha256(output.as_mut_ptr(), input.as_ptr(), input.len() as c_ulonglong)
+        crypto_hash_sha256(
+            output.as_mut_ptr(),
+            input.as_ptr(),
+            input.len() as c_ulonglong,
+        )
     };
-    if result == 0 { Ok(output) } else { Err(CryptoError::Initialization) }
+    if result == 0 {
+        Ok(output)
+    } else {
+        Err(CryptoError::Initialization)
+    }
 }
 
 pub fn hmac_sha256(key: &[u8; 32], input: &[u8]) -> Result<[u8; 32], CryptoError> {
@@ -164,7 +184,11 @@ pub fn hmac_sha256(key: &[u8; 32], input: &[u8]) -> Result<[u8; 32], CryptoError
             key.as_ptr(),
         )
     };
-    if result == 0 { Ok(output) } else { Err(CryptoError::Initialization) }
+    if result == 0 {
+        Ok(output)
+    } else {
+        Err(CryptoError::Initialization)
+    }
 }
 
 pub fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
@@ -182,7 +206,13 @@ pub fn aead_seal(
     aad: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
     initialize()?;
-    let mut output = vec![0_u8; plaintext.len().checked_add(TAG_BYTES).ok_or(CryptoError::ResourceLimit)?];
+    let mut output = vec![
+        0_u8;
+        plaintext
+            .len()
+            .checked_add(TAG_BYTES)
+            .ok_or(CryptoError::ResourceLimit)?
+    ];
     let mut output_len = 0_u64;
     // SAFETY: all slices are valid; output has message length plus the documented tag capacity.
     let result = unsafe {
@@ -243,7 +273,9 @@ fn encode_fields(label: &[u8], fields: &[&[u8]]) -> Result<Vec<u8>, CryptoError>
         if field.len() > u16::MAX as usize {
             return Err(CryptoError::InvalidLength);
         }
-        total = total.checked_add(2 + field.len()).ok_or(CryptoError::ResourceLimit)?;
+        total = total
+            .checked_add(2 + field.len())
+            .ok_or(CryptoError::ResourceLimit)?;
     }
     if label.len() > u16::MAX as usize {
         return Err(CryptoError::InvalidLength);
@@ -286,7 +318,9 @@ fn hkdf_expand(prk: &[u8; 32], info: &[u8], length: usize) -> Result<Vec<u8>, Cr
 fn valid_point(point: &[u8; 32]) -> Result<(), CryptoError> {
     initialize()?;
     // SAFETY: point points to exactly 32 readable bytes.
-    if unsafe { crypto_core_ristretto255_is_valid_point(point.as_ptr()) } == 1 && *point != [0_u8; 32] {
+    if unsafe { crypto_core_ristretto255_is_valid_point(point.as_ptr()) } == 1
+        && *point != [0_u8; 32]
+    {
         Ok(())
     } else {
         Err(CryptoError::InvalidEncoding)
@@ -302,7 +336,11 @@ pub fn random_scalar() -> Result<[u8; 32], CryptoError> {
     let mut scalar = [0_u8; 32];
     // SAFETY: scalar is a writable 32-byte buffer.
     unsafe { crypto_core_ristretto255_scalar_random(scalar.as_mut_ptr()) };
-    if scalar == [0_u8; 32] { Err(CryptoError::Initialization) } else { Ok(scalar) }
+    if scalar == [0_u8; 32] {
+        Err(CryptoError::Initialization)
+    } else {
+        Ok(scalar)
+    }
 }
 
 pub fn scalar_base(scalar: &[u8; 32]) -> Result<[u8; 32], CryptoError> {
@@ -312,8 +350,14 @@ pub fn scalar_base(scalar: &[u8; 32]) -> Result<[u8; 32], CryptoError> {
     }
     let mut output = [0_u8; 32];
     // SAFETY: input and output are fixed-size buffers required by libsodium.
-    let result = unsafe { crypto_scalarmult_ristretto255_base(output.as_mut_ptr(), scalar.as_ptr()) };
-    if result == 0 { valid_point(&output)?; Ok(output) } else { Err(CryptoError::InvalidEncoding) }
+    let result =
+        unsafe { crypto_scalarmult_ristretto255_base(output.as_mut_ptr(), scalar.as_ptr()) };
+    if result == 0 {
+        valid_point(&output)?;
+        Ok(output)
+    } else {
+        Err(CryptoError::InvalidEncoding)
+    }
 }
 
 pub fn scalar_mult(scalar: &[u8; 32], point: &[u8; 32]) -> Result<[u8; 32], CryptoError> {
@@ -327,7 +371,12 @@ pub fn scalar_mult(scalar: &[u8; 32], point: &[u8; 32]) -> Result<[u8; 32], Cryp
     let result = unsafe {
         crypto_scalarmult_ristretto255(output.as_mut_ptr(), scalar.as_ptr(), point.as_ptr())
     };
-    if result == 0 { valid_point(&output)?; Ok(output) } else { Err(CryptoError::InvalidEncoding) }
+    if result == 0 {
+        valid_point(&output)?;
+        Ok(output)
+    } else {
+        Err(CryptoError::InvalidEncoding)
+    }
 }
 
 pub fn scalar_product(left: &[u8; 32], right: &[u8; 32]) -> Result<[u8; 32], CryptoError> {
@@ -337,8 +386,14 @@ pub fn scalar_product(left: &[u8; 32], right: &[u8; 32]) -> Result<[u8; 32], Cry
     }
     let mut output = [0_u8; 32];
     // SAFETY: all scalar buffers are exactly 32 bytes.
-    unsafe { crypto_core_ristretto255_scalar_mul(output.as_mut_ptr(), left.as_ptr(), right.as_ptr()) };
-    if output == [0_u8; 32] { Err(CryptoError::InvalidEncoding) } else { Ok(output) }
+    unsafe {
+        crypto_core_ristretto255_scalar_mul(output.as_mut_ptr(), left.as_ptr(), right.as_ptr())
+    };
+    if output == [0_u8; 32] {
+        Err(CryptoError::InvalidEncoding)
+    } else {
+        Ok(output)
+    }
 }
 
 pub fn blind_public(public: &[u8; 32], factor: &[u8; 32]) -> Result<[u8; 32], CryptoError> {
@@ -382,7 +437,14 @@ fn reply_commitment(
 ) -> Result<[u8; 32], CryptoError> {
     let transcript = encode_fields(
         b"reply-key-commitment",
-        &[DOMAIN_C1_REPLY_COMMIT, encapsulation, recipient_public, aad, info, ciphertext],
+        &[
+            DOMAIN_C1_REPLY_COMMIT,
+            encapsulation,
+            recipient_public,
+            aad,
+            info,
+            ciphertext,
+        ],
     )?;
     hmac_sha256(key, &transcript)
 }
@@ -397,7 +459,8 @@ fn reply_seal_with_scalar(
     valid_point(recipient_public)?;
     let encapsulation = scalar_base(ephemeral)?;
     let dh = SecretBytes(scalar_mult(ephemeral, recipient_public)?);
-    let (key, nonce, commitment_key) = derive_reply_context(&dh.0, &encapsulation, recipient_public, info)?;
+    let (key, nonce, commitment_key) =
+        derive_reply_context(&dh.0, &encapsulation, recipient_public, info)?;
     let ciphertext = aead_seal(&key.0, &nonce, plaintext, aad)?;
     let commitment = reply_commitment(
         &commitment_key.0,
@@ -440,7 +503,8 @@ pub fn reply_open(
     let commitment = &sealed[split..];
     let recipient_public = scalar_base(recipient_secret)?;
     let dh = SecretBytes(scalar_mult(recipient_secret, &encapsulation)?);
-    let (key, nonce, commitment_key) = derive_reply_context(&dh.0, &encapsulation, &recipient_public, info)?;
+    let (key, nonce, commitment_key) =
+        derive_reply_context(&dh.0, &encapsulation, &recipient_public, info)?;
     let expected = reply_commitment(
         &commitment_key.0,
         &encapsulation,
@@ -457,12 +521,12 @@ pub fn reply_open(
     }
 }
 
-
 fn route_key(route_secret: &[u8; 32]) -> Result<SecretBytes<32>, CryptoError> {
     if *route_secret == [0_u8; 32] {
         return Err(CryptoError::InvalidEncoding);
     }
-    let mut input = Vec::with_capacity(protocol_registry::DOMAIN_P1_ROUTE_KEY.len() + route_secret.len());
+    let mut input =
+        Vec::with_capacity(protocol_registry::DOMAIN_P1_ROUTE_KEY.len() + route_secret.len());
     input.extend_from_slice(protocol_registry::DOMAIN_P1_ROUTE_KEY);
     input.extend_from_slice(route_secret);
     Ok(SecretBytes(hmac_sha256(route_secret, &input)?))
@@ -501,7 +565,9 @@ pub fn keyed_proof(
     domain: &[u8],
     fields: &[&[u8]],
 ) -> Result<[u8; 32], CryptoError> {
-    let mut input = Vec::with_capacity(domain.len() + fields.iter().map(|field| 2 + field.len()).sum::<usize>());
+    let mut input = Vec::with_capacity(
+        domain.len() + fields.iter().map(|field| 2 + field.len()).sum::<usize>(),
+    );
     input.extend_from_slice(domain);
     for field in fields {
         if field.len() > u16::MAX as usize {
@@ -526,8 +592,14 @@ pub fn signing_keypair(seed: &[u8; 32]) -> Result<([u8; 32], SecretBytes<64>), C
     let mut public = [0_u8; 32];
     let mut secret = [0_u8; 64];
     // SAFETY: output buffers and seed are exact libsodium sizes.
-    let result = unsafe { crypto_sign_seed_keypair(public.as_mut_ptr(), secret.as_mut_ptr(), seed.as_ptr()) };
-    if result == 0 { Ok((public, SecretBytes(secret))) } else { Err(CryptoError::Initialization) }
+    let result = unsafe {
+        crypto_sign_seed_keypair(public.as_mut_ptr(), secret.as_mut_ptr(), seed.as_ptr())
+    };
+    if result == 0 {
+        Ok((public, SecretBytes(secret)))
+    } else {
+        Err(CryptoError::Initialization)
+    }
 }
 
 pub fn sign(secret: &SecretBytes<64>, message: &[u8]) -> Result<[u8; 64], CryptoError> {
@@ -544,7 +616,11 @@ pub fn sign(secret: &SecretBytes<64>, message: &[u8]) -> Result<[u8; 64], Crypto
             secret.0.as_ptr(),
         )
     };
-    if result == 0 && signature_len == 64 { Ok(signature) } else { Err(CryptoError::Initialization) }
+    if result == 0 && signature_len == 64 {
+        Ok(signature)
+    } else {
+        Err(CryptoError::Initialization)
+    }
 }
 
 pub fn verify(public: &[u8; 32], message: &[u8], signature: &[u8; 64]) -> Result<(), CryptoError> {
@@ -558,7 +634,11 @@ pub fn verify(public: &[u8; 32], message: &[u8], signature: &[u8; 64]) -> Result
             public.as_ptr(),
         )
     };
-    if result == 0 { Ok(()) } else { Err(CryptoError::Authentication) }
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(CryptoError::Authentication)
+    }
 }
 
 #[cfg(test)]
@@ -572,8 +652,14 @@ mod tests {
         let public = scalar_base(&recipient)?;
         let ephemeral = random_scalar()?;
         let sealed = reply_seal_with_scalar(&public, b"payload", b"aad", b"info", &ephemeral)?;
-        assert_eq!(reply_open(&recipient, &sealed, b"aad", b"info")?, b"payload");
-        assert_eq!(reply_open(&other, &sealed, b"aad", b"info"), Err(CryptoError::Authentication));
+        assert_eq!(
+            reply_open(&recipient, &sealed, b"aad", b"info")?,
+            b"payload"
+        );
+        assert_eq!(
+            reply_open(&other, &sealed, b"aad", b"info"),
+            Err(CryptoError::Authentication)
+        );
         Ok(())
     }
 
@@ -583,7 +669,10 @@ mod tests {
         let factor = random_scalar()?;
         let public = scalar_base(&secret)?;
         let blinded_secret = blind_secret(&secret, &factor)?;
-        assert_eq!(blind_public(&public, &factor)?, scalar_base(&blinded_secret)?);
+        assert_eq!(
+            blind_public(&public, &factor)?,
+            scalar_base(&blinded_secret)?
+        );
         Ok(())
     }
 }

@@ -2,8 +2,7 @@
 #![doc = "Frozen fixed-rate T2 P1 scheduler."]
 
 use protocol_registry::{
-    FIXED_T2_CELLS_PER_EPOCH, FIXED_T2_EPOCH_MS, FIXED_T2_PROFILE_ID,
-    FIXED_T2_SLOT_INTERVAL_US,
+    FIXED_T2_CELLS_PER_EPOCH, FIXED_T2_EPOCH_MS, FIXED_T2_PROFILE_ID, FIXED_T2_SLOT_INTERVAL_US,
 };
 use std::time::{Duration, Instant};
 
@@ -34,7 +33,10 @@ pub struct FixedSchedule {
 impl FixedSchedule {
     pub fn new(origin: Instant) -> Self {
         debug_assert_eq!(FIXED_T2_PROFILE_ID, 1);
-        debug_assert_eq!(FIXED_T2_SLOT_INTERVAL_US * FIXED_T2_CELLS_PER_EPOCH, FIXED_T2_EPOCH_MS * 1000);
+        debug_assert_eq!(
+            FIXED_T2_SLOT_INTERVAL_US * FIXED_T2_CELLS_PER_EPOCH,
+            FIXED_T2_EPOCH_MS * 1000
+        );
         Self {
             next: origin,
             interval: Duration::from_micros(FIXED_T2_SLOT_INTERVAL_US as u64),
@@ -51,7 +53,8 @@ impl FixedSchedule {
         match class {
             SlotClass::Ack => self.metrics.ack_cells = self.metrics.ack_cells.saturating_add(1),
             SlotClass::Retransmission => {
-                self.metrics.retransmission_cells = self.metrics.retransmission_cells.saturating_add(1);
+                self.metrics.retransmission_cells =
+                    self.metrics.retransmission_cells.saturating_add(1);
             }
             SlotClass::NewData => {
                 self.metrics.new_data_cells = self.metrics.new_data_cells.saturating_add(1);
@@ -79,7 +82,13 @@ mod tests {
         for _ in 0..FIXED_T2_CELLS_PER_EPOCH {
             schedule.advance(SlotClass::Chaff);
         }
-        assert_eq!(schedule.next_deadline().duration_since(origin), Duration::from_millis(FIXED_T2_EPOCH_MS as u64));
-        assert_eq!(schedule.metrics().chaff_cells, FIXED_T2_CELLS_PER_EPOCH as u64);
+        assert_eq!(
+            schedule.next_deadline().duration_since(origin),
+            Duration::from_millis(FIXED_T2_EPOCH_MS as u64)
+        );
+        assert_eq!(
+            schedule.metrics().chaff_cells,
+            FIXED_T2_CELLS_PER_EPOCH as u64
+        );
     }
 }

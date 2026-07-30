@@ -44,7 +44,6 @@ pub enum StateError {
     Duplicate,
 }
 
-
 impl std::fmt::Display for StateError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
@@ -93,14 +92,22 @@ impl RouteTable {
         }
         self.routes.insert(
             label,
-            RouteState { phase: Phase::Discovering, peer, generation, expires_at_ms },
+            RouteState {
+                phase: Phase::Discovering,
+                peer,
+                generation,
+                expires_at_ms,
+            },
         );
         self.peer_counts.insert(peer, count + 1);
         Ok(())
     }
 
     pub fn apply(&mut self, label: [u8; 16], event: Event) -> Result<Action, StateError> {
-        if matches!(event, Event::CloseAccepted | Event::CancelAccepted | Event::Timeout) {
+        if matches!(
+            event,
+            Event::CloseAccepted | Event::CancelAccepted | Event::Timeout
+        ) {
             return self.remove(label).map(|()| Action::ReclaimState);
         }
         let state = self.routes.get_mut(&label).ok_or(StateError::Missing)?;
@@ -168,12 +175,30 @@ mod tests {
         let label = [1_u8; 16];
         let mut table = RouteTable::default();
         table.begin(label, 1, 0, 100)?;
-        assert_eq!(table.apply(label, Event::CandidateAccepted)?, Action::StoreCandidate);
-        assert_eq!(table.apply(label, Event::CommitAccepted)?, Action::ReserveRoute);
-        assert_eq!(table.apply(label, Event::ReadyAccepted)?, Action::ActivateRoute);
-        assert_eq!(table.apply(label, Event::CapabilityAccepted)?, Action::OpenRendezvous);
-        assert_eq!(table.apply(label, Event::DataAccepted)?, Action::DeliverData);
-        assert_eq!(table.apply(label, Event::CloseAccepted)?, Action::ReclaimState);
+        assert_eq!(
+            table.apply(label, Event::CandidateAccepted)?,
+            Action::StoreCandidate
+        );
+        assert_eq!(
+            table.apply(label, Event::CommitAccepted)?,
+            Action::ReserveRoute
+        );
+        assert_eq!(
+            table.apply(label, Event::ReadyAccepted)?,
+            Action::ActivateRoute
+        );
+        assert_eq!(
+            table.apply(label, Event::CapabilityAccepted)?,
+            Action::OpenRendezvous
+        );
+        assert_eq!(
+            table.apply(label, Event::DataAccepted)?,
+            Action::DeliverData
+        );
+        assert_eq!(
+            table.apply(label, Event::CloseAccepted)?,
+            Action::ReclaimState
+        );
         assert_eq!(table.live_routes(), 0);
         Ok(())
     }
@@ -183,8 +208,14 @@ mod tests {
         let label = [2_u8; 16];
         let mut table = RouteTable::default();
         table.begin(label, 1, 0, 100)?;
-        assert_eq!(table.apply(label, Event::ReadyAccepted), Err(StateError::InvalidTransition));
-        assert_eq!(table.get(&label).map(|route| route.phase), Some(Phase::Discovering));
+        assert_eq!(
+            table.apply(label, Event::ReadyAccepted),
+            Err(StateError::InvalidTransition)
+        );
+        assert_eq!(
+            table.get(&label).map(|route| route.phase),
+            Some(Phase::Discovering)
+        );
         Ok(())
     }
 }

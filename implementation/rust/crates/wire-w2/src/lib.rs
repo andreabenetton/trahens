@@ -148,7 +148,10 @@ mod tests {
         assert_eq!(record.len(), BYTES_CELL_RECORD);
         let mut replay = ReplayWindow::new(1);
         assert_eq!(open_record(&key, 1, &record, &mut replay)?.1, body);
-        assert_eq!(open_record(&key, 1, &record, &mut replay), Err(WireError::Replay));
+        assert_eq!(
+            open_record(&key, 1, &record, &mut replay),
+            Err(WireError::Replay)
+        );
         Ok(())
     }
 
@@ -158,7 +161,10 @@ mod tests {
         let mut record = seal_record(&key, 5, 900, &[0_u8; BYTES_CELL_BODY])?;
         record[100] ^= 1;
         let mut replay = ReplayWindow::new(5);
-        assert_eq!(open_record(&key, 5, &record, &mut replay), Err(WireError::Authentication));
+        assert_eq!(
+            open_record(&key, 5, &record, &mut replay),
+            Err(WireError::Authentication)
+        );
         assert_eq!(replay.entries(), 0);
         Ok(())
     }

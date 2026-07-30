@@ -2,12 +2,12 @@
 
 use codec_m2::{decode_p1, encode_p1, CodecError, MessageType, P1Payload};
 use protocol_registry::{
-    DOMAIN_C1_CANDIDATE_AAD, DOMAIN_C1_CANDIDATE_INFO, DOMAIN_C1_COMMIT,
-    DOMAIN_C1_READY, LIMIT_MAX_CANDIDATE_LAYERS,
+    DOMAIN_C1_CANDIDATE_AAD, DOMAIN_C1_CANDIDATE_INFO, DOMAIN_C1_COMMIT, DOMAIN_C1_READY,
+    LIMIT_MAX_CANDIDATE_LAYERS,
 };
 use trahens_crypto::{
-    blind_secret, constant_time_equal, keyed_proof, reply_open, reply_seal, route_open,
-    route_seal, sign, verify, zeroize_slice, CryptoError, SecretBytes,
+    blind_secret, constant_time_equal, keyed_proof, reply_open, reply_seal, route_open, route_seal,
+    sign, verify, zeroize_slice, CryptoError, SecretBytes,
 };
 
 #[derive(Debug)]
@@ -20,11 +20,15 @@ pub enum P1Error {
 }
 
 impl From<CodecError> for P1Error {
-    fn from(value: CodecError) -> Self { Self::Codec(value) }
+    fn from(value: CodecError) -> Self {
+        Self::Codec(value)
+    }
 }
 
 impl From<CryptoError> for P1Error {
-    fn from(value: CryptoError) -> Self { Self::Crypto(value) }
+    fn from(value: CryptoError) -> Self {
+        Self::Crypto(value)
+    }
 }
 
 impl std::fmt::Display for P1Error {
@@ -259,7 +263,11 @@ pub fn commit_proof(
     challenge: &[u8; 32],
     pseudonym: &[u8; 16],
 ) -> Result<[u8; 32], P1Error> {
-    Ok(keyed_proof(route_secret, DOMAIN_C1_COMMIT, &[challenge, pseudonym])?)
+    Ok(keyed_proof(
+        route_secret,
+        DOMAIN_C1_COMMIT,
+        &[challenge, pseudonym],
+    )?)
 }
 
 pub fn ready_proof(
@@ -267,11 +275,19 @@ pub fn ready_proof(
     challenge: &[u8; 32],
     pseudonym: &[u8; 16],
 ) -> Result<[u8; 32], P1Error> {
-    Ok(keyed_proof(route_secret, DOMAIN_C1_READY, &[challenge, pseudonym])?)
+    Ok(keyed_proof(
+        route_secret,
+        DOMAIN_C1_READY,
+        &[challenge, pseudonym],
+    )?)
 }
 
 pub fn verify_proof(expected: &[u8; 32], actual: &[u8; 32]) -> Result<(), P1Error> {
-    if constant_time_equal(expected, actual) { Ok(()) } else { Err(P1Error::InvalidOffer) }
+    if constant_time_equal(expected, actual) {
+        Ok(())
+    } else {
+        Err(P1Error::InvalidOffer)
+    }
 }
 
 pub fn control_aad(message_type: MessageType, generation: u32) -> Vec<u8> {
@@ -288,7 +304,11 @@ pub fn seal_control(
     payload: &P1Payload,
 ) -> Result<Vec<u8>, P1Error> {
     let mut plaintext = encode_p1(payload)?;
-    let result = route_seal(route_secret, &plaintext, &control_aad(message_type, generation));
+    let result = route_seal(
+        route_secret,
+        &plaintext,
+        &control_aad(message_type, generation),
+    );
     zeroize_slice(&mut plaintext);
     Ok(result?)
 }
@@ -299,7 +319,11 @@ pub fn open_control(
     generation: u32,
     protected: &[u8],
 ) -> Result<P1Payload, P1Error> {
-    let mut plaintext = route_open(route_secret, protected, &control_aad(message_type, generation))?;
+    let mut plaintext = route_open(
+        route_secret,
+        protected,
+        &control_aad(message_type, generation),
+    )?;
     let decoded = decode_p1(&plaintext);
     zeroize_slice(&mut plaintext);
     Ok(decoded?)
@@ -308,7 +332,9 @@ pub fn open_control(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use trahens_crypto::{blind_public, random_nonzero_16, random_scalar, scalar_base, signing_keypair};
+    use trahens_crypto::{
+        blind_public, random_nonzero_16, random_scalar, scalar_base, signing_keypair,
+    };
 
     #[test]
     fn two_relay_candidate_chain_round_trip() -> Result<(), Box<dyn std::error::Error>> {
@@ -328,18 +354,30 @@ mod tests {
         let forward2 = random_nonzero_16()?;
         let forward1 = random_nonzero_16()?;
         let offer = seal_gateway_offer(
-            &public2, 9, u64::MAX, [1; 16], [2; 32], [3; 32], nonce2,
-            signing_public, &signing_secret,
+            &public2,
+            9,
+            u64::MAX,
+            [1; 16],
+            [2; 32],
+            [3; 32],
+            nonce2,
+            signing_public,
+            &signing_secret,
         )?;
         let layer2 = wrap_candidate(
             &public1, 2, factor2, child2, forward2, nonce1, nonce2, offer,
         )?;
         let layer1 = wrap_candidate(
-            &root_public, 1, factor1, child1, forward1, nonce, nonce1, layer2,
+            &root_public,
+            1,
+            factor1,
+            child1,
+            forward1,
+            nonce,
+            nonce1,
+            layer2,
         )?;
-        let opened = open_candidate_chain(
-            &root_secret, &layer1, 3, &signing_public, &nonce, 1,
-        )?;
+        let opened = open_candidate_chain(&root_secret, &layer1, 3, &signing_public, &nonce, 1)?;
         assert_eq!(opened.gateway_id, 9);
         assert_eq!(opened.first_forward_label, Some(forward1));
         assert_eq!(opened.gateway_candidate_token, Some(child2));
@@ -355,12 +393,17 @@ mod tests {
         let (signing_public, signing_secret) = signing_keypair(&seed)?;
         let nonce = [13_u8; 32];
         let offer = seal_gateway_offer(
-            &root_public, 7, u64::MAX, [1; 16], [2; 32], [3; 32], nonce,
-            signing_public, &signing_secret,
+            &root_public,
+            7,
+            u64::MAX,
+            [1; 16],
+            [2; 32],
+            [3; 32],
+            nonce,
+            signing_public,
+            &signing_secret,
         )?;
-        let opened = open_candidate_chain(
-            &root_secret, &offer, 1, &signing_public, &nonce, 1,
-        )?;
+        let opened = open_candidate_chain(&root_secret, &offer, 1, &signing_public, &nonce, 1)?;
         assert_eq!(opened.gateway_id, 7);
         assert_eq!(opened.first_forward_label, None);
         assert_eq!(opened.gateway_candidate_token, None);

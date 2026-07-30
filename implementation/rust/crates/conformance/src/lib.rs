@@ -32,7 +32,11 @@ fn parse_corpus() -> Option<Vec<Vector<'static>>> {
         let name = std::str::from_utf8(take(CORPUS, &mut cursor, name_len)?).ok()?;
         let data_len = u16::from_be_bytes(take(CORPUS, &mut cursor, 2)?.try_into().ok()?) as usize;
         let encoding = take(CORPUS, &mut cursor, data_len)?;
-        vectors.push(Vector { valid, name, encoding });
+        vectors.push(Vector {
+            valid,
+            name,
+            encoding,
+        });
     }
     (cursor == CORPUS.len()).then_some(vectors)
 }
@@ -50,7 +54,12 @@ mod tests {
         };
         assert_eq!(vectors.len(), 22);
         for vector in vectors {
-            assert_eq!(decode(vector.encoding).is_ok(), vector.valid, "{}", vector.name);
+            assert_eq!(
+                decode(vector.encoding).is_ok(),
+                vector.valid,
+                "{}",
+                vector.name
+            );
         }
     }
 
@@ -63,7 +72,9 @@ mod tests {
         for iteration in 0..50_000_usize {
             let source = vectors[iteration % vectors.len()].encoding;
             let mut mutated = source.to_vec();
-            state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
             if !mutated.is_empty() {
                 let index = (state as usize) % mutated.len();
                 mutated[index] ^= ((state >> 24) as u8) | 1;

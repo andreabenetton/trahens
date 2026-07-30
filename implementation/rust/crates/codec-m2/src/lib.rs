@@ -110,7 +110,6 @@ fn nonzero(value: &[u8]) -> bool {
     value.iter().any(|byte| *byte != 0)
 }
 
-
 fn canonical_reply_field(suite: [u8; 2], public: &[u8; 32], field: &[u8]) -> bool {
     if require_point(public).is_err() {
         return false;
@@ -120,7 +119,9 @@ fn canonical_reply_field(suite: [u8; 2], public: &[u8; 32], field: &[u8]) -> boo
         SUITE_C1_V2 => {
             field.len() == 128
                 && field.chunks_exact(32).all(|chunk| {
-                    let Ok(point) = <&[u8; 32]>::try_from(chunk) else { return false };
+                    let Ok(point) = <&[u8; 32]>::try_from(chunk) else {
+                        return false;
+                    };
                     require_point(point).is_ok()
                 })
         }
@@ -170,7 +171,11 @@ pub fn decode_varuint(input: &[u8], cursor: &mut usize, maximum: u32) -> Result<
     Err(CodecError::Malformed)
 }
 
-fn common_prefix(message_type: MessageType, suite: [u8; 2], body_len: usize) -> Result<Vec<u8>, CodecError> {
+fn common_prefix(
+    message_type: MessageType,
+    suite: [u8; 2],
+    body_len: usize,
+) -> Result<Vec<u8>, CodecError> {
     require_suite(suite)?;
     if body_len > LIMIT_MAX_LOGICAL_MESSAGE_BYTES {
         return Err(CodecError::ResourceLimit);
@@ -235,8 +240,10 @@ pub fn encode(envelope: &Envelope) -> Result<Vec<u8>, CodecError> {
             (MessageType::Candidate, body)
         }
         Message::Control(message) => {
-            if matches!(message.message_type, MessageType::Chaff | MessageType::Discover | MessageType::Candidate)
-                || !nonzero(&message.local_label)
+            if matches!(
+                message.message_type,
+                MessageType::Chaff | MessageType::Discover | MessageType::Candidate
+            ) || !nonzero(&message.local_label)
                 || message.expiry_class == 0
                 || message.protected_body.len() > LIMIT_MAX_CONTROL_PROTECTED_BYTES
             {
@@ -286,7 +293,8 @@ pub fn decode(input: &[u8]) -> Result<Envelope, CodecError> {
     let suite = [input[4], input[5]];
     require_suite(suite)?;
     let mut cursor = 8;
-    let body_len = decode_varuint(input, &mut cursor, LIMIT_MAX_LOGICAL_MESSAGE_BYTES as u32)? as usize;
+    let body_len =
+        decode_varuint(input, &mut cursor, LIMIT_MAX_LOGICAL_MESSAGE_BYTES as u32)? as usize;
     let body_end = cursor.checked_add(body_len).ok_or(CodecError::Malformed)?;
     if body_end != input.len() {
         return Err(CodecError::Malformed);
@@ -308,7 +316,8 @@ pub fn decode(input: &[u8]) -> Result<Envelope, CodecError> {
             let options = *body.get(at + 3).ok_or(CodecError::Malformed)?;
             at += 4;
             let reply_public_key = take_array::<32>(body, &mut at)?;
-            let field_len = decode_varuint(body, &mut at, LIMIT_MAX_LOGICAL_MESSAGE_BYTES as u32)? as usize;
+            let field_len =
+                decode_varuint(body, &mut at, LIMIT_MAX_LOGICAL_MESSAGE_BYTES as u32)? as usize;
             let field_end = at.checked_add(field_len).ok_or(CodecError::Malformed)?;
             if field_end != body.len()
                 || !nonzero(&branch_token)
@@ -338,7 +347,8 @@ pub fn decode(input: &[u8]) -> Result<Envelope, CodecError> {
             let expiry_class = *body.get(at).ok_or(CodecError::Malformed)?;
             let layer_count = *body.get(at + 1).ok_or(CodecError::Malformed)?;
             at += 2;
-            let blob_len = decode_varuint(body, &mut at, LIMIT_MAX_LOGICAL_MESSAGE_BYTES as u32)? as usize;
+            let blob_len =
+                decode_varuint(body, &mut at, LIMIT_MAX_LOGICAL_MESSAGE_BYTES as u32)? as usize;
             let blob_end = at.checked_add(blob_len).ok_or(CodecError::Malformed)?;
             if blob_end != body.len()
                 || !nonzero(&candidate_token)
@@ -361,7 +371,8 @@ pub fn decode(input: &[u8]) -> Result<Envelope, CodecError> {
             let generation = u32::from_be_bytes(take_array::<4>(body, &mut at)?);
             let expiry_class = *body.get(at).ok_or(CodecError::Malformed)?;
             at += 1;
-            let protected_len = decode_varuint(body, &mut at, LIMIT_MAX_CONTROL_PROTECTED_BYTES as u32)? as usize;
+            let protected_len =
+                decode_varuint(body, &mut at, LIMIT_MAX_CONTROL_PROTECTED_BYTES as u32)? as usize;
             let protected_end = at.checked_add(protected_len).ok_or(CodecError::Malformed)?;
             if protected_end != body.len() || !nonzero(&local_label) || expiry_class == 0 {
                 return Err(CodecError::Malformed);
@@ -375,7 +386,10 @@ pub fn decode(input: &[u8]) -> Result<Envelope, CodecError> {
             })
         }
     };
-    Ok(Envelope { suite_id: suite, message })
+    Ok(Envelope {
+        suite_id: suite,
+        message,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -398,12 +412,27 @@ pub enum P1Payload {
         child_discovery_nonce: [u8; 32],
         child_blob: Vec<u8>,
     },
-    Commit { proof: [u8; 32] },
-    Ready { proof: [u8; 32] },
-    RendezvousOpen { gateway_pseudonym: [u8; 16], capability: [u8; 32] },
-    RendezvousResult { status: u16 },
-    Data { direction: u8, sequence: u64, payload: Vec<u8> },
-    Close { reason: u16 },
+    Commit {
+        proof: [u8; 32],
+    },
+    Ready {
+        proof: [u8; 32],
+    },
+    RendezvousOpen {
+        gateway_pseudonym: [u8; 16],
+        capability: [u8; 32],
+    },
+    RendezvousResult {
+        status: u16,
+    },
+    Data {
+        direction: u8,
+        sequence: u64,
+        payload: Vec<u8>,
+    },
+    Close {
+        reason: u16,
+    },
 }
 
 pub fn encode_p1(payload: &P1Payload) -> Result<Vec<u8>, CodecError> {
@@ -471,7 +500,10 @@ pub fn encode_p1(payload: &P1Payload) -> Result<Vec<u8>, CodecError> {
             output.push(P1_PAYLOAD_READY);
             output.extend_from_slice(proof);
         }
-        P1Payload::RendezvousOpen { gateway_pseudonym, capability } => {
+        P1Payload::RendezvousOpen {
+            gateway_pseudonym,
+            capability,
+        } => {
             if !nonzero(gateway_pseudonym) || !nonzero(capability) {
                 return Err(CodecError::Malformed);
             }
@@ -483,7 +515,11 @@ pub fn encode_p1(payload: &P1Payload) -> Result<Vec<u8>, CodecError> {
             output.push(P1_PAYLOAD_RENDEZVOUS_RESULT);
             output.extend_from_slice(&status.to_be_bytes());
         }
-        P1Payload::Data { direction, sequence, payload } => {
+        P1Payload::Data {
+            direction,
+            sequence,
+            payload,
+        } => {
             if *direction > 1 || payload.len() > u16::MAX as usize {
                 return Err(CodecError::Malformed);
             }
@@ -560,15 +596,22 @@ pub fn decode_p1(input: &[u8]) -> Result<P1Payload, CodecError> {
                 child_blob: input[end - child_len..end].to_vec(),
             }
         }
-        P1_PAYLOAD_COMMIT => P1Payload::Commit { proof: take_array::<32>(input, &mut cursor)? },
-        P1_PAYLOAD_READY => P1Payload::Ready { proof: take_array::<32>(input, &mut cursor)? },
+        P1_PAYLOAD_COMMIT => P1Payload::Commit {
+            proof: take_array::<32>(input, &mut cursor)?,
+        },
+        P1_PAYLOAD_READY => P1Payload::Ready {
+            proof: take_array::<32>(input, &mut cursor)?,
+        },
         P1_PAYLOAD_RENDEZVOUS_OPEN => {
             let gateway_pseudonym = take_array::<16>(input, &mut cursor)?;
             let capability = take_array::<32>(input, &mut cursor)?;
             if !nonzero(&gateway_pseudonym) || !nonzero(&capability) {
                 return Err(CodecError::Malformed);
             }
-            P1Payload::RendezvousOpen { gateway_pseudonym, capability }
+            P1Payload::RendezvousOpen {
+                gateway_pseudonym,
+                capability,
+            }
         }
         P1_PAYLOAD_RENDEZVOUS_RESULT => P1Payload::RendezvousResult {
             status: u16::from_be_bytes(take_array::<2>(input, &mut cursor)?),
@@ -578,7 +621,9 @@ pub fn decode_p1(input: &[u8]) -> Result<P1Payload, CodecError> {
             cursor += 1;
             let sequence = u64::from_be_bytes(take_array::<8>(input, &mut cursor)?);
             let payload_len = u16::from_be_bytes(take_array::<2>(input, &mut cursor)?) as usize;
-            let end = cursor.checked_add(payload_len).ok_or(CodecError::Malformed)?;
+            let end = cursor
+                .checked_add(payload_len)
+                .ok_or(CodecError::Malformed)?;
             if end != input.len() || direction > 1 {
                 return Err(CodecError::Malformed);
             }
@@ -606,17 +651,19 @@ mod tests {
 
     fn hex_point() -> [u8; 32] {
         [
-            0xe2, 0xf2, 0xae, 0x0a, 0x6a, 0xbc, 0x4e, 0x71,
-            0xa8, 0x84, 0xa9, 0x61, 0xc5, 0x00, 0x51, 0x5f,
-            0x58, 0xe3, 0x0b, 0x6a, 0xa5, 0x82, 0xdd, 0x8d,
-            0xb6, 0xa6, 0x59, 0x45, 0xe0, 0x8d, 0x2d, 0x76,
+            0xe2, 0xf2, 0xae, 0x0a, 0x6a, 0xbc, 0x4e, 0x71, 0xa8, 0x84, 0xa9, 0x61, 0xc5, 0x00,
+            0x51, 0x5f, 0x58, 0xe3, 0x0b, 0x6a, 0xa5, 0x82, 0xdd, 0x8d, 0xb6, 0xa6, 0x59, 0x45,
+            0xe0, 0x8d, 0x2d, 0x76,
         ]
     }
 
     #[test]
     fn varuint_rejects_noncanonical_encoding() {
         let mut cursor = 0;
-        assert_eq!(decode_varuint(&[0x80, 0x00], &mut cursor, u32::MAX), Err(CodecError::Malformed));
+        assert_eq!(
+            decode_varuint(&[0x80, 0x00], &mut cursor, u32::MAX),
+            Err(CodecError::Malformed)
+        );
     }
 
     #[test]
@@ -639,7 +686,11 @@ mod tests {
 
     #[test]
     fn retired_suite_is_rejected() {
-        let mut encoded = encode(&Envelope { suite_id: SUITE_R1, message: Message::Chaff }).unwrap_or_default();
+        let mut encoded = encode(&Envelope {
+            suite_id: SUITE_R1,
+            message: Message::Chaff,
+        })
+        .unwrap_or_default();
         encoded[4..6].copy_from_slice(&SUITE_C1_V1_RETIRED);
         assert_eq!(decode(&encoded), Err(CodecError::UnsupportedSuite));
     }
