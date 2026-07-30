@@ -19,7 +19,7 @@
 
 ## Current milestone
 
-Core v1.3 binds T1 recovery to T2 scheduling and T3 adversarial trace evaluation on each authenticated directed link. T2 publishes a finite rate-class menu, changes class only at epoch boundaries, requires encrypted adjacent-link OFFER/ACCEPT negotiation, applies asymmetric hysteresis, and uses weighted deficit round robin for admitted new DATA. Persistent overload at the maximum class cannot silently accelerate the cadence; admission, retry, queue residence, and failure behavior are bounded.
+Core v1.4 binds T1 recovery to T2 scheduling and T3 equal-budget and T4 packet-event adversarial trace evaluation on each authenticated directed link. T2 publishes a finite rate-class menu, changes class only at epoch boundaries, requires encrypted adjacent-link OFFER/ACCEPT negotiation, applies asymmetric hysteresis, and uses weighted deficit round robin for admitted new DATA. Persistent overload at the maximum class cannot silently accelerate the cadence; admission, retry, queue residence, and failure behavior are bounded.
 
 The measurements deliberately expose the privacy/efficiency trade-off. Fixed-high scheduling hides activity from the evaluated class-presence distinguisher but spends substantial CHAFF. Adaptive scheduling reduces CHAFF and queueing while making its public rate sequence activity-dependent. Work-conserving release is efficient but highly correlatable across the evaluated two-link model.
 
@@ -34,8 +34,14 @@ The measurements deliberately expose the privacy/efficiency trade-off. Fixed-hig
 7. Run multi-link timing classifiers over realistic topologies, variable propagation delay, clock noise, congestion, and route churn.
 8. Obtain independent review of the reply-key chain, custom reply KEM, capability store, T1 recovery, and T2 claim boundary.
 
-## Core v1.3 traffic-analysis gate
+## Core v1.4 traffic-analysis gate
 
 T3 now supplies the baseline multi-link falsification harness required by milestone M13. It compares fixed, adaptive, and hybrid schedules under the same exact cell budget, measures route classification over 32--256 epochs, includes correlated background traffic, records transition-boundary alignment, and evaluates a bounded active bandwidth probe.
 
 The baseline remains incomplete for a traffic-flow privacy claim. The next work must replace synthetic count traces with packet-level or event-level timing, heterogeneous clock noise, partial observation, route churn, open-world class imbalance, stronger learned classifiers, and deployment-derived cross traffic. The hybrid policy is an offline evaluation envelope until its online negotiation and overload behavior are specified.
+
+## T4 packet-level gate
+
+T4 supplies the next M13 falsification layer. It converts public fixed-size cells into deterministic packet events with access serialization, shared bottlenecks, propagation jitter, independent observer clocks, timestamp quantisation, route churn, partial observation, disjoint open-world unknown classes, and bounded selective delay. It preserves the exact per-link public budget and reports service, queue, cleanup, monitored-recall, unknown-false-positive, and detector metrics separately.
+
+T4 remains a transparent model. The next gate is independent implementation and higher-fidelity emulation using calibrated network parameters, larger topologies, adaptive/open-set attacks, and deployment-derived traces.

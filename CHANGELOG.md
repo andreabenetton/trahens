@@ -1,5 +1,16 @@
 # Changelog
 
+## Core v1.4 - 2026-07-30
+
+- Added T4 as a packet-level adversarial evaluation profile layered over T2/T3 without changing the wire format.
+- Added deterministic per-cell events, finite access-link and shared-bottleneck serialization, propagation jitter, queue accounting, and exact online public-budget enforcement.
+- Added independent affine observer clocks with skew, offset, noise, and timestamp quantisation.
+- Added partial observation and route churn in which only newly generated target cells adopt the changed path.
+- Added an open-world route classifier with disjoint monitored, unknown-calibration, and unknown-testing route sets and explicit monitored-TPR, unknown-FPR, precision, and macro-F1 metrics.
+- Added a bounded selective-delay probe with steady present/absent workloads, route-churn conditions, and finite phase/lag search.
+- Added deterministic T4 vectors, nine model tests, three tracked reports, two ADRs, and repository smoke/reproduction targets.
+- Published Core v1.4, T4 evaluation, message, state-machine, invariant, resource-accounting, strategy, citation-audit, and formal-paper updates.
+
 ## Core v1.3 - 2026-07-30
 
 - Added T3 as a multi-link traffic-analysis evaluation profile layered over T2 without changing the wire format.

@@ -30,7 +30,9 @@ docs/adr/0027-quantized-adaptive-schedule.md
 docs/adr/0028-weighted-drr-overload.md
 docs/adr/0029-equal-budget-traffic-analysis.md
 docs/adr/0030-multilink-classifier-and-active-probe.md
-spec/core-v1.3.md
+docs/adr/0031-packet-level-emulation-and-clock-model.md
+docs/adr/0032-open-world-churn-and-selective-delay.md
+spec/core-v1.4.md
 spec/eligibility-suite-interface-v1.md
 spec/rendezvous-capability-r1.md
 spec/unlinkability-profile-u1.md
@@ -46,16 +48,18 @@ spec/r1-test-vectors.json
 spec/t1-test-vectors.json
 spec/t2-test-vectors.json
 spec/t3-test-vectors.json
+spec/t4-test-vectors.json
 spec/message-codec-m2.md
 spec/wire-cell-w2.md
 spec/active-tagging-analysis.md
 spec/transport-profile-t1.md
 spec/transport-profile-t2.md
 spec/transport-profile-t3.md
-spec/messages-v1.3.md
-spec/state-machines-v1.3.md
-spec/invariants-v1.3.md
-spec/resource-accounting-v1.3.md
+spec/transport-profile-t4.md
+spec/messages-v1.4.md
+spec/state-machines-v1.4.md
+spec/invariants-v1.4.md
+spec/resource-accounting-v1.4.md
 simulator/trahens_crypto/ristretto.py
 simulator/trahens_crypto/c1.py
 simulator/trahens_crypto/c2_ideal.py
@@ -79,6 +83,7 @@ simulator/tests/test_t1_model.py
 simulator/tests/test_t2_codec.py
 simulator/tests/test_t2_model.py
 simulator/tests/test_t3_model.py
+simulator/tests/test_t4_model.py
 simulator/tests/test_eligibility_providers.py
 simulator/trahens_sim/fragmentation_compare.py
 simulator/trahens_sim/c2_compare.py
@@ -88,6 +93,8 @@ simulator/trahens_sim/t2_model.py
 simulator/trahens_sim/t2_compare.py
 simulator/trahens_sim/t3_model.py
 simulator/trahens_sim/t3_compare.py
+simulator/trahens_sim/t4_model.py
+simulator/trahens_sim/t4_compare.py
 tools/generate_crypto_vectors.py
 tools/generate_c2_symbolic_vectors.py
 tools/generate_c2_k2_audit.py
@@ -95,6 +102,7 @@ tools/generate_r1_vectors.py
 tools/generate_t1_vectors.py
 tools/generate_t2_vectors.py
 tools/generate_t3_vectors.py
+tools/generate_t4_vectors.py
 tools/c2_k2_exhaustive_check.py
 tools/run_r1_comparison.sh
 tools/run_fragmentation_comparison.sh
@@ -102,6 +110,7 @@ tools/run_c2_comparison.sh
 tools/run_t1_comparison.sh
 tools/run_t2_comparison.sh
 tools/run_t3_comparison.sh
+tools/run_t4_comparison.sh
 paper/legacy/trahens-2020.tex
 paper/legacy/trahens-2020.pdf
 paper/rewrite/main.tex
@@ -124,6 +133,9 @@ reports/iteration-0013-t2-multilink-correlation.csv
 reports/iteration-0014-t3-route-classification.csv
 reports/iteration-0014-t3-active-probing.csv
 reports/iteration-0014-t3-equal-budget.csv
+reports/iteration-0015-t4-open-world.csv
+reports/iteration-0015-t4-packet-emulation.csv
+reports/iteration-0015-t4-selective-delay.csv
 docs/review-log/iteration-0006.md
 docs/review-log/iteration-0007.md
 docs/review-log/iteration-0008.md
@@ -133,6 +145,7 @@ docs/review-log/iteration-0011.md
 docs/review-log/iteration-0012.md
 docs/review-log/iteration-0013.md
 docs/review-log/iteration-0014.md
+docs/review-log/iteration-0015.md
 docs/crypto-review/c2-author-query.md
 docs/crypto-review/alternative-primitive-assessment.md
 "
@@ -155,7 +168,8 @@ c2_k2_exhaustive_tmp=$(mktemp)
 t1_vectors_tmp=$(mktemp)
 t2_vectors_tmp=$(mktemp)
 t3_vectors_tmp=$(mktemp)
-trap 'rm -f "$vectors_tmp" "$r1_vectors_tmp" "$c2_vectors_tmp" "$c2_k2_tmp" "$c2_k2_exhaustive_tmp" "$t1_vectors_tmp" "$t2_vectors_tmp" "$t3_vectors_tmp" /tmp/trahens-r1-smoke.csv /tmp/trahens-expanding-smoke.json /tmp/trahens-u1-smoke.csv /tmp/trahens-e1-smoke.csv /tmp/trahens-tag-smoke.csv /tmp/trahens-m1w2-capacity.csv /tmp/trahens-m1w2-life.csv /tmp/trahens-c2-smoke.csv /tmp/trahens-t1-smoke.csv /tmp/trahens-t1-trace-smoke.csv /tmp/trahens-t2-congestion-smoke.csv /tmp/trahens-t2-leak-smoke.csv /tmp/trahens-t2-burst-smoke.csv /tmp/trahens-t2-correlation-smoke.csv /tmp/trahens-t3-class-smoke.csv /tmp/trahens-t3-probe-smoke.csv /tmp/trahens-t3-budget-smoke.csv' EXIT
+t4_vectors_tmp=$(mktemp)
+trap 'rm -f "$vectors_tmp" "$r1_vectors_tmp" "$c2_vectors_tmp" "$c2_k2_tmp" "$c2_k2_exhaustive_tmp" "$t1_vectors_tmp" "$t2_vectors_tmp" "$t3_vectors_tmp" "$t4_vectors_tmp" /tmp/trahens-r1-smoke.csv /tmp/trahens-expanding-smoke.json /tmp/trahens-u1-smoke.csv /tmp/trahens-e1-smoke.csv /tmp/trahens-tag-smoke.csv /tmp/trahens-m1w2-capacity.csv /tmp/trahens-m1w2-life.csv /tmp/trahens-c2-smoke.csv /tmp/trahens-t1-smoke.csv /tmp/trahens-t1-trace-smoke.csv /tmp/trahens-t2-congestion-smoke.csv /tmp/trahens-t2-leak-smoke.csv /tmp/trahens-t2-burst-smoke.csv /tmp/trahens-t2-correlation-smoke.csv /tmp/trahens-t3-class-smoke.csv /tmp/trahens-t3-probe-smoke.csv /tmp/trahens-t3-budget-smoke.csv /tmp/trahens-t4-open-smoke.csv /tmp/trahens-t4-packet-smoke.csv /tmp/trahens-t4-probe-smoke.csv' EXIT
 PYTHONPATH=simulator python tools/generate_crypto_vectors.py --output "$vectors_tmp"
 cmp spec/crypto-test-vectors-c1.json "$vectors_tmp"
 PYTHONPATH=simulator python tools/generate_r1_vectors.py --output "$r1_vectors_tmp"
@@ -166,6 +180,8 @@ PYTHONPATH=simulator python tools/generate_t2_vectors.py --output "$t2_vectors_t
 cmp spec/t2-test-vectors.json "$t2_vectors_tmp"
 PYTHONPATH=simulator python tools/generate_t3_vectors.py --output "$t3_vectors_tmp"
 cmp spec/t3-test-vectors.json "$t3_vectors_tmp"
+PYTHONPATH=simulator python tools/generate_t4_vectors.py --output "$t4_vectors_tmp"
+cmp spec/t4-test-vectors.json "$t4_vectors_tmp"
 PYTHONPATH=simulator python tools/generate_c2_symbolic_vectors.py --output "$c2_vectors_tmp"
 cmp spec/crypto-test-vectors-c2-symbolic.json "$c2_vectors_tmp"
 PYTHONPATH=simulator python tools/generate_c2_k2_audit.py --output "$c2_k2_tmp"
@@ -175,7 +191,7 @@ cmp reports/c2-k2-small-chain-exhaustive.json "$c2_k2_exhaustive_tmp"
 
 # Full experiment sweeps belong to `make reproduce`. Unit tests and
 # deterministic vector regeneration exercise the historical models. CI adds
-# one bounded T3 CLI smoke run to verify the current report interface.
+# bounded T3 and T4 CLI smoke runs to verify the current report interfaces.
 PYTHONPATH=simulator python -m trahens_sim.t3_compare \
     --training-per-class 1 \
     --testing-per-class 1 \
@@ -189,6 +205,22 @@ PYTHONPATH=simulator python -m trahens_sim.t3_compare \
 test -s /tmp/trahens-t3-class-smoke.csv
 test -s /tmp/trahens-t3-probe-smoke.csv
 test -s /tmp/trahens-t3-budget-smoke.csv
+
+PYTHONPATH=simulator python -m trahens_sim.t4_compare \
+    --epochs 24 \
+    --training-per-monitored 1 \
+    --calibration-per-route 1 \
+    --testing-per-monitored 1 \
+    --testing-per-unknown-route 1 \
+    --probe-training 1 \
+    --probe-testing 1 \
+    --open-world-output /tmp/trahens-t4-open-smoke.csv \
+    --packet-output /tmp/trahens-t4-packet-smoke.csv \
+    --probe-output /tmp/trahens-t4-probe-smoke.csv
+
+test -s /tmp/trahens-t4-open-smoke.csv
+test -s /tmp/trahens-t4-packet-smoke.csv
+test -s /tmp/trahens-t4-probe-smoke.csv
 
 # The standalone current paper must not contain historical architecture or iteration narration.
 if rg -n -i 'Nexus|original paper|2020|draft iteration|Core v0\.|W1|M1' paper/rewrite/main.tex >/tmp/trahens-paper-forbidden.txt; then

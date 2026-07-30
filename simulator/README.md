@@ -11,6 +11,9 @@ The simulator is deterministic. It is a protocol-research and conformance model,
 - `trahens_codec/t1.py` - fixed-size encrypted DATA, ACK, and CHAFF frames.
 - `trahens_sim/t1_model.py` - hop-local selective recovery, RTO backoff, interleaving, fixed scheduling, and CHAFF accounting.
 - `trahens_sim/t1_compare.py` - W2/T1 route-depth and cell-loss comparison plus active/empty trace equivalence.
+- `trahens_sim/t2_model.py` / `t3_model.py` - congestion scheduling and equal-budget multi-link count-trace evaluation.
+- `trahens_sim/t4_model.py` - deterministic packet events with serialization, jitter, shared bottlenecks, heterogeneous observer clocks, churn, partial observation, open-world classification, and selective delay.
+- `trahens_sim/t4_compare.py` - tracked T4 open-world, packet-service, and selective-delay reports.
 
 ## Research components
 
@@ -28,6 +31,8 @@ make test
 make r1-compare
 make t1-compare
 make c2-k2-exhaustive
+make t4-vectors
+make t4-compare
 make fragmentation-compare
 make unlinkability-compare
 make lifecycle-compare
@@ -36,4 +41,4 @@ make paper
 
 ## Limitations
 
-The R1 directory and gateway network are represented only by capability issuance and atomic redemption primitives; private lookup and distributed storage are not simulated. The C2 ideal functionality stores semantic ciphertext state in a process-local registry and is not cryptography. The C2 k=2 module is an audit, not a network backend. The event lifecycle and T1 model use abstract delays and independent loss. T1 now models a transport scheduler, but not a real congestion controller, kernel queue, clock drift, cross-traffic, side-channel-resistant runtime, global observer, or complete rendezvous handshake. CHAFF slots are charged as complete records; the large comparison omits a receive-side AEAD operation for semantically empty CHAFF after separate codec conformance has verified the encoding.
+The R1 directory and gateway network are represented only by capability issuance and atomic redemption primitives; private lookup and distributed storage are not simulated. The C2 ideal functionality stores semantic ciphertext state in a process-local registry and is not cryptography. The C2 k=2 module is an audit, not a network backend. The T4 emulator adds finite packet serialization, jitter, shared bottlenecks, clock skew, timestamp noise, quantisation, churn, partial observation, and transparent adversarial classifiers. It remains a small deterministic model, not a calibrated Internet topology, kernel queue, Shadow/ns-3 experiment, side-channel-resistant runtime, global observer, or complete rendezvous deployment. CHAFF slots are charged as complete records; the large comparison omits a receive-side AEAD operation for semantically empty CHAFF after separate codec conformance has verified the encoding.

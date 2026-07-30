@@ -1,11 +1,11 @@
 # Threat model
 
-- Status: Core v1.3 research model
+- Status: Core v1.4 research model
 - Date: 2026-07-30
 
 ## 1. Scope
 
-This model covers bounded gateway discovery, U1 branch-local replacement, nested candidate return, E1 route commitment and cleanup, R1 capability redemption, M2 logical messages, W2 fragmentation, T1 selective recovery, T2 adjacent-link scheduling, and T3 multi-link traffic-analysis evaluation. It does not specify a private directory, global endpoint lookup, incentives, inter-domain policy, application anonymity, end-to-end congestion control, or a production traffic-analysis defense.
+This model covers bounded gateway discovery, U1 branch-local replacement, nested candidate return, E1 route commitment and cleanup, R1 capability redemption, M2 logical messages, W2 fragmentation, T1 selective recovery, T2 adjacent-link scheduling, T3 multi-link count-trace evaluation, and T4 packet-level adversarial evaluation. It does not specify a private directory, global endpoint lookup, incentives, inter-domain policy, application anonymity, end-to-end congestion control, or a production traffic-analysis defense.
 
 ## 2. Protected assets
 
@@ -29,7 +29,7 @@ This model covers bounded gateway discovery, U1 branch-local replacement, nested
 7. T2 peers enforce the negotiated finite rate menu, queue limits, and epoch boundaries.
 8. A fully compromised endpoint cannot preserve its own secrets or anonymity.
 
-The directory and gateway are explicit trust roles. Core v1.3 makes no privacy claim against their collusion. T2 negotiation contents are confidential only from parties that do not control either adjacent endpoint; cadence remains public.
+The directory and gateway are explicit trust roles. Core v1.4 makes no privacy claim against their collusion. T2 negotiation contents are confidential only from parties that do not control either adjacent endpoint; cadence remains public.
 
 ## 4. Adversary classes
 
@@ -43,6 +43,7 @@ The directory and gateway are explicit trust roles. Core v1.3 makes no privacy c
 - **A7 malicious directory or gateway:** observes or manipulates descriptor delivery, registration, candidate response, redemption, endpoint handles, and selective service.
 - **A8 congestion adversary:** induces queue pressure, burst loss, ACK suppression, or competing traffic to force rate changes, visible overload, or deadline failure.
 - **A9 T3 trace adversary:** observes several directed links over a declared window, uses correlated background traffic and labeled training traces, and injects a bounded positive-demand probe without modifying authenticated records.
+- **A10 T4 packet adversary:** observes timestamped fixed-size cells through declared heterogeneous clocks, may see only a subset of links, trains open-world classifiers on disjoint route sets, observes route churn, and applies a bounded selective delay to one declared link.
 
 ## 5. Security objectives
 
@@ -90,6 +91,16 @@ The directory and gateway are explicit trust roles. Core v1.3 makes no privacy c
 - T3 trace and classifier state never enters forwarding messages or route-semantic state.
 - No one-classifier result is promoted to a global traffic-flow anonymity claim.
 
+### T4 packet-level evaluation
+
+- Every compared profile retains the exact declared public-cell budget.
+- Access-link and shared-bottleneck serialization, propagation jitter, clock skew, offset, noise, and quantisation are explicit.
+- Unknown calibration and unknown testing routes are disjoint.
+- Feature normalization and rejection-threshold selection exclude test traces.
+- Reports include monitored true-positive rate, unknown false-positive rate, precision, delivery, delay, queues, budget, and cleanup.
+- Selective delay is bounded and reported; a negative detector result creates no general active-security claim.
+- T4 model labels, token kinds, clock state, and classifier state never enter protocol messages or route state.
+
 ### Resource safety
 
 - Accepted work is bounded per peer and globally.
@@ -120,6 +131,10 @@ Adaptive T2 does **not** claim activity-presence hiding. The public rate-class s
 
 T3 removes aggregate byte count as a trivial feature by equalizing complete per-link super-epoch cell budgets. It does not claim equal trace distributions. Route classification, transition phases, lagged correlation, and active-probe detectability are measured and reported as evidence of residual schedule leakage.
 
+### C-T4: packet-level adversarial evaluation
+
+T4 refines exact-budget schedules into timestamped packet events under a declared clock, jitter, bottleneck, churn, observation, open-world, and selective-delay model. It is a falsification profile, not evidence against stronger learned, adaptive, or global attacks.
+
 ### C-GLOBAL: traffic-flow unlinkability
 
 No C-GLOBAL claim is made. Equal-length cells, local replacement, CHAFF, and quantized adaptation do not by themselves prevent a global observer from correlating timing and volume.
@@ -134,7 +149,8 @@ No C-GLOBAL claim is made. Equal-length cells, local replacement, CHAFF, and qua
 - **Queue capture:** atomic first-send reservation, per-flow/per-peer/global limits, finite weights, and DRR.
 - **Burst loss:** finite recovery and cleanup; no assumption that every loss proves congestion.
 - **Schedule fingerprinting:** fixed profile for the narrow shape claim; adaptive profile declares rate leakage; realistic classifiers remain required.
-- **Multi-link correlation:** T3 provides an equal-budget classifier and active-probe baseline; learned, open-world, packet-level, and deployment attacks remain outside protection.
+- **Multi-link correlation:** T3 provides an equal-budget count-trace classifier. T4 adds packet timestamps, partial observation, open-world unknowns, and churn; stronger learned and deployment attacks remain outside protection.
+- **Selective delay:** T4 measures one bounded phase/lag detector; adaptive watermarking, congestion, loss, and multi-point attacks remain outside protection.
 - **Capability replay:** atomic one-time consume and generic failure.
 - **Directory/gateway collusion:** not prevented; must be addressed by a separate profile.
 
@@ -152,4 +168,4 @@ Even when all current requirements hold, an observer may learn or infer:
 
 ## 9. Evidence boundary
 
-Deterministic tests establish codec invariants, finite cleanup, reproducibility, and modeled behavior. They do not establish cryptographic reductions, anonymity against an unmodeled observer, network stability, throughput in real deployments, or side-channel resistance. A production claim requires independent implementations, fuzzing, network emulation, classifier evaluation, and external cryptographic and transport review.
+Deterministic tests establish codec invariants, finite cleanup, reproducibility, and modeled behavior. They do not establish cryptographic reductions, anonymity against an unmodeled observer, network stability, throughput in real deployments, or side-channel resistance. A production claim requires independent implementations, fuzzing, independent packet/network emulation, open-world and adaptive classifier evaluation, and external cryptographic and transport review.

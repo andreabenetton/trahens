@@ -1,7 +1,7 @@
 # Trahens T1 hop-local reliability and scheduled-cell profile
 
 - Status: Active experimental transport profile
-- Applies to: Trahens Core v1.3; T2 governs congestion and schedule adaptation
+- Applies to: Trahens Core v1.4; T2 governs congestion and schedule adaptation
 - Depends on: U1, E1, R1, M2, and the W2 fragmentation limits
 - Observable adjacent-link record length: 1,052 bytes
 

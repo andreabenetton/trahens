@@ -1,0 +1,377 @@
+{
+  "churn_epoch": 16,
+  "churn_route_label": 2,
+  "config": {
+    "access_capacity_bps": 20000000,
+    "base_cross_cells": 3,
+    "base_propagation_us": [
+      8000,
+      11000,
+      14000,
+      17000
+    ],
+    "bottleneck_capacity_bps": 5000000,
+    "budget_cells_per_epoch": 16,
+    "cell_bytes": 1052,
+    "clock_noise_us": 80,
+    "clock_offset_us": 30000,
+    "clock_skew_ppm": 60,
+    "drain_epochs": 6,
+    "epoch_us": 100000,
+    "epochs": 32,
+    "independent_burst_cells": 7,
+    "independent_burst_probability": 0.07,
+    "links": 4,
+    "maximum_cells_per_epoch": 32,
+    "minimum_cells_per_epoch": 8,
+    "observed_links": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "probe_period_epochs": 10,
+    "probe_width_epochs": 2,
+    "propagation_jitter_us": 2000,
+    "queue_capacity_cells": 256,
+    "relay_processing_us": 400,
+    "seed": 149130,
+    "selective_delay_us": 32000,
+    "shared_bottlenecks": true,
+    "shared_burst_cells": 9,
+    "shared_burst_probability": 0.1,
+    "target_burst_cells": 14,
+    "timestamp_quantum_us": 100
+  },
+  "probe_pattern": [
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "profile": "T4",
+  "route_label": 1,
+  "selective_delay": true,
+  "traces": {
+    "adaptive": {
+      "chaff_cells": 894,
+      "delivered_target_cells": 186,
+      "expected_public_cells": 2048,
+      "feature_prefix": [
+        22.0,
+        14.0,
+        10.0,
+        17.0,
+        46.0,
+        40.0,
+        22.0,
+        10.0,
+        35.0,
+        42.0,
+        39.0,
+        39.0,
+        17.0,
+        14.0,
+        24.0,
+        20.0,
+        8.0,
+        10.0,
+        14.0,
+        10.0,
+        11.0,
+        10.0,
+        11.0,
+        27.0
+      ],
+      "first_link_observation_prefix": [
+        {
+          "link": 0,
+          "observed_time_us": 12400,
+          "sequence": 0
+        },
+        {
+          "link": 0,
+          "observed_time_us": 17300,
+          "sequence": 1
+        },
+        {
+          "link": 0,
+          "observed_time_us": 24900,
+          "sequence": 2
+        },
+        {
+          "link": 0,
+          "observed_time_us": 29700,
+          "sequence": 3
+        },
+        {
+          "link": 0,
+          "observed_time_us": 35300,
+          "sequence": 4
+        },
+        {
+          "link": 0,
+          "observed_time_us": 44600,
+          "sequence": 5
+        },
+        {
+          "link": 0,
+          "observed_time_us": 50400,
+          "sequence": 6
+        },
+        {
+          "link": 0,
+          "observed_time_us": 53800,
+          "sequence": 7
+        },
+        {
+          "link": 0,
+          "observed_time_us": 61500,
+          "sequence": 8
+        },
+        {
+          "link": 0,
+          "observed_time_us": 72500,
+          "sequence": 9
+        },
+        {
+          "link": 0,
+          "observed_time_us": 75300,
+          "sequence": 10
+        },
+        {
+          "link": 0,
+          "observed_time_us": 82900,
+          "sequence": 11
+        }
+      ],
+      "mean_network_delay_us": 18573.27978515625,
+      "p95_network_delay_us": 33982.0,
+      "sha256": "d9ce4f57483c6860360acb4c63a350c80b9a2b3d912915e3120279356134ce84",
+      "total_public_cells": 2048
+    },
+    "fixed": {
+      "chaff_cells": 894,
+      "delivered_target_cells": 186,
+      "expected_public_cells": 2048,
+      "feature_prefix": [
+        22.0,
+        19.0,
+        20.0,
+        25.0,
+        21.0,
+        21.0,
+        22.0,
+        21.0,
+        21.0,
+        22.0,
+        21.0,
+        21.0,
+        22.0,
+        16.0,
+        27.0,
+        20.0,
+        21.0,
+        20.0,
+        23.0,
+        22.0,
+        21.0,
+        22.0,
+        21.0,
+        21.0
+      ],
+      "first_link_observation_prefix": [
+        {
+          "link": 0,
+          "observed_time_us": 12400,
+          "sequence": 0
+        },
+        {
+          "link": 0,
+          "observed_time_us": 17300,
+          "sequence": 1
+        },
+        {
+          "link": 0,
+          "observed_time_us": 24900,
+          "sequence": 2
+        },
+        {
+          "link": 0,
+          "observed_time_us": 29700,
+          "sequence": 3
+        },
+        {
+          "link": 0,
+          "observed_time_us": 35300,
+          "sequence": 4
+        },
+        {
+          "link": 0,
+          "observed_time_us": 44600,
+          "sequence": 5
+        },
+        {
+          "link": 0,
+          "observed_time_us": 50400,
+          "sequence": 6
+        },
+        {
+          "link": 0,
+          "observed_time_us": 53800,
+          "sequence": 7
+        },
+        {
+          "link": 0,
+          "observed_time_us": 61500,
+          "sequence": 8
+        },
+        {
+          "link": 0,
+          "observed_time_us": 72500,
+          "sequence": 9
+        },
+        {
+          "link": 0,
+          "observed_time_us": 75300,
+          "sequence": 10
+        },
+        {
+          "link": 0,
+          "observed_time_us": 82900,
+          "sequence": 11
+        }
+      ],
+      "mean_network_delay_us": 15819.27490234375,
+      "p95_network_delay_us": 22576.0,
+      "sha256": "bf998a86f5532163d8731fd4e0e67768d87d921c2672df0fd8f9f1cd69c69a06",
+      "total_public_cells": 2048
+    },
+    "hybrid": {
+      "chaff_cells": 894,
+      "delivered_target_cells": 186,
+      "expected_public_cells": 2048,
+      "feature_prefix": [
+        20.0,
+        16.0,
+        18.0,
+        22.0,
+        20.0,
+        22.0,
+        22.0,
+        20.0,
+        22.0,
+        23.0,
+        28.0,
+        29.0,
+        21.0,
+        25.0,
+        18.0,
+        15.0,
+        16.0,
+        18.0,
+        17.0,
+        21.0,
+        18.0,
+        15.0,
+        27.0,
+        39.0
+      ],
+      "first_link_observation_prefix": [
+        {
+          "link": 0,
+          "observed_time_us": 17400,
+          "sequence": 0
+        },
+        {
+          "link": 0,
+          "observed_time_us": 22800,
+          "sequence": 1
+        },
+        {
+          "link": 0,
+          "observed_time_us": 29300,
+          "sequence": 2
+        },
+        {
+          "link": 0,
+          "observed_time_us": 35800,
+          "sequence": 3
+        },
+        {
+          "link": 0,
+          "observed_time_us": 42500,
+          "sequence": 4
+        },
+        {
+          "link": 0,
+          "observed_time_us": 51900,
+          "sequence": 5
+        },
+        {
+          "link": 0,
+          "observed_time_us": 59700,
+          "sequence": 6
+        },
+        {
+          "link": 0,
+          "observed_time_us": 65600,
+          "sequence": 7
+        },
+        {
+          "link": 0,
+          "observed_time_us": 74200,
+          "sequence": 8
+        },
+        {
+          "link": 0,
+          "observed_time_us": 82900,
+          "sequence": 9
+        },
+        {
+          "link": 0,
+          "observed_time_us": 85300,
+          "sequence": 10
+        },
+        {
+          "link": 0,
+          "observed_time_us": 94700,
+          "sequence": 11
+        }
+      ],
+      "mean_network_delay_us": 16016.73388671875,
+      "p95_network_delay_us": 22720.0,
+      "sha256": "ea8200a697ade9ee578a047bbd2e9ad5a0a0cead9e2432438a4f4cdb7dc5ba9a",
+      "total_public_cells": 2048
+    }
+  },
+  "version": 1
+}
