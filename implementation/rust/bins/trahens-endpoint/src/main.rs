@@ -86,6 +86,66 @@ fn collect_stopped(
     output
 }
 
+/// One entry of the initiator-local ring schedule.
+///
+/// `event-lifecycle-profile-e1.md` section 3: the schedule is local policy and
+/// MUST NOT appear in a wire message, so it is configured on the command line
+/// and only its depth and fan-out class reach a DISCOVER.
+#[derive(Debug, Clone, Copy)]
+struct Ring {
+    depth: u8,
+    fanout_class: u8,
+    window_ms: u64,
+}
+
+/// Per-ring discovery context. Each ring uses a fresh branch token and
+/// discovery nonce, and the context is retained after the ring closes so a
+/// candidate from an earlier ring stays eligible (section 3).
+struct RingContext {
+    ring: usize,
+    branch_token: [u8; 16],
+    discovery_nonce: [u8; 32],
+}
+
+/// A candidate offer held until its ring window closes.
+struct HeldCandidate {
+    ring: usize,
+    branch_token: [u8; 16],
+    hop_count: u8,
+    arrived_ms: u64,
+    opened: node_runtime::p1::OpenedOffer,
+}
+
+/// Parse `depth:window_ms[,depth:window_ms...]`, e.g. "4:400,16:1200".
+fn parse_rings(text: &str, fanout_class: u8) -> Result<Vec<Ring>, Box<dyn Error>> {
+    let mut rings = Vec::new();
+    for entry in text.split(',').filter(|item| !item.is_empty()) {
+        let (depth, window) = entry
+            .split_once(':')
+            .ok_or("ring schedule entries are depth:window_ms")?;
+        rings.push(Ring {
+            depth: depth.parse()?,
+            fanout_class,
+            window_ms: window.parse()?,
+        });
+    }
+    if rings.is_empty() {
+        return Err("ring schedule must define at least one ring".into());
+    }
+    Ok(rings)
+}
+
+/// Deterministic selection order from section 5: minimum hop count, then
+/// earliest arrival. Later tie-breakers are simulator-only and deliberately
+/// omitted, since a production profile must not expose stable identity.
+fn best_candidate(candidates: &[HeldCandidate]) -> Option<usize> {
+    candidates
+        .iter()
+        .enumerate()
+        .min_by_key(|(index, candidate)| (candidate.hop_count, candidate.arrived_ms, *index))
+        .map(|(index, _)| index)
+}
+
 fn run() -> Result<(), Box<dyn Error>> {
     initialize()?;
     let args = CliArgs::parse()?;
@@ -114,11 +174,10 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     let root_secret = SecretBytes(random_scalar()?);
     let reply_public_key = scalar_base(&root_secret.0)?;
-    let branch_token = random_nonzero_16()?;
-    let discovery_nonce = random_bytes::<32>()?;
-    if discovery_nonce == [0_u8; 32] {
-        return Err("random discovery nonce was zero".into());
-    }
+    let rings = parse_rings(
+        args.optional("rings", "16:1500"),
+        u8::try_from(args.u64_or("fanout-class", 1)?).unwrap_or(1),
+    )?;
     let endpoint_handshake = args
         .optional("endpoint-handle", "p1-endpoint")
         .as_bytes()
@@ -128,26 +187,65 @@ fn run() -> Result<(), Box<dyn Error>> {
     let absolute_deadline = unix_time_ms().saturating_add(timeout_ms);
     let mut state = RouteTable::default();
     let mut drops = RemoteInputDrops::new();
-    state.begin(
-        branch_token,
-        peer_id,
-        generation,
-        unix_time_ms().saturating_add(LIMIT_ROUTE_TTL_MS as u64),
-    )?;
+    // Ring 0 opens immediately; later rings open only if the window closes
+    // with nothing selectable.
+    let mut contexts: Vec<RingContext> = Vec::new();
+    let mut held: Vec<HeldCandidate> = Vec::new();
+    let mut ring_index = 0_usize;
+    let mut candidates_seen = 0_u64;
+    let mut late_candidates = 0_u64;
+    let mut candidates_dropped = 0_u64;
+    let mut selected_branch: Option<[u8; 16]> = None;
+    let candidate_threshold = usize::try_from(args.u64_or("candidate-threshold", 1)?).unwrap_or(1);
+    let mut cancelled_branches = 0_u64;
+    let mut no_candidate = false;
 
-    link.send(Envelope {
-        suite_id: SUITE_R1,
-        message: Message::Discover(Discover {
+    let open_ring = |index: usize,
+                     contexts: &mut Vec<RingContext>,
+                     state: &mut RouteTable|
+     -> Result<u64, Box<dyn Error>> {
+        let ring = rings[index];
+        let branch_token = random_nonzero_16()?;
+        let discovery_nonce = random_bytes::<32>()?;
+        if discovery_nonce == [0_u8; 32] {
+            return Err("random discovery nonce was zero".into());
+        }
+        state.begin(
             branch_token,
-            hop_remaining: 16,
-            fanout_class: 1,
-            expiry_class: 1,
-            options: 0,
-            reply_public_key,
-            discovery_field: discovery_nonce.to_vec(),
-        }),
-    })?;
-    structured_event("endpoint", "discovery_sent", &[]);
+            peer_id,
+            generation,
+            unix_time_ms().saturating_add(LIMIT_ROUTE_TTL_MS as u64),
+        )?;
+        link.send(Envelope {
+            suite_id: SUITE_R1,
+            message: Message::Discover(Discover {
+                branch_token,
+                hop_remaining: ring.depth,
+                fanout_class: ring.fanout_class,
+                expiry_class: 1,
+                options: 0,
+                reply_public_key,
+                discovery_field: discovery_nonce.to_vec(),
+            }),
+        })?;
+        contexts.push(RingContext {
+            ring: index,
+            branch_token,
+            discovery_nonce,
+        });
+        structured_event(
+            "endpoint",
+            "discovery_sent",
+            &[
+                ("ring", index.to_string()),
+                ("depth", ring.depth.to_string()),
+                ("fanout_class", ring.fanout_class.to_string()),
+            ],
+        );
+        Ok(unix_time_ms().saturating_add(ring.window_ms))
+    };
+
+    let mut window_closes_ms = open_ring(0, &mut contexts, &mut state)?;
 
     let mut active: Option<ActiveRoute> = None;
     let mut success = false;
@@ -158,11 +256,105 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut redemptions = 0_u32;
 
     while unix_time_ms() < absolute_deadline {
-        let event = match event_receiver.recv_timeout(Duration::from_millis(100)) {
+        // Wake no later than the pending window boundary, so a met threshold
+        // is acted on immediately instead of waiting out a fixed tick.
+        let wait = if selected_branch.is_some() {
+            Duration::from_millis(100)
+        } else {
+            Duration::from_millis(window_closes_ms.saturating_sub(unix_time_ms()).min(100))
+        };
+        let event = match event_receiver.recv_timeout(wait) {
             Ok(value) => value,
             Err(RecvTimeoutError::Timeout) => {
                 state.expire(unix_time_ms());
-                continue;
+                let now = unix_time_ms();
+                if selected_branch.is_some() || now < window_closes_ms {
+                    continue;
+                }
+
+                // Section 3, window boundary: drop expired offers, select if
+                // anything remains, otherwise open the next ring, and on the
+                // final ring terminate with NO_CANDIDATE.
+                let before = held.len();
+                held.retain(|candidate| candidate.opened.expires_at_ms > now);
+                candidates_dropped += (before - held.len()) as u64;
+
+                if let Some(index) = best_candidate(&held) {
+                    let chosen = held.swap_remove(index);
+                    structured_event(
+                        "endpoint",
+                        "candidate_selected",
+                        &[
+                            ("ring", chosen.ring.to_string()),
+                            ("hops", chosen.hop_count.to_string()),
+                            ("candidates", candidates_seen.to_string()),
+                        ],
+                    );
+                    selected_branch = Some(chosen.branch_token);
+
+                    // Section 5: cancel every other live branch of this
+                    // logical discovery so no off-route state is stranded.
+                    for context in &contexts {
+                        if context.branch_token == chosen.branch_token {
+                            continue;
+                        }
+                        link.send(Envelope {
+                            suite_id: SUITE_R1,
+                            message: Message::Control(Control {
+                                message_type: MessageType::Cancel,
+                                local_label: context.branch_token,
+                                generation,
+                                expiry_class: 1,
+                                protected_body: vec![0_u8],
+                            }),
+                        })?;
+                        let _ = state.apply(
+                            context.branch_token,
+                            Event::CancelAccepted,
+                            unix_time_ms(),
+                        );
+                        cancelled_branches += 1;
+                        structured_event("endpoint", "branch_cancelled", &[]);
+                    }
+                    candidates_dropped += held.len() as u64;
+                    held.clear();
+
+                    let route = ActiveRoute {
+                        local_label: chosen.branch_token,
+                        generation,
+                        route_secret: SecretBytes(chosen.opened.route_secret),
+                        challenge: SecretBytes(chosen.opened.commit_challenge),
+                        pseudonym: chosen.opened.gateway_pseudonym,
+                    };
+                    let proof =
+                        commit_proof(&route.route_secret.0, &route.challenge.0, &route.pseudonym)?;
+                    send_control(
+                        &link,
+                        &route,
+                        MessageType::Commit,
+                        &P1Payload::Commit { proof },
+                    )?;
+                    state.apply(route.local_label, Event::CommitAccepted, unix_time_ms())?;
+                    active = Some(route);
+                    continue;
+                }
+
+                if ring_index + 1 < rings.len() {
+                    ring_index += 1;
+                    window_closes_ms = open_ring(ring_index, &mut contexts, &mut state)?;
+                    continue;
+                }
+
+                structured_event(
+                    "endpoint",
+                    "no_candidate",
+                    &[
+                        ("rings", rings.len().to_string()),
+                        ("candidates", candidates_seen.to_string()),
+                    ],
+                );
+                no_candidate = true;
+                break;
             }
             Err(RecvTimeoutError::Disconnected) => break,
         };
@@ -177,50 +369,75 @@ fn run() -> Result<(), Box<dyn Error>> {
                     layer_count,
                     candidate_blob,
                     ..
-                }) if candidate_token == branch_token && active.is_none() => {
-                    // The candidate chain is remote input: an unauthentic or
-                    // malformed blob is dropped and the endpoint keeps
-                    // waiting for a valid candidate until its deadline.
+                }) => {
+                    // Hold the offer until its ring window closes: section 5
+                    // makes selection a window-boundary decision, so accepting
+                    // the first arrival would defeat the ordering rule.
+                    let Some(context) = contexts
+                        .iter()
+                        .find(|context| context.branch_token == candidate_token)
+                    else {
+                        drops.record(
+                            "endpoint",
+                            ERROR_STATE_VIOLATION,
+                            "candidate_unknown_branch",
+                        );
+                        continue;
+                    };
+                    if selected_branch.is_some() {
+                        // Section 5: after selection no further branches are
+                        // admitted for this logical discovery.
+                        late_candidates += 1;
+                        candidates_dropped += 1;
+                        structured_event("endpoint", "late_candidate_dropped", &[]);
+                        continue;
+                    }
                     let Ok(opened) = open_candidate_chain(
                         &root_secret.0,
                         &candidate_blob,
                         layer_count,
                         &expected_gateway_public,
-                        &discovery_nonce,
+                        &context.discovery_nonce,
                         unix_time_ms(),
                     ) else {
                         drops.record("endpoint", ERROR_AUTHENTICATION_FAILED, "candidate_chain");
                         continue;
                     };
                     if state
-                        .apply(branch_token, Event::CandidateAccepted, unix_time_ms())
+                        .apply(candidate_token, Event::CandidateAccepted, unix_time_ms())
                         .is_err()
                     {
                         drops.record("endpoint", ERROR_STATE_VIOLATION, "candidate_transition");
                         continue;
                     }
-                    let route = ActiveRoute {
-                        local_label: branch_token,
-                        generation,
-                        route_secret: SecretBytes(opened.route_secret),
-                        challenge: SecretBytes(opened.commit_challenge),
-                        pseudonym: opened.gateway_pseudonym,
-                    };
-                    let proof =
-                        commit_proof(&route.route_secret.0, &route.challenge.0, &route.pseudonym)?;
-                    send_control(
-                        &link,
-                        &route,
-                        MessageType::Commit,
-                        &P1Payload::Commit { proof },
-                    )?;
-                    state.apply(branch_token, Event::CommitAccepted, unix_time_ms())?;
-                    active = Some(route);
+                    candidates_seen += 1;
+                    if context.ring != ring_index {
+                        // Eligible but from a ring that has already closed.
+                        late_candidates += 1;
+                    }
+                    held.push(HeldCandidate {
+                        ring: context.ring,
+                        branch_token: candidate_token,
+                        hop_count: layer_count,
+                        arrived_ms: unix_time_ms(),
+                        opened,
+                    });
                     structured_event(
                         "endpoint",
-                        "candidate_authenticated",
-                        &[("layers", layer_count.to_string())],
+                        "candidate_held",
+                        &[
+                            ("ring", context.ring.to_string()),
+                            ("layers", layer_count.to_string()),
+                        ],
                     );
+                    // Section 3 step 2 closes the window as soon as the
+                    // configured threshold is met. Selection still happens at
+                    // a window boundary; the threshold decides when that
+                    // boundary arrives, so a single-candidate path does not
+                    // wait out a window it cannot improve on.
+                    if held.len() >= candidate_threshold {
+                        window_closes_ms = unix_time_ms();
+                    }
                 }
                 Message::Control(control_message) => {
                     let Some(route) = active.as_ref() else {
@@ -258,7 +475,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 continue;
                             }
                             if state
-                                .apply(branch_token, Event::ReadyAccepted, unix_time_ms())
+                                .apply(route.local_label, Event::ReadyAccepted, unix_time_ms())
                                 .is_err()
                             {
                                 drops.record("endpoint", ERROR_STATE_VIOLATION, "ready_transition");
@@ -324,7 +541,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     &P1Payload::Close { reason: 0 },
                                 )?;
                                 cleanup_started = Some(Instant::now());
-                                state.apply(branch_token, Event::CloseAccepted, unix_time_ms())?;
+                                state.apply(
+                                    route.local_label,
+                                    Event::CloseAccepted,
+                                    unix_time_ms(),
+                                )?;
                                 success = true;
                                 break;
                             }
@@ -334,7 +555,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 )
                                 .into());
                             }
-                            state.apply(branch_token, Event::CapabilityAccepted, unix_time_ms())?;
+                            state.apply(
+                                route.local_label,
+                                Event::CapabilityAccepted,
+                                unix_time_ms(),
+                            )?;
                             send_control(
                                 &link,
                                 route,
@@ -357,7 +582,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             if payload != message {
                                 return Err("echo payload mismatch".into());
                             }
-                            state.apply(branch_token, Event::DataAccepted, unix_time_ms())?;
+                            state.apply(route.local_label, Event::DataAccepted, unix_time_ms())?;
                             send_control(
                                 &link,
                                 route,
@@ -365,7 +590,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 &P1Payload::Close { reason: 0 },
                             )?;
                             cleanup_started = Some(Instant::now());
-                            state.apply(branch_token, Event::CloseAccepted, unix_time_ms())?;
+                            state.apply(route.local_label, Event::CloseAccepted, unix_time_ms())?;
                             success = true;
                             break;
                         }
@@ -406,7 +631,9 @@ fn run() -> Result<(), Box<dyn Error>> {
         drain_links(&[&link], &event_receiver);
     }
     if state.live_routes() != 0 {
-        let _ = state.apply(branch_token, Event::Timeout, unix_time_ms());
+        if let Some(label) = selected_branch {
+            let _ = state.apply(label, Event::Timeout, unix_time_ms());
+        }
     }
     drop(active.take());
     let cleanup_ms = cleanup_started
@@ -424,6 +651,23 @@ fn run() -> Result<(), Box<dyn Error>> {
         &metrics,
     )?;
 
+    structured_event(
+        "endpoint",
+        "discovery_measurements",
+        &[
+            ("candidates", candidates_seen.to_string()),
+            ("late_candidates", late_candidates.to_string()),
+            ("candidates_dropped", candidates_dropped.to_string()),
+            ("branches_cancelled", cancelled_branches.to_string()),
+            ("rings_opened", contexts.len().to_string()),
+            ("selected", u8::from(selected_branch.is_some()).to_string()),
+        ],
+    );
+    if no_candidate {
+        // A terminal NO_CANDIDATE is an ordinary outcome, not a fault: every
+        // branch has been cancelled or expired and state is reclaimed.
+        return Err("discovery terminated with NO_CANDIDATE".into());
+    }
     if transport_failed {
         return Err(format!("T1 retry budget exhausted; status={ERROR_TIMEOUT}").into());
     }
