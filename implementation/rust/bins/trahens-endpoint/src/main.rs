@@ -25,7 +25,9 @@ struct ActiveRoute {
     local_label: [u8; 16],
     generation: u32,
     route_secret: SecretBytes<32>,
-    challenge: [u8; 32],
+    // The commit challenge is a keyed-proof input shared with the gateway;
+    // Core v1.5 section 8.4 requires it to be wiped when the route ends.
+    challenge: SecretBytes<32>,
     pseudonym: [u8; 16],
 }
 
@@ -192,11 +194,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                         local_label: branch_token,
                         generation,
                         route_secret: SecretBytes(opened.route_secret),
-                        challenge: opened.commit_challenge,
+                        challenge: SecretBytes(opened.commit_challenge),
                         pseudonym: opened.gateway_pseudonym,
                     };
                     let proof =
-                        commit_proof(&route.route_secret.0, &route.challenge, &route.pseudonym)?;
+                        commit_proof(&route.route_secret.0, &route.challenge.0, &route.pseudonym)?;
                     send_control(
                         &link,
                         &route,
@@ -235,7 +237,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         (MessageType::Ready, P1Payload::Ready { proof }) => {
                             let expected = ready_proof(
                                 &route.route_secret.0,
-                                &route.challenge,
+                                &route.challenge.0,
                                 &route.pseudonym,
                             )?;
                             if verify_proof(&expected, &proof).is_err() {

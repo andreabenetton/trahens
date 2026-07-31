@@ -25,7 +25,8 @@ struct GatewayRoute {
     label: [u8; 16],
     generation: u32,
     route_secret: SecretBytes<32>,
-    challenge: [u8; 32],
+    // Wiped on drop for the same reason as the endpoint's copy.
+    challenge: SecretBytes<32>,
     pseudonym: [u8; 16],
     expires_at_ms: u64,
     failed_redemptions: usize,
@@ -196,7 +197,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             label: discover.branch_token,
                             generation: 0,
                             route_secret: SecretBytes(route_secret),
-                            challenge,
+                            challenge: SecretBytes(challenge),
                             pseudonym,
                             expires_at_ms,
                             failed_redemptions: 0,
@@ -235,7 +236,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             (MessageType::Commit, P1Payload::Commit { proof }) => {
                                 let expected = commit_proof(
                                     &route.route_secret.0,
-                                    &route.challenge,
+                                    &route.challenge.0,
                                     &route.pseudonym,
                                 )?;
                                 // The proof is remote input: a mismatch or a
@@ -258,7 +259,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 }
                                 let ready = ready_proof(
                                     &route.route_secret.0,
-                                    &route.challenge,
+                                    &route.challenge.0,
                                     &route.pseudonym,
                                 )?;
                                 send_control(
