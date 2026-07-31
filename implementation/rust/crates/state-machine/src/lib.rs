@@ -4,7 +4,8 @@
 
 use protocol_registry::{
     LIMIT_BRANCH_TTL_MS, LIMIT_INGRESS_BUCKET_CAPACITY, LIMIT_INGRESS_BUCKET_REFILL_AMOUNT,
-    LIMIT_INGRESS_BUCKET_REFILL_INTERVAL_MS, LIMIT_MAX_ROUTES_GLOBAL, LIMIT_MAX_ROUTES_PER_PEER,
+    LIMIT_INGRESS_BUCKET_REFILL_INTERVAL_MS, LIMIT_MAX_BRANCHES_GLOBAL,
+    LIMIT_MAX_BRANCHES_PER_PEER, LIMIT_MAX_ROUTES_GLOBAL, LIMIT_MAX_ROUTES_PER_PEER,
     LIMIT_OFFER_TTL_MS, LIMIT_READY_HOLD_MS, LIMIT_ROUTE_TTL_MS,
 };
 use std::collections::HashMap;
@@ -150,10 +151,21 @@ pub struct RouteState {
     pub expires_at_ms: u64,
 }
 
+/// Peak occupancy of each bounded structure, for the P1 measurement list.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StatePeaks {
+    pub peak_routes: usize,
+    pub peak_routes_per_peer: usize,
+    pub peak_branches: usize,
+    pub peak_pending_ready: usize,
+    pub peak_active: usize,
+}
+
 #[derive(Debug, Default)]
 pub struct RouteTable {
     routes: HashMap<[u8; 16], RouteState>,
     peer_counts: HashMap<u32, usize>,
+    peaks: StatePeaks,
 }
 
 impl RouteTable {
@@ -170,8 +182,19 @@ impl RouteTable {
         if self.routes.len() >= LIMIT_MAX_ROUTES_GLOBAL {
             return Err(StateError::GlobalLimit);
         }
+        // E1 section 10 bounds branch contexts separately from routes: a
+        // branch is state a peer can create before any commitment, so it has
+        // the tighter ceiling.
+        let branches = self
+            .routes
+            .values()
+            .filter(|route| matches!(route.phase, Phase::Discovering | Phase::Candidate))
+            .count();
+        if branches >= LIMIT_MAX_BRANCHES_GLOBAL {
+            return Err(StateError::GlobalLimit);
+        }
         let count = self.peer_counts.get(&peer).copied().unwrap_or(0);
-        if count >= LIMIT_MAX_ROUTES_PER_PEER {
+        if count >= LIMIT_MAX_ROUTES_PER_PEER || count >= LIMIT_MAX_BRANCHES_PER_PEER {
             return Err(StateError::PeerLimit);
         }
         self.routes.insert(
@@ -184,6 +207,7 @@ impl RouteTable {
             },
         );
         self.peer_counts.insert(peer, count + 1);
+        self.observe_peaks();
         Ok(())
     }
 
@@ -228,7 +252,34 @@ impl RouteTable {
         };
         state.generation = state.generation.saturating_add(1);
         state.expires_at_ms = now_ms.saturating_add(state.phase.lifetime_ms());
+        self.observe_peaks();
         Ok(transition)
+    }
+
+    /// Snapshot of peak occupancy across every bounded state class.
+    #[must_use]
+    pub fn peaks(&self) -> StatePeaks {
+        self.peaks
+    }
+
+    fn observe_peaks(&mut self) {
+        let mut branches = 0;
+        let mut pending = 0;
+        let mut active = 0;
+        for route in self.routes.values() {
+            match route.phase {
+                Phase::Discovering | Phase::Candidate => branches += 1,
+                Phase::PendingReady => pending += 1,
+                Phase::Ready | Phase::Open => active += 1,
+            }
+        }
+        self.peaks.peak_routes = self.peaks.peak_routes.max(self.routes.len());
+        self.peaks.peak_branches = self.peaks.peak_branches.max(branches);
+        self.peaks.peak_pending_ready = self.peaks.peak_pending_ready.max(pending);
+        self.peaks.peak_active = self.peaks.peak_active.max(active);
+        if let Some(highest) = self.peer_counts.values().copied().max() {
+            self.peaks.peak_routes_per_peer = self.peaks.peak_routes_per_peer.max(highest);
+        }
     }
 
     pub fn expire(&mut self, now_ms: u64) -> usize {
@@ -297,6 +348,49 @@ mod tests {
             Action::ReclaimState
         );
         assert_eq!(table.live_routes(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn branch_contexts_are_bounded_and_peaks_are_recorded() -> Result<(), StateError> {
+        // E1 section 10 bounds branch contexts per peer, tighter than the
+        // route ceiling, because a branch is state a peer creates before any
+        // commitment.
+        let mut table = RouteTable::default();
+        let mut label = [0_u8; 16];
+        for index in 0..LIMIT_MAX_BRANCHES_PER_PEER {
+            label[0] = (index % 251) as u8;
+            label[1] = (index / 251) as u8;
+            table.begin(label, 1, 0, 10_000)?;
+        }
+        label[0] = 255;
+        label[1] = 255;
+        assert_eq!(
+            table.begin(label, 1, 0, 10_000),
+            Err(StateError::PeerLimit),
+            "the per-peer branch ceiling is enforced"
+        );
+
+        let peaks = table.peaks();
+        assert_eq!(peaks.peak_branches, LIMIT_MAX_BRANCHES_PER_PEER);
+        assert_eq!(peaks.peak_routes_per_peer, LIMIT_MAX_BRANCHES_PER_PEER);
+        assert_eq!(peaks.peak_pending_ready, 0);
+        assert_eq!(peaks.peak_active, 0);
+
+        // Advancing one route moves it out of the branch class and into the
+        // pending-ready then active classes, each recorded separately.
+        label[0] = 0;
+        label[1] = 0;
+        table.apply(label, Event::CandidateAccepted, 0)?;
+        table.apply(label, Event::CommitAccepted, 0)?;
+        assert_eq!(table.peaks().peak_pending_ready, 1);
+        table.apply(label, Event::ReadyAccepted, 0)?;
+        assert_eq!(table.peaks().peak_active, 1);
+        assert_eq!(
+            table.peaks().peak_branches,
+            LIMIT_MAX_BRANCHES_PER_PEER,
+            "the peak is a high-water mark, not a current count"
+        );
         Ok(())
     }
 

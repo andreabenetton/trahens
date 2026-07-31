@@ -420,6 +420,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         state.live_routes(),
         cleanup_ms,
         &drops,
+        state.peaks(),
         &metrics,
     )?;
 

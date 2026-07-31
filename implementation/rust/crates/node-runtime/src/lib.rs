@@ -796,14 +796,20 @@ pub fn write_link_metrics(
     live_routes: usize,
     cleanup_ms: u64,
     drops: &RemoteInputDrops,
+    peaks: state_machine::StatePeaks,
     links: &[(u32, LinkMetrics)],
 ) -> Result<(), RuntimeError> {
     let mut output = format!(
-        "{{\n  \"node\": \"{}\",\n  \"live_routes\": {},\n  \"cleanup_ms\": {},\n  \"remote_input_drops\": {},\n  \"links\": [\n",
+        "{{\n  \"node\": \"{}\",\n  \"live_routes\": {},\n  \"cleanup_ms\": {},\n  \"remote_input_drops\": {},\n  \"peak_routes\": {},\n  \"peak_routes_per_peer\": {},\n  \"peak_branches\": {},\n  \"peak_pending_ready\": {},\n  \"peak_active\": {},\n  \"links\": [\n",
         node.replace('"', "'"),
         live_routes,
         cleanup_ms,
-        drops.to_json()
+        drops.to_json(),
+        peaks.peak_routes,
+        peaks.peak_routes_per_peer,
+        peaks.peak_branches,
+        peaks.peak_pending_ready,
+        peaks.peak_active
     );
     for (index, (peer, metrics)) in links.iter().enumerate() {
         if index != 0 {

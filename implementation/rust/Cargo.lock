@@ -38,6 +38,7 @@ dependencies = [
  "codec-m2",
  "protocol-registry",
  "scheduling-t2",
+ "state-machine",
  "trahens-crypto",
  "transport-t1",
  "wire-w2",

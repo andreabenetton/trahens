@@ -461,6 +461,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         states.live_routes(),
         cleanup_ms,
         &drops,
+        states.peaks(),
         &metrics,
     )?;
     structured_event(
