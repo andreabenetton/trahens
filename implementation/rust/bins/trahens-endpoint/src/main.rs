@@ -10,8 +10,8 @@ use node_runtime::{
     CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
 };
 use protocol_registry::{
-    ERROR_AUTHENTICATION_FAILED, ERROR_INTERNAL, ERROR_STATE_VIOLATION, LIMIT_ROUTE_TTL_MS,
-    SUITE_R1,
+    ERROR_AUTHENTICATION_FAILED, ERROR_INTERNAL, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
+    LIMIT_ROUTE_TTL_MS, SUITE_R1,
 };
 use state_machine::{Event, RouteTable};
 use std::error::Error;
@@ -147,6 +147,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut success = false;
     let mut setup_latency_ms = 0_u64;
     let mut cleanup_started = None;
+    let mut transport_failed = false;
 
     while unix_time_ms() < absolute_deadline {
         let event = match event_receiver.recv_timeout(Duration::from_millis(100)) {
@@ -312,7 +313,16 @@ fn run() -> Result<(), Box<dyn Error>> {
                 _ => {}
             },
             LinkEvent::TransmissionFailed { .. } => {
-                return Err("T1 retry budget exhausted".into());
+                // Break rather than return: the shared path below reclaims
+                // route state and writes metrics before the process exits.
+                structured_event(
+                    "endpoint",
+                    "transport_failure",
+                    &[("error_id", ERROR_TIMEOUT.to_string())],
+                );
+                transport_failed = true;
+                cleanup_started.get_or_insert_with(Instant::now);
+                break;
             }
             LinkEvent::SecurityEvent {
                 error_id, detail, ..
@@ -351,6 +361,9 @@ fn run() -> Result<(), Box<dyn Error>> {
         &metrics,
     )?;
 
+    if transport_failed {
+        return Err(format!("T1 retry budget exhausted; status={ERROR_TIMEOUT}").into());
+    }
     if !success {
         return Err(format!("endpoint timed out; status={ERROR_INTERNAL}").into());
     }

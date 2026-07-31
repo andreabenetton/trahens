@@ -8,8 +8,8 @@ use node_runtime::{
     CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
 };
 use protocol_registry::{
-    ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION, LIMIT_MAX_CANDIDATE_LAYERS,
-    LIMIT_ROUTE_TTL_MS, SUITE_R1,
+    ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
+    LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_ROUTE_TTL_MS, SUITE_R1,
 };
 use state_machine::{Event, Phase, RouteTable};
 use std::collections::HashMap;
@@ -116,6 +116,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let deadline = unix_time_ms().saturating_add(timeout_ms);
     let mut cleanup_started: Option<Instant> = None;
     let mut observed_close = false;
+    let mut transport_failed: Option<u32> = None;
 
     while unix_time_ms() < deadline {
         let event = match event_receiver.recv_timeout(Duration::from_millis(100)) {
@@ -384,7 +385,20 @@ fn run() -> Result<(), Box<dyn Error>> {
                 _ => {}
             },
             LinkEvent::TransmissionFailed { peer_id } => {
-                return Err(format!("T1 retry budget exhausted for peer {peer_id}").into());
+                // Retry exhaustion must terminate the run cleanly: reclaim
+                // every route, then fall through to the shared cleanup and
+                // metrics path so the harness can observe live_routes == 0.
+                structured_event(
+                    "relay",
+                    "transport_failure",
+                    &[
+                        ("peer", peer_id.to_string()),
+                        ("error_id", ERROR_TIMEOUT.to_string()),
+                    ],
+                );
+                transport_failed = Some(peer_id);
+                cleanup_started.get_or_insert_with(Instant::now);
+                break;
             }
             LinkEvent::SecurityEvent {
                 peer_id,
@@ -442,6 +456,11 @@ fn run() -> Result<(), Box<dyn Error>> {
             ("id", node_id.to_string()),
         ],
     );
+    if let Some(peer_id) = transport_failed {
+        // State is already reclaimed and metrics are written; the non-zero
+        // exit reports the outcome without stranding remote state.
+        return Err(format!("T1 retry budget exhausted for peer {peer_id}").into());
+    }
     if !observed_close {
         return Err(format!("relay {node_id} timed out before cleanup").into());
     }

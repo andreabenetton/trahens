@@ -10,7 +10,7 @@ use node_runtime::{
     CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
 };
 use protocol_registry::{
-    ERROR_AUTHENTICATION_FAILED, ERROR_CAPABILITY_INVALID, ERROR_STATE_VIOLATION,
+    ERROR_AUTHENTICATION_FAILED, ERROR_CAPABILITY_INVALID, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
     LIMIT_CAPABILITY_TTL_MS, LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE, LIMIT_ROUTE_TTL_MS, SUITE_R1,
 };
 use rendezvous_r1::Registry;
@@ -133,6 +133,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut drops = RemoteInputDrops::new();
     let deadline = unix_time_ms().saturating_add(timeout_ms);
     let mut observed_close = false;
+    let mut transport_failed = false;
     let mut cleanup_started: Option<Instant> = None;
     let mut redemption_latency_ms = 0_u64;
 
@@ -365,7 +366,14 @@ fn run() -> Result<(), Box<dyn Error>> {
                 _ => {}
             },
             LinkEvent::TransmissionFailed { .. } => {
-                return Err("T1 retry budget exhausted".into());
+                structured_event(
+                    "rendezvous",
+                    "transport_failure",
+                    &[("error_id", ERROR_TIMEOUT.to_string())],
+                );
+                transport_failed = true;
+                cleanup_started.get_or_insert_with(Instant::now);
+                break;
             }
             LinkEvent::SecurityEvent {
                 peer_id: source,
@@ -417,6 +425,9 @@ fn run() -> Result<(), Box<dyn Error>> {
             ("redemption_latency_us", redemption_latency_ms.to_string()),
         ],
     );
+    if transport_failed {
+        return Err(format!("T1 retry budget exhausted; status={ERROR_TIMEOUT}").into());
+    }
     if !observed_close {
         return Err("rendezvous timed out before route cleanup".into());
     }
