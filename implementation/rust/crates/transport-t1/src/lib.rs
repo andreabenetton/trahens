@@ -379,6 +379,12 @@ impl Sender {
         })
     }
 
+    /// True when a retransmission is queued.
+    #[must_use]
+    pub fn has_retry(&self) -> bool {
+        !self.retry_queue.is_empty()
+    }
+
     pub fn next_retry(&mut self, now_ms: u64) -> Option<Frame> {
         while let Some((id, index)) = self.retry_queue.pop_front() {
             if let Some(frame) = self.frame_for(id, index, now_ms) {

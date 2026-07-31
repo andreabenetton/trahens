@@ -7,7 +7,8 @@ pub mod p1;
 use codec_m2::{decode, encode, Envelope};
 use protocol_registry::{
     ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_UNSUPPORTED_SUITE,
-    FIXED_T2_EPOCH_MS, FIXED_T2_QUEUE_CELLS_PER_PEER, LIMIT_MAX_T1_RETRIES,
+    FIXED_T2_ACK_RESERVE_PER_EPOCH, FIXED_T2_CELLS_PER_EPOCH, FIXED_T2_EPOCH_MS,
+    FIXED_T2_QUEUE_CELLS_PER_PEER, FIXED_T2_RETRANSMIT_RESERVE_PER_EPOCH, LIMIT_MAX_T1_RETRIES,
     LIMIT_T1_ACK_DELAY_MAX_MS, LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS, SUITE_R1,
 };
 use scheduling_t2::{FixedSchedule, ScheduleMetrics, SlotClass};
@@ -277,6 +278,12 @@ fn run_link(
     let mut buffer = [0_u8; 2_048];
     let mut running = true;
     let mut draining = false;
+    // Per-epoch slot accounting. transport-profile-t2.md section 6 requires
+    // the ACK and retransmit reserves to be finite and never to starve DATA,
+    // so each is capped per epoch; DATA is guaranteed the remaining slots.
+    let mut slot_in_epoch = 0_usize;
+    let mut ack_slots = 0_usize;
+    let mut retransmit_slots = 0_usize;
 
     while running {
         loop {
@@ -461,13 +468,43 @@ fn run_link(
 
         let now = Instant::now();
         if now >= schedule.next_deadline() {
-            let (class, frame) = if let Some((frame, queued_at)) = ack_queue.pop_front() {
-                let frame = with_ack_delay(frame, elapsed_ms(origin).saturating_sub(queued_at));
-                (SlotClass::Ack, frame)
-            } else if let Some(frame) = sender.next_retry(now_ms) {
-                (SlotClass::Retransmission, frame)
+            let ack_available = !ack_queue.is_empty();
+            let take_ack = ack_available && ack_slots < FIXED_T2_ACK_RESERVE_PER_EPOCH;
+            let take_retransmit =
+                !take_ack && retransmit_slots < FIXED_T2_RETRANSMIT_RESERVE_PER_EPOCH;
+
+            let mut pop_ack = || {
+                ack_queue.pop_front().map(|(frame, queued_at)| {
+                    with_ack_delay(frame, elapsed_ms(origin).saturating_sub(queued_at))
+                })
+            };
+
+            let (class, frame) = if take_ack {
+                match pop_ack() {
+                    Some(frame) => {
+                        ack_slots += 1;
+                        (SlotClass::Ack, frame)
+                    }
+                    None => continue,
+                }
+            } else if take_retransmit && sender.has_retry() {
+                match sender.next_retry(now_ms) {
+                    Some(frame) => {
+                        retransmit_slots += 1;
+                        (SlotClass::Retransmission, frame)
+                    }
+                    None => continue,
+                }
             } else if let Some(frame) = sender.next_new(now_ms) {
                 (SlotClass::NewData, frame)
+            } else if let Some(frame) = pop_ack() {
+                // Beyond the reserve, but DATA has nothing queued: emitting a
+                // held ACK beats emitting chaff.
+                ack_slots += 1;
+                (SlotClass::Ack, frame)
+            } else if let Some(frame) = sender.next_retry(now_ms) {
+                retransmit_slots += 1;
+                (SlotClass::Retransmission, frame)
             } else {
                 match fresh_chaff(SUITE_R1) {
                     Ok(frame) => (SlotClass::Chaff, frame),
@@ -511,6 +548,12 @@ fn run_link(
                     };
                     sequence = next_sequence;
                     schedule.advance(class);
+                    slot_in_epoch += 1;
+                    if slot_in_epoch >= FIXED_T2_CELLS_PER_EPOCH {
+                        slot_in_epoch = 0;
+                        ack_slots = 0;
+                        retransmit_slots = 0;
+                    }
                 }
                 Err(_) => {
                     let _ = events.try_send(LinkEvent::SecurityEvent {
