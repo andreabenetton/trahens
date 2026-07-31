@@ -8,8 +8,8 @@ use node_runtime::{
     CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
 };
 use protocol_registry::{
-    ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_ROUTE_TTL_MS,
-    SUITE_R1,
+    ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION, LIMIT_MAX_CANDIDATE_LAYERS,
+    LIMIT_ROUTE_TTL_MS, SUITE_R1,
 };
 use state_machine::{Event, Phase, RouteTable};
 use std::collections::HashMap;
@@ -144,14 +144,17 @@ fn run() -> Result<(), Box<dyn Error>> {
                 peer_id, envelope, ..
             } if peer_id == upstream_id => match envelope.message {
                 Message::Discover(discover) => {
+                    if routes.contains_key(&discover.branch_token) {
+                        drops.record("relay", ERROR_STATE_VIOLATION, "discover_duplicate_token");
+                        continue;
+                    }
                     if discover.hop_remaining == 0
                         || usize::from(discover.options) >= LIMIT_MAX_CANDIDATE_LAYERS
-                        || routes.contains_key(&discover.branch_token)
                     {
-                        structured_event(
+                        drops.record(
                             "relay",
-                            "discover_rejected",
-                            &[("reason", "limit_or_duplicate".to_owned())],
+                            ERROR_RESOURCE_EXHAUSTED,
+                            "discover_propagation_limit",
                         );
                         continue;
                     }
@@ -228,11 +231,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 .apply(route.parent_label, Event::CommitAccepted)
                                 .is_err()
                             {
-                                structured_event(
-                                    "relay",
-                                    "invalid_transition_discarded",
-                                    &[("message", "commit".to_owned())],
-                                );
+                                drops.record("relay", ERROR_STATE_VIOLATION, "commit_transition");
                                 continue;
                             }
                             downstream.send(forward_control(control, route.child_label))?;
@@ -314,11 +313,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         .apply(parent_label, Event::CandidateAccepted)
                         .is_err()
                     {
-                        structured_event(
-                            "relay",
-                            "invalid_transition_discarded",
-                            &[("message", "candidate".to_owned())],
-                        );
+                        drops.record("relay", ERROR_STATE_VIOLATION, "candidate_transition");
                         continue;
                     }
                     upstream.send(Envelope {
@@ -344,11 +339,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     match control.message_type {
                         MessageType::Ready => {
                             if states.apply(parent_label, Event::ReadyAccepted).is_err() {
-                                structured_event(
-                                    "relay",
-                                    "invalid_transition_discarded",
-                                    &[("message", "ready".to_owned())],
-                                );
+                                drops.record("relay", ERROR_STATE_VIOLATION, "ready_transition");
                                 continue;
                             }
                             upstream.send(forward_control(control, parent_label))?;
@@ -358,10 +349,10 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 .apply(parent_label, Event::CapabilityAccepted)
                                 .is_err()
                             {
-                                structured_event(
+                                drops.record(
                                     "relay",
-                                    "invalid_transition_discarded",
-                                    &[("message", "rendezvous_result".to_owned())],
+                                    ERROR_STATE_VIOLATION,
+                                    "rendezvous_result_transition",
                                 );
                                 continue;
                             }
@@ -395,11 +386,19 @@ fn run() -> Result<(), Box<dyn Error>> {
             LinkEvent::TransmissionFailed { peer_id } => {
                 return Err(format!("T1 retry budget exhausted for peer {peer_id}").into());
             }
-            LinkEvent::SecurityEvent { peer_id, code } => {
+            LinkEvent::SecurityEvent {
+                peer_id,
+                error_id,
+                detail,
+            } => {
                 structured_event(
                     "relay",
                     "security_event",
-                    &[("peer", peer_id.to_string()), ("code", code.to_owned())],
+                    &[
+                        ("peer", peer_id.to_string()),
+                        ("error_id", error_id.to_string()),
+                        ("detail", detail.to_owned()),
+                    ],
                 );
             }
             _ => {}

@@ -5,7 +5,10 @@
 pub mod p1;
 
 use codec_m2::{decode, encode, Envelope};
-use protocol_registry::{FIXED_T2_QUEUE_CELLS_PER_PEER, LIMIT_T1_RTO_MS, SUITE_R1};
+use protocol_registry::{
+    ERROR_INTERNAL, ERROR_MALFORMED, ERROR_UNSUPPORTED_SUITE, FIXED_T2_QUEUE_CELLS_PER_PEER,
+    LIMIT_T1_RTO_MS, SUITE_R1,
+};
 use scheduling_t2::{FixedSchedule, ScheduleMetrics, SlotClass};
 use std::collections::VecDeque;
 use std::io::ErrorKind;
@@ -52,7 +55,10 @@ pub enum LinkEvent {
     },
     SecurityEvent {
         peer_id: u32,
-        code: &'static str,
+        /// Stable registry `ERROR_*` identifier (Core v1.5 section 8.7).
+        error_id: u16,
+        /// Human-readable detail; never a substitute for `error_id`.
+        detail: &'static str,
     },
     Stopped {
         peer_id: u32,
@@ -221,7 +227,8 @@ fn run_link(
                         Err(_) => {
                             let _ = events.try_send(LinkEvent::SecurityEvent {
                                 peer_id: config.peer_id,
-                                code: "local_noncanonical_message",
+                                error_id: ERROR_INTERNAL,
+                                detail: "local_noncanonical_message",
                             });
                             continue;
                         }
@@ -293,11 +300,20 @@ fn run_link(
                                                         received_at_ms: elapsed_ms(origin),
                                                     });
                                                 }
-                                                _ => {
+                                                Ok(_) => {
                                                     let _ =
                                                         events.try_send(LinkEvent::SecurityEvent {
                                                             peer_id: config.peer_id,
-                                                            code: "m2_decode_or_suite_mismatch",
+                                                            error_id: ERROR_UNSUPPORTED_SUITE,
+                                                            detail: "m2_suite_mismatch",
+                                                        });
+                                                }
+                                                Err(_) => {
+                                                    let _ =
+                                                        events.try_send(LinkEvent::SecurityEvent {
+                                                            peer_id: config.peer_id,
+                                                            error_id: ERROR_MALFORMED,
+                                                            detail: "m2_decode",
                                                         });
                                                 }
                                             }
@@ -328,7 +344,8 @@ fn run_link(
                 Err(_) => {
                     let _ = events.try_send(LinkEvent::SecurityEvent {
                         peer_id: config.peer_id,
-                        code: "udp_receive_failure",
+                        error_id: ERROR_INTERNAL,
+                        detail: "udp_receive_failure",
                     });
                     break;
                 }
@@ -376,7 +393,8 @@ fn run_link(
                     } else {
                         let _ = events.try_send(LinkEvent::SecurityEvent {
                             peer_id: config.peer_id,
-                            code: "udp_send_failure",
+                            error_id: ERROR_INTERNAL,
+                            detail: "udp_send_failure",
                         });
                     }
                     sequence = sequence.wrapping_add(1);
@@ -385,7 +403,8 @@ fn run_link(
                 Err(_) => {
                     let _ = events.try_send(LinkEvent::SecurityEvent {
                         peer_id: config.peer_id,
-                        code: "cell_encode_failure",
+                        error_id: ERROR_INTERNAL,
+                        detail: "cell_encode_failure",
                     });
                 }
             }

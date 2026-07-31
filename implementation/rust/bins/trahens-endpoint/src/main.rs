@@ -314,8 +314,17 @@ fn run() -> Result<(), Box<dyn Error>> {
             LinkEvent::TransmissionFailed { .. } => {
                 return Err("T1 retry budget exhausted".into());
             }
-            LinkEvent::SecurityEvent { code, .. } => {
-                structured_event("endpoint", "security_event", &[("code", code.to_owned())]);
+            LinkEvent::SecurityEvent {
+                error_id, detail, ..
+            } => {
+                structured_event(
+                    "endpoint",
+                    "security_event",
+                    &[
+                        ("error_id", error_id.to_string()),
+                        ("detail", detail.to_owned()),
+                    ],
+                );
             }
             _ => {}
         }

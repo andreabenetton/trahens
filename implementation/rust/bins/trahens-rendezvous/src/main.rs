@@ -369,12 +369,17 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
             LinkEvent::SecurityEvent {
                 peer_id: source,
-                code,
+                error_id,
+                detail,
             } => {
                 structured_event(
                     "rendezvous",
                     "security_event",
-                    &[("peer", source.to_string()), ("code", code.to_owned())],
+                    &[
+                        ("peer", source.to_string()),
+                        ("error_id", error_id.to_string()),
+                        ("detail", detail.to_owned()),
+                    ],
                 );
             }
             _ => {}
