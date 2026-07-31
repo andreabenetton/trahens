@@ -3,7 +3,9 @@
 #![doc = "Frozen fixed-rate T2 P1 scheduler."]
 
 use protocol_registry::{
-    FIXED_T2_CELLS_PER_EPOCH, FIXED_T2_EPOCH_MS, FIXED_T2_PROFILE_ID, FIXED_T2_SLOT_INTERVAL_US,
+    suite_is_network_valid, FIXED_T2_CELLS_PER_EPOCH, FIXED_T2_EPOCH_MS, FIXED_T2_PROFILE_ID,
+    FIXED_T2_SLOT_INTERVAL_US, LIFECYCLE_PROFILE_E1, PRIVACY_PROFILE_U1, SCHEDULE_PROFILE_T2,
+    T2_ACTION_ACCEPT, T2_ACTION_OFFER, T2_ACTION_REJECT, T2_FRAME_SCHEDULE, VERSION,
 };
 use std::time::{Duration, Instant};
 
@@ -91,5 +93,276 @@ mod tests {
             schedule.metrics().chaff_cells,
             FIXED_T2_CELLS_PER_EPOCH as u64
         );
+    }
+}
+
+/// Quantized rate classes offered by the fixed profile's rate menu.
+pub const RATE_MENU_CELLS_PER_EPOCH: [usize; 4] = [8, 16, 32, 64];
+
+/// Negotiation action carried by a SCHEDULE frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ScheduleAction {
+    Offer = T2_ACTION_OFFER,
+    Accept = T2_ACTION_ACCEPT,
+    Reject = T2_ACTION_REJECT,
+}
+
+impl TryFrom<u8> for ScheduleAction {
+    type Error = ScheduleError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            T2_ACTION_OFFER => Ok(Self::Offer),
+            T2_ACTION_ACCEPT => Ok(Self::Accept),
+            T2_ACTION_REJECT => Ok(Self::Reject),
+            _ => Err(ScheduleError::Malformed),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScheduleError {
+    Malformed,
+    UnsupportedSuite,
+}
+
+impl std::fmt::Display for ScheduleError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Malformed => "malformed T2 schedule frame",
+            Self::UnsupportedSuite => "unsupported T2 suite",
+        })
+    }
+}
+
+impl std::error::Error for ScheduleError {}
+
+/// A T2 rate-class negotiation frame (`transport-profile-t2.md` section 5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScheduleFrame {
+    pub suite: [u8; 2],
+    pub negotiation_id: [u8; 16],
+    pub effective_epoch: u32,
+    pub current_rate_class: u8,
+    pub requested_rate_class: u8,
+    pub maximum_rate_class: u8,
+    pub action: ScheduleAction,
+}
+
+/// Encode the 32-byte SCHEDULE header. The remaining payload is padding, which
+/// the caller fills, so every cell keeps one constant length.
+pub fn encode_schedule_header(frame: &ScheduleFrame) -> Result<[u8; 32], ScheduleError> {
+    if !suite_is_network_valid(frame.suite) {
+        return Err(ScheduleError::UnsupportedSuite);
+    }
+    if frame.negotiation_id == [0_u8; 16] {
+        return Err(ScheduleError::Malformed);
+    }
+    let classes = [
+        frame.current_rate_class,
+        frame.requested_rate_class,
+        frame.maximum_rate_class,
+    ];
+    if classes
+        .iter()
+        .any(|class| usize::from(*class) >= RATE_MENU_CELLS_PER_EPOCH.len())
+    {
+        return Err(ScheduleError::Malformed);
+    }
+    // Section 5: a peer must never be asked for more than it advertised.
+    if frame.requested_rate_class > frame.maximum_rate_class {
+        return Err(ScheduleError::Malformed);
+    }
+
+    let mut header = [0_u8; 32];
+    header[0] = SCHEDULE_PROFILE_T2;
+    header[1] = VERSION;
+    header[2] = PRIVACY_PROFILE_U1;
+    header[3] = LIFECYCLE_PROFILE_E1;
+    header[4..6].copy_from_slice(&frame.suite);
+    header[6] = T2_FRAME_SCHEDULE;
+    header[7] = 0;
+    header[8..24].copy_from_slice(&frame.negotiation_id);
+    header[24..28].copy_from_slice(&frame.effective_epoch.to_be_bytes());
+    header[28] = frame.current_rate_class;
+    header[29] = frame.requested_rate_class;
+    header[30] = frame.maximum_rate_class;
+    header[31] = frame.action as u8;
+    Ok(header)
+}
+
+/// Decode a SCHEDULE header, rejecting every non-canonical encoding.
+pub fn decode_schedule_header(input: &[u8; 32]) -> Result<ScheduleFrame, ScheduleError> {
+    if input[0] != SCHEDULE_PROFILE_T2
+        || input[1] != VERSION
+        || input[2] != PRIVACY_PROFILE_U1
+        || input[3] != LIFECYCLE_PROFILE_E1
+        || input[6] != T2_FRAME_SCHEDULE
+        || input[7] != 0
+    {
+        return Err(ScheduleError::Malformed);
+    }
+    let suite = [input[4], input[5]];
+    if !suite_is_network_valid(suite) {
+        return Err(ScheduleError::UnsupportedSuite);
+    }
+    let mut negotiation_id = [0_u8; 16];
+    negotiation_id.copy_from_slice(&input[8..24]);
+    if negotiation_id == [0_u8; 16] {
+        return Err(ScheduleError::Malformed);
+    }
+    let frame = ScheduleFrame {
+        suite,
+        negotiation_id,
+        effective_epoch: u32::from_be_bytes([input[24], input[25], input[26], input[27]]),
+        current_rate_class: input[28],
+        requested_rate_class: input[29],
+        maximum_rate_class: input[30],
+        action: ScheduleAction::try_from(input[31])?,
+    };
+    if [
+        frame.current_rate_class,
+        frame.requested_rate_class,
+        frame.maximum_rate_class,
+    ]
+    .iter()
+    .any(|class| usize::from(*class) >= RATE_MENU_CELLS_PER_EPOCH.len())
+        || frame.requested_rate_class > frame.maximum_rate_class
+    {
+        return Err(ScheduleError::Malformed);
+    }
+    Ok(frame)
+}
+
+#[cfg(test)]
+mod schedule_tests {
+    use super::*;
+
+    fn frame_from(
+        vectors: &test_vectors::Value,
+        path: &str,
+        action: ScheduleAction,
+    ) -> Result<ScheduleFrame, ScheduleError> {
+        let get = |field: &str| {
+            test_vectors::u64_at(vectors, &format!("{path}/{field}"))
+                .map_err(|_| ScheduleError::Malformed)
+        };
+        Ok(ScheduleFrame {
+            suite: test_vectors::hex_array_at::<2>(vectors, "crypto_suite")
+                .unwrap_or(protocol_registry::SUITE_R1),
+            negotiation_id: test_vectors::hex_array_at::<16>(
+                vectors,
+                &format!("{path}/negotiation_id"),
+            )
+            .map_err(|_| ScheduleError::Malformed)?,
+            effective_epoch: get("effective_epoch")? as u32,
+            current_rate_class: get("current_rate_class")? as u8,
+            requested_rate_class: get("requested_rate_class")? as u8,
+            maximum_rate_class: get("maximum_rate_class")? as u8,
+            action,
+        })
+    }
+
+    #[test]
+    fn published_t2_vectors_pin_the_schedule_headers() -> Result<(), ScheduleError> {
+        let vectors = test_vectors::t2().map_err(|_| ScheduleError::Malformed)?;
+        assert_eq!(
+            test_vectors::u64_at(&vectors, "record_bytes").map_err(|_| ScheduleError::Malformed)?,
+            protocol_registry::BYTES_CELL_RECORD as u64
+        );
+        assert_eq!(
+            test_vectors::u64_at(&vectors, "transport_profile")
+                .map_err(|_| ScheduleError::Malformed)?,
+            SCHEDULE_PROFILE_T2 as u64
+        );
+        let menu = test_vectors::u64_list_at(&vectors, "rate_menu_cells_per_epoch")
+            .map_err(|_| ScheduleError::Malformed)?;
+        assert_eq!(
+            menu,
+            RATE_MENU_CELLS_PER_EPOCH
+                .iter()
+                .map(|value| *value as u64)
+                .collect::<Vec<_>>()
+        );
+
+        // Only the OFFER vector publishes a header plaintext. The ACCEPT
+        // vector records digests covering the random padding, which the
+        // generator draws from a seeded Mersenne Twister, so they pin Python's
+        // PRNG rather than a protocol property.
+        let offer = frame_from(&vectors, "offer", ScheduleAction::Offer)?;
+        let expected =
+            test_vectors::hex_array_at::<32>(&vectors, "offer/encrypted_header_plaintext")
+                .map_err(|_| ScheduleError::Malformed)?;
+        assert_eq!(encode_schedule_header(&offer)?, expected, "OFFER header");
+        assert_eq!(
+            decode_schedule_header(&expected)?,
+            offer,
+            "OFFER round trip"
+        );
+
+        // The ACCEPT vector still pins the invariant it encodes: the accepted
+        // class never exceeds the advertised maximum.
+        let requested = test_vectors::u64_at(&vectors, "accept/requested_rate_class")
+            .map_err(|_| ScheduleError::Malformed)?;
+        let maximum = test_vectors::u64_at(&vectors, "accept/maximum_rate_class")
+            .map_err(|_| ScheduleError::Malformed)?;
+        assert!(requested <= maximum, "accepted class within the maximum");
+        let accept = ScheduleFrame {
+            action: ScheduleAction::Accept,
+            requested_rate_class: requested as u8,
+            maximum_rate_class: maximum as u8,
+            effective_epoch: test_vectors::u64_at(&vectors, "accept/effective_epoch")
+                .map_err(|_| ScheduleError::Malformed)? as u32,
+            ..offer
+        };
+        let encoded = encode_schedule_header(&accept)?;
+        assert_eq!(
+            decode_schedule_header(&encoded)?,
+            accept,
+            "ACCEPT round trip"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_request_may_not_exceed_the_advertised_maximum() -> Result<(), ScheduleError> {
+        // Section 5: the requested class is bounded by what the peer offered.
+        let frame = ScheduleFrame {
+            suite: protocol_registry::SUITE_R1,
+            negotiation_id: [1_u8; 16],
+            effective_epoch: 3,
+            current_rate_class: 0,
+            requested_rate_class: 3,
+            maximum_rate_class: 1,
+            action: ScheduleAction::Offer,
+        };
+        assert_eq!(
+            encode_schedule_header(&frame),
+            Err(ScheduleError::Malformed)
+        );
+
+        // An out-of-menu class and an unknown action are equally refused.
+        let mut header = encode_schedule_header(&ScheduleFrame {
+            requested_rate_class: 1,
+            maximum_rate_class: 1,
+            ..frame
+        })?;
+        header[31] = 0x7f;
+        assert_eq!(
+            decode_schedule_header(&header),
+            Err(ScheduleError::Malformed)
+        );
+        let mut header = encode_schedule_header(&ScheduleFrame {
+            requested_rate_class: 1,
+            maximum_rate_class: 1,
+            ..frame
+        })?;
+        header[30] = 9;
+        assert_eq!(
+            decode_schedule_header(&header),
+            Err(ScheduleError::Malformed)
+        );
+        Ok(())
     }
 }

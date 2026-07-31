@@ -9,3 +9,6 @@ protocol-registry = { path = "../protocol-registry" }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+test-vectors = { path = "../test-vectors" }

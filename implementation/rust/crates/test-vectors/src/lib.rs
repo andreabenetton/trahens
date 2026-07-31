@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![doc = "Loaders for the published spec test vectors, for use in Rust tests."]
 
-use serde_json::Value;
+pub use serde_json::Value;
 
 /// Error returned when a vector file cannot be read as expected.
 #[derive(Debug, Clone, PartialEq, Eq)]

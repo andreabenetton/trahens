@@ -80,6 +80,7 @@ name = "scheduling-t2"
 version = "1.5.0"
 dependencies = [
  "protocol-registry",
+ "test-vectors",
 ]
 
 [[package]]
