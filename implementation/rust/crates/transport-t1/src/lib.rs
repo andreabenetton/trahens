@@ -344,7 +344,17 @@ impl RtoEstimator {
 #[derive(Debug, Clone)]
 pub struct Sender {
     pending: HashMap<[u8; 16], Outbound>,
-    new_queue: VecDeque<([u8; 16], u16)>,
+    /// First-send fragments, one queue per live transmission.
+    ///
+    /// `transport-profile-t1.md` section 12 selects a new fragment by
+    /// round-robin across live transmissions, so that one large candidate
+    /// cannot occupy every DATA slot ahead of a small control message. A
+    /// single flat queue made that FIFO instead, and a COMMIT or READY behind
+    /// a 17-fragment message could miss its route deadline.
+    new_fragments: HashMap<[u8; 16], VecDeque<u16>>,
+    /// Whose turn it is. Front is next; a transmission with fragments left
+    /// goes to the back after each turn.
+    new_order: VecDeque<[u8; 16]>,
     retry_queue: VecDeque<([u8; 16], u16)>,
     rto: RtoEstimator,
 }
@@ -353,7 +363,8 @@ impl Sender {
     pub fn new() -> Self {
         Self {
             pending: HashMap::new(),
-            new_queue: VecDeque::new(),
+            new_fragments: HashMap::new(),
+            new_order: VecDeque::new(),
             retry_queue: VecDeque::new(),
             rto: RtoEstimator::new(),
         }
@@ -381,9 +392,11 @@ impl Sender {
         if fragments.is_empty() || fragments.len() > LIMIT_MAX_FRAGMENTS {
             return Err(TransportError::ResourceLimit);
         }
-        for index in 0..fragments.len() {
-            self.new_queue.push_back((transmission_id, index as u16));
-        }
+        self.new_fragments.insert(
+            transmission_id,
+            (0..fragments.len() as u16).collect::<VecDeque<u16>>(),
+        );
+        self.new_order.push_back(transmission_id);
         self.pending.insert(
             transmission_id,
             Outbound {
@@ -433,10 +446,29 @@ impl Sender {
         None
     }
 
+    /// One first-send fragment, taking each live transmission in turn.
     pub fn next_new(&mut self, now_ms: u64) -> Option<Frame> {
-        while let Some((id, index)) = self.new_queue.pop_front() {
-            if let Some(frame) = self.frame_for(id, index, now_ms) {
-                return Some(frame);
+        // Bounded by the number of live transmissions: every iteration either
+        // returns a frame or discards one exhausted or abandoned entry.
+        for _ in 0..=self.new_order.len() {
+            let id = self.new_order.pop_front()?;
+            let Some(queue) = self.new_fragments.get_mut(&id) else {
+                continue;
+            };
+            let Some(index) = queue.pop_front() else {
+                self.new_fragments.remove(&id);
+                continue;
+            };
+            let remaining = !queue.is_empty();
+            let frame = self.frame_for(id, index, now_ms);
+            if remaining {
+                // Its turn is spent; the next transmission goes first.
+                self.new_order.push_back(id);
+            } else {
+                self.new_fragments.remove(&id);
+            }
+            if frame.is_some() {
+                return frame;
             }
         }
         None
@@ -553,7 +585,8 @@ impl Sender {
         if self.pending.remove(&transmission_id).is_none() {
             return false;
         }
-        self.new_queue.retain(|(id, _)| *id != transmission_id);
+        self.new_fragments.remove(&transmission_id);
+        self.new_order.retain(|id| *id != transmission_id);
         self.retry_queue.retain(|(id, _)| *id != transmission_id);
         true
     }
@@ -563,13 +596,15 @@ impl Sender {
     }
 
     pub fn queue_depth(&self) -> usize {
-        self.new_queue.len() + self.retry_queue.len()
+        let new_cells: usize = self.new_fragments.values().map(VecDeque::len).sum();
+        new_cells + self.retry_queue.len()
     }
 
     pub fn abort_all(&mut self) -> usize {
         let count = self.pending.len();
         self.pending.clear();
-        self.new_queue.clear();
+        self.new_fragments.clear();
+        self.new_order.clear();
         self.retry_queue.clear();
         count
     }
@@ -973,6 +1008,47 @@ mod tests {
         assert!(sender.abort(id));
         assert!(!sender.abort(id), "a second abandon is visible");
         assert_eq!(sender.pending_count(), 0);
+        assert_eq!(sender.queue_depth(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn a_small_control_message_is_not_stuck_behind_a_large_one() -> Result<(), TransportError> {
+        // Section 12: new fragments are chosen by round-robin across live
+        // transmissions. With one flat queue a COMMIT enqueued behind a
+        // full-size candidate waited out all 17 of its fragments, long enough
+        // on a fixed 12.5 ms slot to threaten the route deadline.
+        let large = [1_u8; 16];
+        let control = [2_u8; 16];
+        let mut sender = Sender::new();
+        // The largest logical message is 17 fragments, the fragment ceiling.
+        let widest = vec![9_u8; LIMIT_MAX_LOGICAL_MESSAGE_BYTES];
+        assert_eq!(
+            widest.len().div_ceil(BYTES_CELL_PAYLOAD),
+            LIMIT_MAX_FRAGMENTS
+        );
+        sender.enqueue(SUITE_R1, large, &widest)?;
+        sender.enqueue(SUITE_R1, control, b"commit")?;
+
+        let mut emitted = Vec::new();
+        while let Some(Frame::Data {
+            transmission_id, ..
+        }) = sender.next_new(0)
+        {
+            emitted.push(transmission_id);
+        }
+        assert_eq!(emitted.len(), LIMIT_MAX_FRAGMENTS + 1);
+        let position = emitted
+            .iter()
+            .position(|id| *id == control)
+            .ok_or(TransportError::Malformed)?;
+        assert_eq!(position, 1, "the control message takes the second slot");
+
+        // The large message still gets every one of its fragments.
+        assert_eq!(
+            emitted.iter().filter(|id| **id == large).count(),
+            LIMIT_MAX_FRAGMENTS
+        );
         assert_eq!(sender.queue_depth(), 0);
         Ok(())
     }
