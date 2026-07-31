@@ -101,6 +101,33 @@ jobs:
           name: p1-network-results
           path: build/p1-*
 
+  # The P1 gate requires decoder fuzzing to complete without crash or
+  # unbounded allocation. The conformance crate's deterministic mutation smoke
+  # test is not fuzzing; this job runs the real cargo-fuzz targets under a
+  # fixed budget. Nightly is required because cargo-fuzz builds with
+  # sanitizers, and the fuzz crate's dependencies exceed the 1.82 build floor.
+  fuzz-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install native crypto dependency
+        run: sudo apt-get update && sudo apt-get install -y libsodium-dev
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Fuzz the M2 decoder
+        working-directory: implementation/rust
+        run: cargo fuzz run m2 -- -max_total_time=120 -max_len=2048 -rss_limit_mb=2048
+      - name: Fuzz the W2 decoder
+        working-directory: implementation/rust
+        run: cargo fuzz run w2 -- -max_total_time=120 -max_len=2048 -rss_limit_mb=2048
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-artifacts
+          path: implementation/rust/fuzz/artifacts
+
   format:
     runs-on: ubuntu-latest
     steps:
