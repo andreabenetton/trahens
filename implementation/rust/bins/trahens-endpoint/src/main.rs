@@ -7,9 +7,12 @@ use node_runtime::p1::{
 };
 use node_runtime::{
     event_channel, parse_hex, spawn_link, structured_event, unix_time_ms, write_link_metrics,
-    CliArgs, LinkConfig, LinkEvent, LinkMetrics,
+    CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
 };
-use protocol_registry::{ERROR_INTERNAL, LIMIT_ROUTE_TTL_MS, SUITE_R1};
+use protocol_registry::{
+    ERROR_AUTHENTICATION_FAILED, ERROR_INTERNAL, ERROR_STATE_VIOLATION, LIMIT_ROUTE_TTL_MS,
+    SUITE_R1,
+};
 use state_machine::{Event, RouteTable};
 use std::error::Error;
 use std::sync::mpsc::RecvTimeoutError;
@@ -118,6 +121,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let setup_started = Instant::now();
     let absolute_deadline = unix_time_ms().saturating_add(timeout_ms);
     let mut state = RouteTable::default();
+    let mut drops = RemoteInputDrops::new();
     state.begin(
         branch_token,
         peer_id,
@@ -165,15 +169,24 @@ fn run() -> Result<(), Box<dyn Error>> {
                     candidate_blob,
                     ..
                 }) if candidate_token == branch_token && active.is_none() => {
-                    let opened = open_candidate_chain(
+                    // The candidate chain is remote input: an unauthentic or
+                    // malformed blob is dropped and the endpoint keeps
+                    // waiting for a valid candidate until its deadline.
+                    let Ok(opened) = open_candidate_chain(
                         &root_secret.0,
                         &candidate_blob,
                         layer_count,
                         &expected_gateway_public,
                         &discovery_nonce,
                         unix_time_ms(),
-                    )?;
-                    state.apply(branch_token, Event::CandidateAccepted)?;
+                    ) else {
+                        drops.record("endpoint", ERROR_AUTHENTICATION_FAILED, "candidate_chain");
+                        continue;
+                    };
+                    if state.apply(branch_token, Event::CandidateAccepted).is_err() {
+                        drops.record("endpoint", ERROR_STATE_VIOLATION, "candidate_transition");
+                        continue;
+                    }
                     let route = ActiveRoute {
                         local_label: branch_token,
                         generation,
@@ -206,12 +219,17 @@ fn run() -> Result<(), Box<dyn Error>> {
                     {
                         continue;
                     }
-                    let payload = open_control(
+                    // Sealed control bodies are remote input: authentication
+                    // failure drops the message, never the process.
+                    let Ok(payload) = open_control(
                         &route.route_secret.0,
                         control_message.message_type,
                         route.generation,
                         &control_message.protected_body,
-                    )?;
+                    ) else {
+                        drops.record("endpoint", ERROR_AUTHENTICATION_FAILED, "control_body");
+                        continue;
+                    };
                     match (control_message.message_type, payload) {
                         (MessageType::Ready, P1Payload::Ready { proof }) => {
                             let expected = ready_proof(
@@ -219,8 +237,18 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 &route.challenge,
                                 &route.pseudonym,
                             )?;
-                            verify_proof(&expected, &proof)?;
-                            state.apply(branch_token, Event::ReadyAccepted)?;
+                            if verify_proof(&expected, &proof).is_err() {
+                                drops.record(
+                                    "endpoint",
+                                    ERROR_AUTHENTICATION_FAILED,
+                                    "ready_proof",
+                                );
+                                continue;
+                            }
+                            if state.apply(branch_token, Event::ReadyAccepted).is_err() {
+                                drops.record("endpoint", ERROR_STATE_VIOLATION, "ready_transition");
+                                continue;
+                            }
                             setup_latency_ms = setup_started
                                 .elapsed()
                                 .as_millis()
@@ -310,6 +338,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         "endpoint",
         state.live_routes(),
         cleanup_ms,
+        &drops,
         &metrics,
     )?;
 

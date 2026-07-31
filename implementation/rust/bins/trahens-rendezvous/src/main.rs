@@ -7,11 +7,11 @@ use node_runtime::p1::{
 };
 use node_runtime::{
     event_channel, parse_hex, spawn_link, structured_event, unix_time_ms, write_link_metrics,
-    CliArgs, LinkConfig, LinkEvent, LinkMetrics,
+    CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
 };
 use protocol_registry::{
-    ERROR_CAPABILITY_INVALID, ERROR_STATE_VIOLATION, LIMIT_CAPABILITY_TTL_MS,
-    LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE, LIMIT_ROUTE_TTL_MS, SUITE_R1,
+    ERROR_AUTHENTICATION_FAILED, ERROR_CAPABILITY_INVALID, ERROR_STATE_VIOLATION,
+    LIMIT_CAPABILITY_TTL_MS, LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE, LIMIT_ROUTE_TTL_MS, SUITE_R1,
 };
 use rendezvous_r1::Registry;
 use state_machine::{Event, Phase, RouteTable};
@@ -130,6 +130,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     let mut states = RouteTable::default();
     let mut routes: HashMap<[u8; 16], GatewayRoute> = HashMap::new();
+    let mut drops = RemoteInputDrops::new();
     let deadline = unix_time_ms().saturating_add(timeout_ms);
     let mut observed_close = false;
     let mut cleanup_started: Option<Instant> = None;
@@ -220,21 +221,14 @@ fn run() -> Result<(), Box<dyn Error>> {
                         if control_message.generation != route.generation {
                             continue;
                         }
-                        let payload = match open_control(
+                        let Ok(payload) = open_control(
                             &route.route_secret.0,
                             control_message.message_type,
                             route.generation,
                             &control_message.protected_body,
-                        ) {
-                            Ok(value) => value,
-                            Err(_) => {
-                                structured_event(
-                                    "rendezvous",
-                                    "security_event",
-                                    &[("code", "e2e_authentication_failed".to_owned())],
-                                );
-                                continue;
-                            }
+                        ) else {
+                            drops.record("rendezvous", ERROR_AUTHENTICATION_FAILED, "control_body");
+                            continue;
                         };
                         match (control_message.message_type, payload) {
                             (MessageType::Commit, P1Payload::Commit { proof }) => {
@@ -243,8 +237,24 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     &route.challenge,
                                     &route.pseudonym,
                                 )?;
-                                verify_proof(&expected, &proof)?;
-                                states.apply(route.label, Event::CommitAccepted)?;
+                                // The proof is remote input: a mismatch or a
+                                // duplicate COMMIT is dropped, never fatal.
+                                if verify_proof(&expected, &proof).is_err() {
+                                    drops.record(
+                                        "rendezvous",
+                                        ERROR_AUTHENTICATION_FAILED,
+                                        "commit_proof",
+                                    );
+                                    continue;
+                                }
+                                if states.apply(route.label, Event::CommitAccepted).is_err() {
+                                    drops.record(
+                                        "rendezvous",
+                                        ERROR_STATE_VIOLATION,
+                                        "commit_transition",
+                                    );
+                                    continue;
+                                }
                                 let ready = ready_proof(
                                     &route.route_secret.0,
                                     &route.challenge,
@@ -256,7 +266,14 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     MessageType::Ready,
                                     &P1Payload::Ready { proof: ready },
                                 )?;
-                                states.apply(route.label, Event::ReadyAccepted)?;
+                                if states.apply(route.label, Event::ReadyAccepted).is_err() {
+                                    drops.record(
+                                        "rendezvous",
+                                        ERROR_STATE_VIOLATION,
+                                        "ready_transition",
+                                    );
+                                    continue;
+                                }
                             }
                             (
                                 MessageType::RendezvousOpen,
@@ -383,6 +400,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         "rendezvous",
         states.live_routes(),
         cleanup_ms,
+        &drops,
         &metrics,
     )?;
     structured_event(

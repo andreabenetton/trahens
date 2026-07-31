@@ -434,6 +434,54 @@ pub fn hex(value: &[u8]) -> String {
     output
 }
 
+/// Counters for remote-supplied input that was dropped instead of processed.
+///
+/// Core v1.5 section 8 requires malformed, unauthenticated, or over-limit
+/// remote input to be rejected without terminating the process and without
+/// distinguishable failure behavior. Every drop is counted under its stable
+/// registry error identifier and logged as one uniform structured event.
+#[derive(Debug, Default)]
+pub struct RemoteInputDrops {
+    counts: std::collections::BTreeMap<u16, u64>,
+}
+
+impl RemoteInputDrops {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record one dropped remote input under a registry `ERROR_*` identifier.
+    pub fn record(&mut self, node: &str, error_id: u16, detail: &str) {
+        *self.counts.entry(error_id).or_insert(0) += 1;
+        structured_event(
+            node,
+            "remote_input_dropped",
+            &[
+                ("error_id", error_id.to_string()),
+                ("detail", detail.to_owned()),
+            ],
+        );
+    }
+
+    #[must_use]
+    pub fn total(&self) -> u64 {
+        self.counts.values().sum()
+    }
+
+    /// JSON object fragment keyed by error id, e.g. `{"1":2,"9":1}`.
+    #[must_use]
+    pub fn to_json(&self) -> String {
+        let body = self
+            .counts
+            .iter()
+            .map(|(id, count)| format!("\"{id}\":{count}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("{{{body}}}")
+    }
+}
+
 pub fn structured_event(node: &str, event: &str, fields: &[(&str, String)]) {
     let mut line = format!("{{\"node\":\"{node}\",\"event\":\"{event}\"");
     for (key, value) in fields {
@@ -508,12 +556,15 @@ pub fn write_link_metrics(
     node: &str,
     live_routes: usize,
     cleanup_ms: u64,
+    drops: &RemoteInputDrops,
     links: &[(u32, LinkMetrics)],
 ) -> Result<(), RuntimeError> {
-    let mut output =
-        format!(
-        "{{\n  \"node\": \"{}\",\n  \"live_routes\": {},\n  \"cleanup_ms\": {},\n  \"links\": [\n",
-        node.replace('"', "'"), live_routes, cleanup_ms
+    let mut output = format!(
+        "{{\n  \"node\": \"{}\",\n  \"live_routes\": {},\n  \"cleanup_ms\": {},\n  \"remote_input_drops\": {},\n  \"links\": [\n",
+        node.replace('"', "'"),
+        live_routes,
+        cleanup_ms,
+        drops.to_json()
     );
     for (index, (peer, metrics)) in links.iter().enumerate() {
         if index != 0 {
@@ -538,4 +589,22 @@ pub fn write_link_metrics(
     }
     output.push_str("\n  ]\n}\n");
     std::fs::write(path, output).map_err(RuntimeError::Io)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use protocol_registry::{ERROR_AUTHENTICATION_FAILED, ERROR_MALFORMED};
+
+    #[test]
+    fn remote_input_drops_count_by_error_id() {
+        let mut drops = RemoteInputDrops::new();
+        assert_eq!(drops.total(), 0);
+        assert_eq!(drops.to_json(), "{}");
+        drops.record("test", ERROR_MALFORMED, "a");
+        drops.record("test", ERROR_MALFORMED, "b");
+        drops.record("test", ERROR_AUTHENTICATION_FAILED, "c");
+        assert_eq!(drops.total(), 3);
+        assert_eq!(drops.to_json(), "{\"1\":2,\"5\":1}");
+    }
 }

@@ -5,9 +5,12 @@ use codec_m2::{Candidate, Control, Discover, Envelope, Message, MessageType};
 use node_runtime::p1::wrap_candidate;
 use node_runtime::{
     event_channel, parse_hex, spawn_link, structured_event, unix_time_ms, write_link_metrics,
-    CliArgs, LinkConfig, LinkEvent, LinkMetrics,
+    CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
 };
-use protocol_registry::{LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_ROUTE_TTL_MS, SUITE_R1};
+use protocol_registry::{
+    ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_ROUTE_TTL_MS,
+    SUITE_R1,
+};
 use state_machine::{Event, Phase, RouteTable};
 use std::collections::HashMap;
 use std::error::Error;
@@ -109,6 +112,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut states = RouteTable::default();
     let mut routes: HashMap<[u8; 16], RelayRoute> = HashMap::new();
     let mut reverse: HashMap<[u8; 16], [u8; 16]> = HashMap::new();
+    let mut drops = RemoteInputDrops::new();
     let deadline = unix_time_ms().saturating_add(timeout_ms);
     let mut cleanup_started: Option<Instant> = None;
     let mut observed_close = false;
@@ -152,13 +156,19 @@ fn run() -> Result<(), Box<dyn Error>> {
                         continue;
                     }
                     let factor = random_scalar()?;
-                    let child_public = blind_public(&discover.reply_public_key, &factor)?;
+                    // The reply public key is remote input: an invalid point
+                    // must drop the DISCOVER, not terminate the relay.
+                    let Ok(child_public) = blind_public(&discover.reply_public_key, &factor) else {
+                        drops.record("relay", ERROR_MALFORMED, "discover_reply_public_key");
+                        continue;
+                    };
                     let child_label = random_nonzero_16()?;
-                    let parent_discovery_nonce: [u8; 32] = discover
-                        .discovery_field
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| "invalid R1 discovery nonce")?;
+                    let Ok(parent_discovery_nonce) =
+                        <[u8; 32]>::try_from(discover.discovery_field.as_slice())
+                    else {
+                        drops.record("relay", ERROR_MALFORMED, "discover_nonce_length");
+                        continue;
+                    };
                     let child_discovery_nonce = loop {
                         let value = trahens_crypto::random_bytes::<32>()?;
                         if value != [0_u8; 32] {
@@ -167,7 +177,15 @@ fn run() -> Result<(), Box<dyn Error>> {
                     };
                     let depth = discover.options.saturating_add(1);
                     let expires_at_ms = unix_time_ms().saturating_add(LIMIT_ROUTE_TTL_MS as u64);
-                    states.begin(discover.branch_token, upstream_id, 0, expires_at_ms)?;
+                    // A peer exhausting the route table is admission
+                    // pressure, not a relay fault: drop this DISCOVER.
+                    if states
+                        .begin(discover.branch_token, upstream_id, 0, expires_at_ms)
+                        .is_err()
+                    {
+                        drops.record("relay", ERROR_RESOURCE_EXHAUSTED, "route_table_limit");
+                        continue;
+                    }
                     let route = RelayRoute {
                         parent_label: discover.branch_token,
                         child_label,
@@ -277,7 +295,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                         );
                         continue;
                     }
-                    let wrapped = wrap_candidate(
+                    // The candidate blob is remote input; a wrap failure
+                    // drops the candidate rather than terminating the relay.
+                    let Ok(wrapped) = wrap_candidate(
                         &route.incoming_reply_public,
                         route.depth,
                         route.blinding_factor,
@@ -286,7 +306,10 @@ fn run() -> Result<(), Box<dyn Error>> {
                         route.parent_discovery_nonce,
                         route.child_discovery_nonce,
                         candidate.candidate_blob,
-                    )?;
+                    ) else {
+                        drops.record("relay", ERROR_MALFORMED, "candidate_blob_wrap");
+                        continue;
+                    };
                     if states
                         .apply(parent_label, Event::CandidateAccepted)
                         .is_err()
@@ -408,6 +431,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         "relay",
         states.live_routes(),
         cleanup_ms,
+        &drops,
         &metrics,
     )?;
     structured_event(
