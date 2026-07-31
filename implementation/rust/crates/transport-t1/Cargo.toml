@@ -10,3 +10,6 @@ trahens-crypto = { path = "../crypto" }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+test-vectors = { path = "../test-vectors" }

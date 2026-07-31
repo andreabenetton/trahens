@@ -765,6 +765,96 @@ mod tests {
         Ok(())
     }
 
+    // The published T1 vectors pin the 32-byte frame header, which is fully
+    // determined by the protocol. They also record body and record digests,
+    // but those cover the random privacy padding, which the Python generator
+    // draws from a seeded Mersenne Twister; reproducing that stream in Rust
+    // would test Python's PRNG rather than any protocol property, so the
+    // digests are deliberately not asserted here.
+    fn header_of(frame: &Frame) -> Result<[u8; 32], TransportError> {
+        let encoded = encode_frame(frame)?;
+        <[u8; 32]>::try_from(&encoded[..32]).map_err(|_| TransportError::Malformed)
+    }
+
+    #[test]
+    fn published_t1_vectors_pin_the_frame_headers() -> Result<(), TransportError> {
+        let vectors = test_vectors::t1().map_err(|_| TransportError::Malformed)?;
+        let suite = test_vectors::hex_array_at::<2>(&vectors, "crypto_suite")
+            .map_err(|_| TransportError::Malformed)?;
+        assert_eq!(suite, SUITE_R1);
+        assert_eq!(
+            test_vectors::u64_at(&vectors, "record_bytes")
+                .map_err(|_| TransportError::Malformed)?,
+            BYTES_CELL_RECORD as u64
+        );
+
+        let transmission_id =
+            test_vectors::hex_array_at::<16>(&vectors, "data_first_emission/transmission_id")
+                .map_err(|_| TransportError::Malformed)?;
+        let fragment_count = test_vectors::u64_at(&vectors, "logical_message/fragment_count")
+            .map_err(|_| TransportError::Malformed)?;
+        let lengths = test_vectors::u64_list_at(&vectors, "logical_message/fragment_lengths")
+            .map_err(|_| TransportError::Malformed)?;
+        let total = test_vectors::u64_at(&vectors, "logical_message/length")
+            .map_err(|_| TransportError::Malformed)?;
+        assert_eq!(lengths.len(), fragment_count as usize);
+        assert_eq!(lengths.iter().sum::<u64>(), total);
+        assert_eq!(lengths[0] as usize, BYTES_CELL_PAYLOAD);
+
+        // The vector encodes the generator's frames[-1]: the final fragment.
+        let last = fragment_count as usize - 1;
+        let data = Frame::Data {
+            suite,
+            transmission_id,
+            fragment_index: last as u16,
+            fragment_count: fragment_count as u16,
+            total_length: total as u16,
+            fragment: vec![0_u8; lengths[last] as usize],
+        };
+        let expected = test_vectors::hex_array_at::<32>(
+            &vectors,
+            "data_first_emission/encrypted_header_plaintext",
+        )
+        .map_err(|_| TransportError::Malformed)?;
+        assert_eq!(header_of(&data)?, expected, "DATA header");
+
+        // Selective ACK over both fragments.
+        let bitmap = test_vectors::u64_at(&vectors, "selective_ack/bitmap")
+            .map_err(|_| TransportError::Malformed)?;
+        let acknowledged =
+            test_vectors::u64_list_at(&vectors, "selective_ack/acknowledged_indexes")
+                .map_err(|_| TransportError::Malformed)?;
+        let rebuilt = acknowledged
+            .iter()
+            .fold(0_u32, |mask, index| mask | (1 << index));
+        assert_eq!(u64::from(rebuilt), bitmap, "bitmap matches indexes");
+        let ack = Frame::Ack {
+            suite,
+            transmission_id,
+            fragment_count: fragment_count as u16,
+            ack_delay_ms: test_vectors::u64_at(&vectors, "selective_ack/ack_delay_ms")
+                .map_err(|_| TransportError::Malformed)? as u16,
+            bitmap: rebuilt,
+        };
+        let expected =
+            test_vectors::hex_array_at::<32>(&vectors, "selective_ack/encrypted_header_plaintext")
+                .map_err(|_| TransportError::Malformed)?;
+        assert_eq!(header_of(&ack)?, expected, "ACK header");
+
+        // Chaff carries its own transmission identifier and no metadata.
+        let chaff_id = test_vectors::hex_array_at::<16>(&vectors, "chaff/transmission_id")
+            .map_err(|_| TransportError::Malformed)?;
+        let chaff = Frame::Chaff {
+            suite,
+            transmission_id: chaff_id,
+        };
+        let expected =
+            test_vectors::hex_array_at::<32>(&vectors, "chaff/encrypted_header_plaintext")
+                .map_err(|_| TransportError::Malformed)?;
+        assert_eq!(header_of(&chaff)?, expected, "CHAFF header");
+        Ok(())
+    }
+
     #[test]
     fn frame_has_fixed_size_and_randomized_padding() -> Result<(), TransportError> {
         let frame = Frame::Data {

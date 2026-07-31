@@ -3,6 +3,7 @@ resolver = "2"
 exclude = ["fuzz"]
 members = [
   "crates/protocol-registry",
+  "crates/test-vectors",
   "crates/crypto",
   "crates/codec-m2",
   "crates/wire-w2",
