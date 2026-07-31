@@ -11,8 +11,8 @@ use node_runtime::{
     RemoteInputDrops,
 };
 use protocol_registry::{
-    ERROR_AUTHENTICATION_FAILED, ERROR_INTERNAL, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
-    LIMIT_CAPABILITY_TTL_MS, LIMIT_ROUTE_TTL_MS, SUITE_R1,
+    ERROR_AUTHENTICATION_FAILED, ERROR_CAPABILITY_INVALID, ERROR_INTERNAL, ERROR_STATE_VIOLATION,
+    ERROR_TIMEOUT, LIMIT_CAPABILITY_TTL_MS, LIMIT_ROUTE_TTL_MS, SUITE_R1,
 };
 use state_machine::{Event, RouteTable};
 use std::error::Error;
@@ -265,6 +265,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut setup_latency_ms = 0_u64;
     let mut cleanup_started = None;
     let mut transport_failed = false;
+    let mut redemption_refused = false;
     let redeem_twice = args.flag("redeem-twice");
     let mut redemptions = 0_u32;
 
@@ -590,10 +591,24 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 break;
                             }
                             if status != 0 {
-                                return Err(format!(
-                                    "rendezvous redemption failed with status {status}"
-                                )
-                                .into());
+                                // The gateway's answer is remote input. A
+                                // refusal ends this route, so it is recorded
+                                // and closed through the normal path rather
+                                // than raised from inside the event loop.
+                                drops.record(
+                                    "endpoint",
+                                    ERROR_CAPABILITY_INVALID,
+                                    "rendezvous_refused",
+                                );
+                                send_control(
+                                    &link,
+                                    route,
+                                    MessageType::Close,
+                                    &P1Payload::Close { reason: 0 },
+                                )?;
+                                cleanup_started = Some(Instant::now());
+                                redemption_refused = true;
+                                break;
                             }
                             state.apply(
                                 route.state_label,
@@ -620,7 +635,12 @@ fn run() -> Result<(), Box<dyn Error>> {
                             },
                         ) => {
                             if payload != message {
-                                return Err("echo payload mismatch".into());
+                                // The echoed body is remote input: a mismatch
+                                // is this peer misbehaving, so it is counted
+                                // and the route closed, not raised as a local
+                                // fault.
+                                drops.record("endpoint", ERROR_STATE_VIOLATION, "echo_mismatch");
+                                continue;
                             }
                             state.apply(route.state_label, Event::DataAccepted, clock.now_ms())?;
                             send_control(
@@ -712,6 +732,11 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
     if transport_failed {
         return Err(format!("T1 retry budget exhausted; status={ERROR_TIMEOUT}").into());
+    }
+    if redemption_refused {
+        return Err(
+            format!("rendezvous redemption refused; status={ERROR_CAPABILITY_INVALID}").into(),
+        );
     }
     if !success {
         return Err(format!("endpoint timed out; status={ERROR_INTERNAL}").into());

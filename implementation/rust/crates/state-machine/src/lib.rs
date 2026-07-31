@@ -654,6 +654,42 @@ mod tests {
     }
 
     #[test]
+    fn a_full_route_table_refuses_rather_than_failing() {
+        // A remote peer can fill a gateway's route table with canonical,
+        // authenticated discoveries. The next one has to come back as a
+        // resource refusal the caller counts and drops, never as an error the
+        // caller propagates: letting PeerLimit escape run() meant a flood of
+        // perfectly valid discoveries terminated the process.
+        let mut table = RouteTable::default();
+        let mut label = [0_u8; 16];
+        let mut admitted = 0;
+        let mut refused = 0;
+        for index in 0..LIMIT_MAX_BRANCHES_PER_PEER * 2 {
+            label[0] = (index % 251) as u8;
+            label[1] = (index / 251) as u8;
+            match table.begin(label, 1, 0, 10_000) {
+                Ok(()) => admitted += 1,
+                Err(StateError::PeerLimit | StateError::GlobalLimit) => refused += 1,
+                Err(other) => panic!("unexpected admission error: {other}"),
+            }
+        }
+        assert_eq!(admitted, LIMIT_MAX_BRANCHES_PER_PEER);
+        assert_eq!(refused, LIMIT_MAX_BRANCHES_PER_PEER);
+
+        // The table is still usable: another peer is unaffected, and space
+        // freed by expiry is handed back.
+        label[0] = 250;
+        label[1] = 250;
+        assert!(table.begin(label, 2, 0, 10_000).is_ok(), "another peer");
+        assert!(table.expire(20_000) > 0);
+        label[0] = 249;
+        assert!(
+            table.begin(label, 1, 0, 30_000).is_ok(),
+            "space is reusable"
+        );
+    }
+
+    #[test]
     fn invalid_transition_does_not_change_state() -> Result<(), StateError> {
         let label = [2_u8; 16];
         let mut table = RouteTable::default();

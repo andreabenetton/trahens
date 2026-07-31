@@ -370,7 +370,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             break;
                         };
                         reverse.insert(child_label, discover.branch_token);
-                        downstream[link_index].1.send(Envelope {
+                        let forwarded = downstream[link_index].1.send(Envelope {
                             suite_id: SUITE_R1,
                             message: Message::Discover(Discover {
                                 branch_token: child_label,
@@ -381,7 +381,15 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 reply_public_key: child_public,
                                 discovery_field: child_discovery_nonce.to_vec(),
                             }),
-                        })?;
+                        });
+                        if forwarded.is_err() {
+                            drops.record(
+                                "relay",
+                                ERROR_RESOURCE_EXHAUSTED,
+                                "downstream_queue_full",
+                            );
+                            break;
+                        }
                         // Reserve the first labels this child may answer on.
                         // The child derives the same values from the nonce it
                         // just received, so an offer arriving under one of them
@@ -490,9 +498,17 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 entry.committed_child = Some(chosen);
                                 entry.committed_selector = Some(control.local_label);
                             }
-                            downstream[child_link]
+                            if downstream[child_link]
                                 .1
-                                .send(forward_control(control, offer.child_selector))?;
+                                .send(forward_control(control, offer.child_selector))
+                                .is_err()
+                            {
+                                drops.record(
+                                    "relay",
+                                    ERROR_RESOURCE_EXHAUSTED,
+                                    "downstream_queue_full",
+                                );
+                            }
                             // The initiator has chosen, so every other subtree
                             // this branch opened is now off route and must be
                             // released rather than left to its own expiry.
@@ -506,7 +522,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 .collect();
                             for loser in losers {
                                 if let Some(child) = route.children.get(loser.child_index) {
-                                    downstream[child.link_index].1.send(Envelope {
+                                    let _ = downstream[child.link_index].1.send(Envelope {
                                         suite_id: SUITE_R1,
                                         message: Message::Control(Control {
                                             message_type: MessageType::Cancel,
@@ -515,7 +531,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                             expiry_class: 1,
                                             protected_body: vec![0_u8],
                                         }),
-                                    })?;
+                                    });
                                 }
                                 tentatives.retain(|_, offer| {
                                     offer.parent_label != parent_label
@@ -539,9 +555,17 @@ fn run() -> Result<(), Box<dyn Error>> {
                                         .get(offer.child_index)
                                         .map(|child| (child, offer.child_selector))
                                 }) {
-                                    downstream[child.link_index]
+                                    if downstream[child.link_index]
                                         .1
-                                        .send(forward_control(control, selector))?;
+                                        .send(forward_control(control, selector))
+                                        .is_err()
+                                    {
+                                        drops.record(
+                                            "relay",
+                                            ERROR_RESOURCE_EXHAUSTED,
+                                            "downstream_queue_full",
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -560,9 +584,17 @@ fn run() -> Result<(), Box<dyn Error>> {
                                         .get(offer.child_index)
                                         .map(|child| (child, offer.child_selector))
                                 }) {
-                                    downstream[child.link_index]
+                                    if downstream[child.link_index]
                                         .1
-                                        .send(forward_control(control, selector))?;
+                                        .send(forward_control(control, selector))
+                                        .is_err()
+                                    {
+                                        drops.record(
+                                            "relay",
+                                            ERROR_RESOURCE_EXHAUSTED,
+                                            "downstream_queue_full",
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -581,9 +613,17 @@ fn run() -> Result<(), Box<dyn Error>> {
                             };
                             for (selector, index) in targets {
                                 if let Some(child) = route.children.get(index) {
-                                    downstream[child.link_index]
+                                    if downstream[child.link_index]
                                         .1
-                                        .send(forward_control(control.clone(), selector))?;
+                                        .send(forward_control(control.clone(), selector))
+                                        .is_err()
+                                    {
+                                        drops.record(
+                                            "relay",
+                                            ERROR_RESOURCE_EXHAUSTED,
+                                            "downstream_queue_full",
+                                        );
+                                    }
                                 }
                             }
                             cleanup_started = Some(Instant::now());
@@ -717,15 +757,20 @@ fn run() -> Result<(), Box<dyn Error>> {
                             );
                         }
                     }
-                    upstream.send(Envelope {
-                        suite_id: SUITE_R1,
-                        message: Message::Candidate(Candidate {
-                            candidate_token: tentative,
-                            expiry_class: candidate.expiry_class,
-                            layer_count: candidate.layer_count.saturating_add(1),
-                            candidate_blob: wrapped,
-                        }),
-                    })?;
+                    if upstream
+                        .send(Envelope {
+                            suite_id: SUITE_R1,
+                            message: Message::Candidate(Candidate {
+                                candidate_token: tentative,
+                                expiry_class: candidate.expiry_class,
+                                layer_count: candidate.layer_count.saturating_add(1),
+                                candidate_blob: wrapped,
+                            }),
+                        })
+                        .is_err()
+                    {
+                        drops.record("relay", ERROR_RESOURCE_EXHAUSTED, "upstream_queue_full");
+                    }
                 }
                 Message::Control(control) => {
                     let Some(parent_label) = reverse.get(&control.local_label).copied() else {
@@ -750,7 +795,16 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 drops.record("relay", ERROR_STATE_VIOLATION, "ready_transition");
                                 continue;
                             }
-                            upstream.send(forward_control(control, upstream_label))?;
+                            if upstream
+                                .send(forward_control(control, upstream_label))
+                                .is_err()
+                            {
+                                drops.record(
+                                    "relay",
+                                    ERROR_RESOURCE_EXHAUSTED,
+                                    "upstream_queue_full",
+                                );
+                            }
                         }
                         MessageType::RendezvousResult => {
                             if states
@@ -764,18 +818,46 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 );
                                 continue;
                             }
-                            upstream.send(forward_control(control, upstream_label))?;
+                            if upstream
+                                .send(forward_control(control, upstream_label))
+                                .is_err()
+                            {
+                                drops.record(
+                                    "relay",
+                                    ERROR_RESOURCE_EXHAUSTED,
+                                    "upstream_queue_full",
+                                );
+                            }
                         }
                         MessageType::Data => {
                             if states.get(&parent_label).map(|state| state.phase)
                                 == Some(Phase::Open)
                             {
-                                states.apply(parent_label, Event::DataAccepted, clock.now_ms())?;
-                                upstream.send(forward_control(control, upstream_label))?;
+                                let _ =
+                                    states.apply(parent_label, Event::DataAccepted, clock.now_ms());
+                                if upstream
+                                    .send(forward_control(control, upstream_label))
+                                    .is_err()
+                                {
+                                    drops.record(
+                                        "relay",
+                                        ERROR_RESOURCE_EXHAUSTED,
+                                        "upstream_queue_full",
+                                    );
+                                }
                             }
                         }
                         MessageType::Close | MessageType::Cancel | MessageType::Abort => {
-                            upstream.send(forward_control(control.clone(), upstream_label))?;
+                            if upstream
+                                .send(forward_control(control.clone(), upstream_label))
+                                .is_err()
+                            {
+                                drops.record(
+                                    "relay",
+                                    ERROR_RESOURCE_EXHAUSTED,
+                                    "upstream_queue_full",
+                                );
+                            }
                             cleanup_started = Some(Instant::now());
                             observed_terminal = true;
                             cleanup_route(

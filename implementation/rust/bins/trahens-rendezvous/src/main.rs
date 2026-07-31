@@ -12,8 +12,9 @@ use node_runtime::{
     RemoteInputDrops,
 };
 use protocol_registry::{
-    ERROR_AUTHENTICATION_FAILED, ERROR_CAPABILITY_INVALID, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
-    LIMIT_CAPABILITY_TTL_MS, LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE, SUITE_R1,
+    ERROR_AUTHENTICATION_FAILED, ERROR_CAPABILITY_INVALID, ERROR_INTERNAL, ERROR_MALFORMED,
+    ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION, ERROR_TIMEOUT, LIMIT_CAPABILITY_TTL_MS,
+    LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE, SUITE_R1,
 };
 use rendezvous_r1::Registry;
 use state_machine::{Event, Phase, RouteTable};
@@ -206,13 +207,19 @@ fn run() -> Result<(), Box<dyn Error>> {
             } if received_peer == peer_id => match envelope.message {
                 Message::Discover(discover) => {
                     if routes.contains_key(&discover.branch_token) {
+                        drops.record("rendezvous", ERROR_STATE_VIOLATION, "discover_duplicate");
                         continue;
                     }
-                    let discovery_nonce: [u8; 32] = discover
-                        .discovery_field
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| "invalid R1 discovery nonce")?;
+                    // A malformed discovery field is remote input: it costs
+                    // this DISCOVER, never the gateway.
+                    let Ok(discovery_nonce) =
+                        <[u8; 32]>::try_from(discover.discovery_field.as_slice())
+                    else {
+                        drops.record("rendezvous", ERROR_MALFORMED, "discover_nonce_length");
+                        continue;
+                    };
+                    // Randomness is a local subsystem: if it fails the process
+                    // cannot serve anyone and stopping is correct.
                     let route_secret = random_bytes::<32>()?;
                     let challenge = random_bytes::<32>()?;
                     let pseudonym = gateway_pseudonym;
@@ -227,7 +234,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                     let state_expires_at_ms = clock
                         .now_ms()
                         .saturating_add(Phase::Discovering.lifetime_ms());
-                    let blob = seal_gateway_offer(
+                    // The reply key is remote input, so an invalid point is
+                    // this peer's problem rather than the gateway's.
+                    let Ok(blob) = seal_gateway_offer(
                         &discover.reply_public_key,
                         gateway_id,
                         expires_at_ms,
@@ -237,19 +246,46 @@ fn run() -> Result<(), Box<dyn Error>> {
                         discovery_nonce,
                         signing_public,
                         &signing_secret,
-                    )?;
+                    ) else {
+                        drops.record("rendezvous", ERROR_MALFORMED, "discover_reply_public_key");
+                        continue;
+                    };
                     // The offer travels upstream under a label derived from
                     // the discovery nonce this gateway was given, so the
                     // adjacent relay can resolve it to the branch it belongs
                     // to while telling it apart from any sibling's offer.
-                    let selector = offer_label(&discovery_nonce, 0)?;
+                    let Ok(selector) = offer_label(&discovery_nonce, 0) else {
+                        drops.record("rendezvous", ERROR_INTERNAL, "offer_label_derivation");
+                        continue;
+                    };
+                    // A peer filling the route table is admission pressure, not
+                    // a gateway fault. Propagating PeerLimit or GlobalLimit out
+                    // of run() let a flood of perfectly valid discoveries
+                    // terminate the process.
+                    if states
+                        .begin(discover.branch_token, peer_id, 0, state_expires_at_ms)
+                        .is_err()
+                    {
+                        drops.record("rendezvous", ERROR_RESOURCE_EXHAUSTED, "route_table_limit");
+                        continue;
+                    }
+                    if states
+                        .apply(
+                            discover.branch_token,
+                            Event::CandidateAccepted,
+                            clock.now_ms(),
+                        )
+                        .is_err()
+                    {
+                        drops.record("rendezvous", ERROR_STATE_VIOLATION, "candidate_transition");
+                        let _ = states.apply(
+                            discover.branch_token,
+                            Event::CancelAccepted,
+                            clock.now_ms(),
+                        );
+                        continue;
+                    }
                     selectors.insert(selector, discover.branch_token);
-                    states.begin(discover.branch_token, peer_id, 0, state_expires_at_ms)?;
-                    states.apply(
-                        discover.branch_token,
-                        Event::CandidateAccepted,
-                        clock.now_ms(),
-                    )?;
                     routes.insert(
                         discover.branch_token,
                         GatewayRoute {
@@ -262,15 +298,27 @@ fn run() -> Result<(), Box<dyn Error>> {
                             failed_redemptions: 0,
                         },
                     );
-                    link.send(Envelope {
-                        suite_id: SUITE_R1,
-                        message: Message::Candidate(Candidate {
-                            candidate_token: selector,
-                            expiry_class: discover.expiry_class,
-                            layer_count: 1,
-                            candidate_blob: blob,
-                        }),
-                    })?;
+                    if link
+                        .send(Envelope {
+                            suite_id: SUITE_R1,
+                            message: Message::Candidate(Candidate {
+                                candidate_token: selector,
+                                expiry_class: discover.expiry_class,
+                                layer_count: 1,
+                                candidate_blob: blob,
+                            }),
+                        })
+                        .is_err()
+                    {
+                        // A full outbound queue is back pressure produced by
+                        // remote volume, so it drops this answer rather than
+                        // the gateway.
+                        drops.record(
+                            "rendezvous",
+                            ERROR_RESOURCE_EXHAUSTED,
+                            "outbound_queue_full",
+                        );
+                    }
                 }
                 Message::Control(control_message) => {
                     // Control arrives addressed to the offer label the gateway
@@ -481,7 +529,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     if let Some(event) = cleanup_event {
                         routes.remove(&route_label);
                         selectors.retain(|_, branch| *branch != route_label);
-                        states.apply(route_label, event, clock.now_ms())?;
+                        let _ = states.apply(route_label, event, clock.now_ms());
                     }
                 }
                 _ => {}
