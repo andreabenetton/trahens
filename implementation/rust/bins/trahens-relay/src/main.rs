@@ -836,6 +836,9 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     }
 
+    // One cleanup funnel for every exit, planned or not: release the forward
+    // and reverse maps for each branch, then reclaim anything left in the
+    // route table so no exit path can strand state.
     let remaining: Vec<[u8; 16]> = routes.keys().copied().collect();
     for label in remaining {
         cleanup_route(
@@ -849,6 +852,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             clock.now_ms(),
         );
     }
+    states.reclaim_all(Event::Timeout, clock.now_ms());
     let link_count = downstream.len() + 1;
     upstream.shutdown()?;
     for (_, link) in downstream {
@@ -1209,8 +1213,6 @@ mod tests {
         let mut routes: HashMap<[u8; 16], RelayRoute> = HashMap::new();
         let mut reverse: HashMap<[u8; 16], [u8; 16]> = HashMap::new();
         let mut tentatives: HashMap<[u8; 16], TentativeOffer> = HashMap::new();
-        let mut incoming: HashMap<[u8; 16], IncomingOffer> = HashMap::new();
-        // Label a child may answer on -> which branch and child it belongs to.
         let mut incoming: HashMap<[u8; 16], IncomingOffer> = HashMap::new();
         let mut states = RouteTable::default();
 

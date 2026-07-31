@@ -300,6 +300,24 @@ impl RouteTable {
         labels.len()
     }
 
+    /// Reclaim every live route, whatever phase it is in.
+    ///
+    /// Core v1.5 section 8 requires a node to release all state it holds on
+    /// the way out, on every exit path and not only the expected one. Giving
+    /// that one entry point means an unplanned exit — a transport failure or a
+    /// local deadline before anything was selected — reclaims exactly what an
+    /// orderly close does, and reports the same count.
+    pub fn reclaim_all(&mut self, event: Event, now_ms: u64) -> usize {
+        let labels: Vec<[u8; 16]> = self.routes.keys().copied().collect();
+        let count = labels.len();
+        for label in labels {
+            let _ = self.apply(label, event, now_ms);
+            // A phase that refuses the event still has to release its state.
+            let _ = self.remove(label);
+        }
+        count
+    }
+
     pub fn remove(&mut self, label: [u8; 16]) -> Result<(), StateError> {
         let route = self.routes.remove(&label).ok_or(StateError::Missing)?;
         if let Some(count) = self.peer_counts.get_mut(&route.peer) {
@@ -587,6 +605,51 @@ mod tests {
             Err(StateError::Missing),
             "a post-deadline control finds no state"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn reclaim_all_releases_every_phase_including_before_selection() -> Result<(), StateError> {
+        // The failure paths end before anything is selected, so a cleanup that
+        // only released the selected route stranded exactly the state those
+        // paths create. reclaim_all releases every phase, including ones that
+        // refuse the event it is given.
+        let mut table = RouteTable::default();
+        let mut label = [0_u8; 16];
+        for (index, phase) in [
+            Phase::Discovering,
+            Phase::Candidate,
+            Phase::PendingReady,
+            Phase::Ready,
+            Phase::Open,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            label[0] = index as u8;
+            table.begin(label, 1, 0, 10_000)?;
+            let mut events = vec![
+                Event::CandidateAccepted,
+                Event::CommitAccepted,
+                Event::ReadyAccepted,
+                Event::CapabilityAccepted,
+            ];
+            events.truncate(index);
+            for event in events {
+                table.apply(label, event, 0)?;
+            }
+            assert_eq!(table.get(&label).map(|route| route.phase), Some(phase));
+        }
+        assert_eq!(table.live_routes(), 5);
+
+        assert_eq!(table.reclaim_all(Event::Timeout, 1_000), 5);
+        assert_eq!(table.live_routes(), 0, "no phase survives the funnel");
+
+        // The per-peer counters come back with it, so a later run of the same
+        // table admits fresh branches.
+        label[0] = 200;
+        table.begin(label, 1, 0, 10_000)?;
+        assert_eq!(table.live_routes(), 1);
         Ok(())
     }
 

@@ -670,11 +670,12 @@ fn run() -> Result<(), Box<dyn Error>> {
     if success {
         drain_links(&[&link], &event_receiver);
     }
-    if state.live_routes() != 0 {
-        if let Some(label) = selected_branch {
-            let _ = state.apply(label, Event::Timeout, clock.now_ms());
-        }
-    }
+    // Every exit funnels through here: success, NO_CANDIDATE, transport
+    // failure, channel disconnection, a terminal authentication failure, and
+    // the absolute deadline. Releasing only the selected branch stranded every
+    // ring context whenever the run ended before anything was selected, which
+    // is exactly when the failure paths end.
+    let reclaimed = state.reclaim_all(Event::Timeout, clock.now_ms());
     drop(active.take());
     let cleanup_ms = cleanup_started
         .map(|started| started.elapsed().as_millis().try_into().unwrap_or(u64::MAX))
@@ -701,6 +702,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             ("branches_cancelled", cancelled_branches.to_string()),
             ("rings_opened", contexts.len().to_string()),
             ("selected", u8::from(selected_branch.is_some()).to_string()),
+            ("routes_reclaimed_at_exit", reclaimed.to_string()),
         ],
     );
     if no_candidate {

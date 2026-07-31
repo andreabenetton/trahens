@@ -519,12 +519,10 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let remaining: Vec<[u8; 16]> = routes.keys().copied().collect();
-    for label in remaining {
-        routes.remove(&label);
-        selectors.retain(|_, branch| *branch != label);
-        let _ = states.apply(label, Event::Timeout, clock.now_ms());
-    }
+    // One cleanup funnel for every exit, planned or not.
+    routes.clear();
+    selectors.clear();
+    states.reclaim_all(Event::Timeout, clock.now_ms());
     link.shutdown()?;
     let metrics = collect_stopped(&event_receiver, peer_id);
     let cleanup_ms = cleanup_started
