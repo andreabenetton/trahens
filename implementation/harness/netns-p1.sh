@@ -143,7 +143,13 @@ for ((i=0; i<NODES-1; i++)); do
         loss "${LOSS}%" delay "$DELAY" "$JITTER" duplicate "${DUPLICATE}%" reorder "${REORDER}%"
     fi
   done
-  ip netns exec "${NAMES[$i]}" tcpdump -i "$left" -U -w "$OUTPUT/link-${i}.pcap" udp \
+  # --immediate-mode as well as -U: -U flushes the output file per packet, but
+  # libpcap still holds packets in the kernel ring until its buffer fills or a
+  # 1s poll timeout elapses. A scenario that completes in well under a second
+  # is killed first, and tcpdump reports "0 packets captured" against a
+  # non-zero "received by filter" for a run that worked perfectly.
+  ip netns exec "${NAMES[$i]}" tcpdump -i "$left" -U --immediate-mode \
+    -w "$OUTPUT/link-${i}.pcap" udp \
     >/dev/null 2>"$OUTPUT/link-${i}.tcpdump" &
   PIDS+=("$!")
 done
