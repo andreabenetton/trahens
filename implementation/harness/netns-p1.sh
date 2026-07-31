@@ -81,6 +81,22 @@ for ((i=0; i<NODES-1; i++)); do
   PIDS+=("$!")
 done
 
+# tcpdump is asynchronous: it must have written its 24-byte pcap global header
+# before any node starts, or a fast exchange completes uncaptured and the
+# 1,052-byte record assertion sees an empty capture. Wait for readiness rather
+# than relying on a downstream delay to cover the race.
+capture_ready_deadline=$(( SECONDS + 10 ))
+for ((i=0; i<NODES-1; i++)); do
+  while [[ ! -s "$OUTPUT/link-${i}.pcap" ]] || \
+        (( $(stat -c %s "$OUTPUT/link-${i}.pcap") < 24 )); do
+    if (( SECONDS >= capture_ready_deadline )); then
+      echo "capture on link ${i} did not start within 10s" >&2
+      exit 2
+    fi
+    sleep 0.05
+  done
+done
+
 key_for() { printf '%064x' "$(( $1 + 1 ))"; }
 SIGNING_SEED=$(printf '11%.0s' {1..32})
 CAPABILITY=$(printf '22%.0s' {1..32})
