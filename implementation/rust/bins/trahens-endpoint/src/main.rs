@@ -192,7 +192,10 @@ fn run() -> Result<(), Box<dyn Error>> {
                         drops.record("endpoint", ERROR_AUTHENTICATION_FAILED, "candidate_chain");
                         continue;
                     };
-                    if state.apply(branch_token, Event::CandidateAccepted).is_err() {
+                    if state
+                        .apply(branch_token, Event::CandidateAccepted, unix_time_ms())
+                        .is_err()
+                    {
                         drops.record("endpoint", ERROR_STATE_VIOLATION, "candidate_transition");
                         continue;
                     }
@@ -211,7 +214,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         MessageType::Commit,
                         &P1Payload::Commit { proof },
                     )?;
-                    state.apply(branch_token, Event::CommitAccepted)?;
+                    state.apply(branch_token, Event::CommitAccepted, unix_time_ms())?;
                     active = Some(route);
                     structured_event(
                         "endpoint",
@@ -254,7 +257,10 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 );
                                 continue;
                             }
-                            if state.apply(branch_token, Event::ReadyAccepted).is_err() {
+                            if state
+                                .apply(branch_token, Event::ReadyAccepted, unix_time_ms())
+                                .is_err()
+                            {
                                 drops.record("endpoint", ERROR_STATE_VIOLATION, "ready_transition");
                                 continue;
                             }
@@ -318,7 +324,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     &P1Payload::Close { reason: 0 },
                                 )?;
                                 cleanup_started = Some(Instant::now());
-                                state.apply(branch_token, Event::CloseAccepted)?;
+                                state.apply(branch_token, Event::CloseAccepted, unix_time_ms())?;
                                 success = true;
                                 break;
                             }
@@ -328,7 +334,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 )
                                 .into());
                             }
-                            state.apply(branch_token, Event::CapabilityAccepted)?;
+                            state.apply(branch_token, Event::CapabilityAccepted, unix_time_ms())?;
                             send_control(
                                 &link,
                                 route,
@@ -351,7 +357,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             if payload != message {
                                 return Err("echo payload mismatch".into());
                             }
-                            state.apply(branch_token, Event::DataAccepted)?;
+                            state.apply(branch_token, Event::DataAccepted, unix_time_ms())?;
                             send_control(
                                 &link,
                                 route,
@@ -359,7 +365,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 &P1Payload::Close { reason: 0 },
                             )?;
                             cleanup_started = Some(Instant::now());
-                            state.apply(branch_token, Event::CloseAccepted)?;
+                            state.apply(branch_token, Event::CloseAccepted, unix_time_ms())?;
                             success = true;
                             break;
                         }
@@ -400,7 +406,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         drain_links(&[&link], &event_receiver);
     }
     if state.live_routes() != 0 {
-        let _ = state.apply(branch_token, Event::Timeout);
+        let _ = state.apply(branch_token, Event::Timeout, unix_time_ms());
     }
     drop(active.take());
     let cleanup_ms = cleanup_started

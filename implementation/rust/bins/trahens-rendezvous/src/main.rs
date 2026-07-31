@@ -11,7 +11,7 @@ use node_runtime::{
 };
 use protocol_registry::{
     ERROR_AUTHENTICATION_FAILED, ERROR_CAPABILITY_INVALID, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
-    LIMIT_CAPABILITY_TTL_MS, LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE, LIMIT_ROUTE_TTL_MS, SUITE_R1,
+    LIMIT_CAPABILITY_TTL_MS, LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE, SUITE_R1,
 };
 use rendezvous_r1::Registry;
 use state_machine::{Event, Phase, RouteTable};
@@ -28,7 +28,6 @@ struct GatewayRoute {
     // Wiped on drop for the same reason as the endpoint's copy.
     challenge: SecretBytes<32>,
     pseudonym: [u8; 16],
-    expires_at_ms: u64,
     failed_redemptions: usize,
 }
 
@@ -152,11 +151,16 @@ fn run() -> Result<(), Box<dyn Error>> {
                 registry.expire(now);
                 let expired: Vec<[u8; 16]> = routes
                     .iter()
-                    .filter_map(|(label, route)| (route.expires_at_ms <= now).then_some(*label))
+                    .filter_map(|(label, _)| {
+                        states
+                            .get(label)
+                            .is_none_or(|state| state.expires_at_ms <= now)
+                            .then_some(*label)
+                    })
                     .collect();
                 for label in expired {
                     routes.remove(&label);
-                    let _ = states.apply(label, Event::Timeout);
+                    let _ = states.apply(label, Event::Timeout, unix_time_ms());
                 }
                 continue;
             }
@@ -183,7 +187,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                     if route_secret == [0_u8; 32] || challenge == [0_u8; 32] {
                         return Err("gateway generated an invalid route secret".into());
                     }
-                    let expires_at_ms = unix_time_ms().saturating_add(LIMIT_ROUTE_TTL_MS as u64);
+                    let expires_at_ms =
+                        unix_time_ms().saturating_add(Phase::Discovering.lifetime_ms());
                     let blob = seal_gateway_offer(
                         &discover.reply_public_key,
                         gateway_id,
@@ -196,7 +201,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                         &signing_secret,
                     )?;
                     states.begin(discover.branch_token, peer_id, 0, expires_at_ms)?;
-                    states.apply(discover.branch_token, Event::CandidateAccepted)?;
+                    states.apply(
+                        discover.branch_token,
+                        Event::CandidateAccepted,
+                        unix_time_ms(),
+                    )?;
                     routes.insert(
                         discover.branch_token,
                         GatewayRoute {
@@ -205,7 +214,6 @@ fn run() -> Result<(), Box<dyn Error>> {
                             route_secret: SecretBytes(route_secret),
                             challenge: SecretBytes(challenge),
                             pseudonym,
-                            expires_at_ms,
                             failed_redemptions: 0,
                         },
                     );
@@ -255,7 +263,10 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     );
                                     continue;
                                 }
-                                if states.apply(route.label, Event::CommitAccepted).is_err() {
+                                if states
+                                    .apply(route.label, Event::CommitAccepted, unix_time_ms())
+                                    .is_err()
+                                {
                                     drops.record(
                                         "rendezvous",
                                         ERROR_STATE_VIOLATION,
@@ -274,7 +285,10 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     MessageType::Ready,
                                     &P1Payload::Ready { proof: ready },
                                 )?;
-                                if states.apply(route.label, Event::ReadyAccepted).is_err() {
+                                if states
+                                    .apply(route.label, Event::ReadyAccepted, unix_time_ms())
+                                    .is_err()
+                                {
                                     drops.record(
                                         "rendezvous",
                                         ERROR_STATE_VIOLATION,
@@ -325,7 +339,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                                                     ("handle_bytes", handle.len().to_string()),
                                                 ],
                                             );
-                                            states.apply(route.label, Event::CapabilityAccepted)?;
+                                            states.apply(
+                                                route.label,
+                                                Event::CapabilityAccepted,
+                                                unix_time_ms(),
+                                            )?;
                                             0
                                         }
                                         None => {
@@ -363,7 +381,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 {
                                     continue;
                                 }
-                                states.apply(route.label, Event::DataAccepted)?;
+                                states.apply(route.label, Event::DataAccepted, unix_time_ms())?;
                                 send_control(
                                     &link,
                                     route,
@@ -389,7 +407,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                     if let Some(event) = cleanup_event {
                         routes.remove(&route_label);
-                        states.apply(route_label, event)?;
+                        states.apply(route_label, event, unix_time_ms())?;
                     }
                 }
                 _ => {}
@@ -430,7 +448,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let remaining: Vec<[u8; 16]> = routes.keys().copied().collect();
     for label in remaining {
         routes.remove(&label);
-        let _ = states.apply(label, Event::Timeout);
+        let _ = states.apply(label, Event::Timeout, unix_time_ms());
     }
     link.shutdown()?;
     let metrics = collect_stopped(&event_receiver, peer_id);

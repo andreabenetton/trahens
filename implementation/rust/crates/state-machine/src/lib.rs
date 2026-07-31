@@ -2,16 +2,34 @@
 #![forbid(unsafe_code)]
 #![doc = "Typed event-driven route state machines for P1 nodes."]
 
-use protocol_registry::{LIMIT_MAX_ROUTES_GLOBAL, LIMIT_MAX_ROUTES_PER_PEER};
+use protocol_registry::{
+    LIMIT_BRANCH_TTL_MS, LIMIT_MAX_ROUTES_GLOBAL, LIMIT_MAX_ROUTES_PER_PEER, LIMIT_OFFER_TTL_MS,
+    LIMIT_READY_HOLD_MS, LIMIT_ROUTE_TTL_MS,
+};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     Discovering,
     Candidate,
-    Committed,
+    /// `event-lifecycle-profile-e1.md` section 6.1: capacity is reserved and a
+    /// ready-hold deadline assigned, but application data is still refused.
+    PendingReady,
     Ready,
     Open,
+}
+
+impl Phase {
+    /// Independent finite deadline for each state class (E1 section 8).
+    #[must_use]
+    pub fn lifetime_ms(self) -> u64 {
+        match self {
+            Self::Discovering => LIMIT_BRANCH_TTL_MS as u64,
+            Self::Candidate => LIMIT_OFFER_TTL_MS as u64,
+            Self::PendingReady => LIMIT_READY_HOLD_MS as u64,
+            Self::Ready | Self::Open => LIMIT_ROUTE_TTL_MS as u64,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,7 +122,18 @@ impl RouteTable {
         Ok(())
     }
 
-    pub fn apply(&mut self, label: [u8; 16], event: Event) -> Result<Action, StateError> {
+    /// Apply an event, renewing the deadline for the resulting state class.
+    ///
+    /// E1 section 8: a valid transition replaces the deadline and bumps the
+    /// generation, which makes any timer queued against the previous deadline
+    /// stale. `expire` always compares the current deadline, so a renewed
+    /// route is never reclaimed early.
+    pub fn apply(
+        &mut self,
+        label: [u8; 16],
+        event: Event,
+        now_ms: u64,
+    ) -> Result<Action, StateError> {
         if matches!(
             event,
             Event::CloseAccepted | Event::CancelAccepted | Event::Timeout
@@ -118,10 +147,10 @@ impl RouteTable {
                 Action::StoreCandidate
             }
             (Phase::Candidate, Event::CommitAccepted) => {
-                state.phase = Phase::Committed;
+                state.phase = Phase::PendingReady;
                 Action::ReserveRoute
             }
-            (Phase::Committed, Event::ReadyAccepted) => {
+            (Phase::PendingReady, Event::ReadyAccepted) => {
                 state.phase = Phase::Ready;
                 Action::ActivateRoute
             }
@@ -132,6 +161,8 @@ impl RouteTable {
             (Phase::Open, Event::DataAccepted) => Action::DeliverData,
             _ => return Err(StateError::InvalidTransition),
         };
+        state.generation = state.generation.saturating_add(1);
+        state.expires_at_ms = now_ms.saturating_add(state.phase.lifetime_ms());
         Ok(transition)
     }
 
@@ -177,30 +208,110 @@ mod tests {
         let mut table = RouteTable::default();
         table.begin(label, 1, 0, 100)?;
         assert_eq!(
-            table.apply(label, Event::CandidateAccepted)?,
+            table.apply(label, Event::CandidateAccepted, 0)?,
             Action::StoreCandidate
         );
         assert_eq!(
-            table.apply(label, Event::CommitAccepted)?,
+            table.apply(label, Event::CommitAccepted, 0)?,
             Action::ReserveRoute
         );
         assert_eq!(
-            table.apply(label, Event::ReadyAccepted)?,
+            table.apply(label, Event::ReadyAccepted, 0)?,
             Action::ActivateRoute
         );
         assert_eq!(
-            table.apply(label, Event::CapabilityAccepted)?,
+            table.apply(label, Event::CapabilityAccepted, 0)?,
             Action::OpenRendezvous
         );
         assert_eq!(
-            table.apply(label, Event::DataAccepted)?,
+            table.apply(label, Event::DataAccepted, 0)?,
             Action::DeliverData
         );
         assert_eq!(
-            table.apply(label, Event::CloseAccepted)?,
+            table.apply(label, Event::CloseAccepted, 0)?,
             Action::ReclaimState
         );
         assert_eq!(table.live_routes(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn each_transition_renews_its_class_deadline_and_generation() -> Result<(), StateError> {
+        // E1 section 8: every state class has an independent finite deadline,
+        // a valid transition replaces it, and the generation advances so an
+        // already queued timer for the old deadline is recognisably stale.
+        let label = [7_u8; 16];
+        let mut table = RouteTable::default();
+        table.begin(label, 1, 0, 50)?;
+        assert_eq!(table.get(&label).map(|route| route.expires_at_ms), Some(50));
+
+        let mut now = 1_000_u64;
+        for (event, phase) in [
+            (Event::CandidateAccepted, Phase::Candidate),
+            (Event::CommitAccepted, Phase::PendingReady),
+            (Event::ReadyAccepted, Phase::Ready),
+            (Event::CapabilityAccepted, Phase::Open),
+        ] {
+            let before = table
+                .get(&label)
+                .map(|route| route.generation)
+                .ok_or(StateError::Missing)?;
+            table.apply(label, event, now)?;
+            let route = table.get(&label).ok_or(StateError::Missing)?;
+            assert_eq!(route.phase, phase);
+            assert_eq!(
+                route.expires_at_ms,
+                now + phase.lifetime_ms(),
+                "deadline renewed for {phase:?}"
+            );
+            assert!(route.generation > before, "generation advances");
+            now += 10;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_renewed_route_survives_its_previous_deadline() -> Result<(), StateError> {
+        // The stale-timer rule: expiry compares the current deadline, so a
+        // route renewed past an old timer must not be reclaimed by it.
+        let label = [8_u8; 16];
+        let mut table = RouteTable::default();
+        table.begin(label, 1, 0, 100)?;
+        table.apply(label, Event::CandidateAccepted, 90)?;
+
+        // The original deadline of 100 has passed, but the transition at 90
+        // replaced it with 90 + offer lifetime.
+        assert_eq!(table.expire(101), 0, "stale timer must not reclaim");
+        assert_eq!(table.live_routes(), 1);
+
+        // It still expires at its replacement deadline.
+        let renewed = table
+            .get(&label)
+            .map(|route| route.expires_at_ms)
+            .ok_or(StateError::Missing)?;
+        assert_eq!(table.expire(renewed), 1);
+        assert_eq!(table.live_routes(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn pending_ready_refuses_application_data() -> Result<(), StateError> {
+        // E1 section 6.1: a relay in PENDING_READY MUST reject application
+        // data; only an activated route delivers it.
+        let label = [9_u8; 16];
+        let mut table = RouteTable::default();
+        table.begin(label, 1, 0, 1_000)?;
+        table.apply(label, Event::CandidateAccepted, 0)?;
+        table.apply(label, Event::CommitAccepted, 0)?;
+        assert_eq!(
+            table.get(&label).map(|route| route.phase),
+            Some(Phase::PendingReady)
+        );
+        assert_eq!(
+            table.apply(label, Event::DataAccepted, 0),
+            Err(StateError::InvalidTransition),
+            "data refused while the reservation is held"
+        );
         Ok(())
     }
 
@@ -210,7 +321,7 @@ mod tests {
         let mut table = RouteTable::default();
         table.begin(label, 1, 0, 100)?;
         assert_eq!(
-            table.apply(label, Event::ReadyAccepted),
+            table.apply(label, Event::ReadyAccepted, 0),
             Err(StateError::InvalidTransition)
         );
         assert_eq!(

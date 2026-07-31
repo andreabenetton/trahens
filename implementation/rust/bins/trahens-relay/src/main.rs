@@ -9,7 +9,7 @@ use node_runtime::{
 };
 use protocol_registry::{
     ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION,
-    ERROR_TIMEOUT, LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_ROUTE_TTL_MS, SUITE_R1,
+    ERROR_TIMEOUT, LIMIT_MAX_CANDIDATE_LAYERS, SUITE_R1,
 };
 use rendezvous_r1::suite::{EligibilitySuite, R1Suite};
 use state_machine::{Event, Phase, RouteTable};
@@ -29,7 +29,6 @@ struct RelayRoute {
     parent_discovery_nonce: [u8; 32],
     child_discovery_nonce: [u8; 32],
     generation: u32,
-    expires_at_ms: u64,
 }
 
 impl Drop for RelayRoute {
@@ -57,7 +56,7 @@ fn cleanup_route(
 ) {
     if let Some(route) = routes.remove(&parent) {
         reverse.remove(&route.child_label);
-        let _ = states.apply(parent, event);
+        let _ = states.apply(parent, event, unix_time_ms());
     }
 }
 
@@ -125,9 +124,17 @@ fn run() -> Result<(), Box<dyn Error>> {
             Ok(value) => value,
             Err(RecvTimeoutError::Timeout) => {
                 let now = unix_time_ms();
+                // The route table owns the deadline: it renews per state
+                // class on every valid transition (E1 section 8), whereas a
+                // copy captured at DISCOVER would expire a progressing route.
                 let expired: Vec<[u8; 16]> = routes
-                    .iter()
-                    .filter_map(|(label, route)| (route.expires_at_ms <= now).then_some(*label))
+                    .keys()
+                    .filter(|label| {
+                        states
+                            .get(label)
+                            .is_none_or(|state| state.expires_at_ms <= now)
+                    })
+                    .copied()
                     .collect();
                 for label in expired {
                     cleanup_route(
@@ -187,7 +194,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                         continue;
                     };
                     let depth = discover.options.saturating_add(1);
-                    let expires_at_ms = unix_time_ms().saturating_add(LIMIT_ROUTE_TTL_MS as u64);
+                    let expires_at_ms =
+                        unix_time_ms().saturating_add(Phase::Discovering.lifetime_ms());
                     // A peer exhausting the route table is admission
                     // pressure, not a relay fault: drop this DISCOVER.
                     if states
@@ -206,7 +214,6 @@ fn run() -> Result<(), Box<dyn Error>> {
                         parent_discovery_nonce,
                         child_discovery_nonce,
                         generation: 0,
-                        expires_at_ms,
                     };
                     reverse.insert(child_label, discover.branch_token);
                     routes.insert(discover.branch_token, route);
@@ -236,7 +243,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             // duplicate COMMIT MUST be discarded or processed
                             // idempotently, never treated as fatal.
                             if states
-                                .apply(route.parent_label, Event::CommitAccepted)
+                                .apply(route.parent_label, Event::CommitAccepted, unix_time_ms())
                                 .is_err()
                             {
                                 drops.record("relay", ERROR_STATE_VIOLATION, "commit_transition");
@@ -255,7 +262,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                             if states.get(&route.parent_label).map(|state| state.phase)
                                 == Some(Phase::Open)
                             {
-                                states.apply(route.parent_label, Event::DataAccepted)?;
+                                states.apply(
+                                    route.parent_label,
+                                    Event::DataAccepted,
+                                    unix_time_ms(),
+                                )?;
                                 downstream.send(forward_control(control, route.child_label))?;
                             }
                         }
@@ -318,7 +329,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         continue;
                     };
                     if states
-                        .apply(parent_label, Event::CandidateAccepted)
+                        .apply(parent_label, Event::CandidateAccepted, unix_time_ms())
                         .is_err()
                     {
                         drops.record("relay", ERROR_STATE_VIOLATION, "candidate_transition");
@@ -346,7 +357,10 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                     match control.message_type {
                         MessageType::Ready => {
-                            if states.apply(parent_label, Event::ReadyAccepted).is_err() {
+                            if states
+                                .apply(parent_label, Event::ReadyAccepted, unix_time_ms())
+                                .is_err()
+                            {
                                 drops.record("relay", ERROR_STATE_VIOLATION, "ready_transition");
                                 continue;
                             }
@@ -354,7 +368,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         }
                         MessageType::RendezvousResult => {
                             if states
-                                .apply(parent_label, Event::CapabilityAccepted)
+                                .apply(parent_label, Event::CapabilityAccepted, unix_time_ms())
                                 .is_err()
                             {
                                 drops.record(
@@ -370,7 +384,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             if states.get(&parent_label).map(|state| state.phase)
                                 == Some(Phase::Open)
                             {
-                                states.apply(parent_label, Event::DataAccepted)?;
+                                states.apply(parent_label, Event::DataAccepted, unix_time_ms())?;
                                 upstream.send(forward_control(control, parent_label))?;
                             }
                         }
@@ -546,7 +560,6 @@ mod tests {
                 parent_discovery_nonce: [0; 32],
                 child_discovery_nonce: [0; 32],
                 generation: 1,
-                expires_at_ms: 0,
             },
         );
         reverse.insert(child, parent);
