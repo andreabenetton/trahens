@@ -711,7 +711,9 @@ fn run_link(
                         continue;
                     };
                     sequence = next_sequence;
-                    schedule.advance(class);
+                    // Measured against when the cell actually went out, so a
+                    // stall is reported rather than absorbed as a burst.
+                    schedule.advance_at(class, Instant::now());
                     slot_in_epoch += 1;
                     if slot_in_epoch >= FIXED_T2_CELLS_PER_EPOCH {
                         slot_in_epoch = 0;
@@ -1033,7 +1035,7 @@ pub fn write_link_metrics(
             output.push_str(",\n");
         }
         output.push_str(&format!(
-            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"queue_cells_rejected\":{},\"duplicate_fragments\":{},\"capacity_drops\":{},\"metadata_failures\":{},\"peak_reassembly_messages\":{},\"peak_reassembly_bytes\":{},\"chaff_to_real_cell_ratio\":{:.4},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{}}}",
+            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"queue_cells_rejected\":{},\"duplicate_fragments\":{},\"capacity_drops\":{},\"metadata_failures\":{},\"peak_reassembly_messages\":{},\"peak_reassembly_bytes\":{},\"chaff_to_real_cell_ratio\":{:.4},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{},\"late_slots\":{},\"missed_slots\":{},\"worst_lateness_ms\":{},\"fixed_trace_valid\":{}}}",
             metrics.sent_cells,
             metrics.received_cells,
             metrics.malformed_cells,
@@ -1056,6 +1058,10 @@ pub fn write_link_metrics(
             metrics.schedule.retransmission_cells,
             metrics.schedule.new_data_cells,
             metrics.schedule.chaff_cells,
+            metrics.schedule.late_slots,
+            metrics.schedule.missed_slots,
+            metrics.schedule.worst_lateness_ms,
+            metrics.schedule.missed_slots == 0,
         ));
     }
     output.push_str("\n  ]\n}\n");

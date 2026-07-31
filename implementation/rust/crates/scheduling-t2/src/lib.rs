@@ -25,6 +25,12 @@ pub struct ScheduleMetrics {
     pub retransmission_cells: u64,
     pub new_data_cells: u64,
     pub chaff_cells: u64,
+    /// Slots released a whole interval or more after their deadline.
+    pub late_slots: u64,
+    /// Slot positions that passed with nothing emitted on them.
+    pub missed_slots: u64,
+    /// Worst single overrun observed, in milliseconds.
+    pub worst_lateness_ms: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +56,36 @@ impl FixedSchedule {
 
     pub fn next_deadline(&self) -> Instant {
         self.next
+    }
+
+    /// Record one emission and step to the next slot.
+    ///
+    /// `now` is when the cell actually went out. Advancing blindly from the
+    /// old deadline means that after a thread stall the runtime emits as fast
+    /// as it can until it catches up, producing a burst rather than records at
+    /// the declared slot positions. That silently breaks the fixed-trace claim
+    /// the P1 profile rests on, so the overrun is measured and the schedule
+    /// resynchronised instead of absorbed.
+    pub fn advance_at(&mut self, class: SlotClass, now: Instant) {
+        let lateness = now.saturating_duration_since(self.next);
+        if lateness >= self.interval {
+            let missed = (lateness.as_micros() / self.interval.as_micros().max(1)) as u64;
+            self.metrics.late_slots = self.metrics.late_slots.saturating_add(1);
+            self.metrics.missed_slots = self.metrics.missed_slots.saturating_add(missed);
+            let lateness_ms = lateness.as_millis().try_into().unwrap_or(u64::MAX);
+            self.metrics.worst_lateness_ms = self.metrics.worst_lateness_ms.max(lateness_ms);
+            // Resynchronise onto the current slot boundary rather than firing
+            // the whole backlog back to back.
+            self.next = now;
+        }
+        self.advance(class);
+    }
+
+    /// True while every slot was released at its declared position, which is
+    /// the condition the fixed-trace claim depends on.
+    #[must_use]
+    pub fn fixed_trace_valid(&self) -> bool {
+        self.metrics.missed_slots == 0
     }
 
     pub fn advance(&mut self, class: SlotClass) {
@@ -78,6 +114,28 @@ impl FixedSchedule {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_stalled_worker_reports_its_overrun_instead_of_bursting() {
+        let origin = Instant::now();
+        let mut schedule = FixedSchedule::new(origin);
+        let interval = Duration::from_micros(FIXED_T2_SLOT_INTERVAL_US as u64);
+
+        // On-time slots leave the trace claim intact.
+        schedule.advance_at(SlotClass::NewData, origin);
+        assert!(schedule.fixed_trace_valid());
+        assert_eq!(schedule.metrics().late_slots, 0);
+
+        // A stall past several slot positions is recorded, not absorbed. The
+        // next deadline resynchronises to now, so the runtime does not fire
+        // the whole backlog back to back to catch up.
+        let stalled = origin + interval * 5;
+        schedule.advance_at(SlotClass::NewData, stalled);
+        assert_eq!(schedule.metrics().late_slots, 1);
+        assert_eq!(schedule.metrics().missed_slots, 4);
+        assert!(!schedule.fixed_trace_valid(), "the claim is invalidated");
+        assert_eq!(schedule.next_deadline(), stalled + interval);
+    }
 
     #[test]
     fn fixed_profile_is_exactly_sixteen_slots_per_epoch() {
