@@ -43,6 +43,7 @@ pub struct LinkMetrics {
     pub transmission_failures: u64,
     pub ack_drops: u64,
     pub ack_coalesced: u64,
+    pub reassembly: transport_t1::ReceiverMetrics,
     pub peak_queue_cells: usize,
     pub schedule: ScheduleMetrics,
 }
@@ -580,6 +581,7 @@ fn run_link(
     }
 
     metrics.schedule = schedule.metrics();
+    metrics.reassembly = receiver.metrics();
     zeroize(&mut send_key);
     zeroize(&mut receive_key);
     zeroize(&mut config.base_key);
@@ -697,6 +699,22 @@ pub fn drain_links(links: &[&LinkHandle], events: &ChannelReceiver<LinkEvent>) -
     drained
 }
 
+/// Chaff cells per real cell, one of the P1 measurements.
+///
+/// "Real" is every non-chaff emission: ACK, retransmission, and new DATA.
+#[must_use]
+pub fn chaff_to_real_ratio(metrics: &LinkMetrics) -> f64 {
+    let real = metrics
+        .schedule
+        .ack_cells
+        .saturating_add(metrics.schedule.retransmission_cells)
+        .saturating_add(metrics.schedule.new_data_cells);
+    if real == 0 {
+        return 0.0;
+    }
+    metrics.schedule.chaff_cells as f64 / real as f64
+}
+
 pub fn structured_event(node: &str, event: &str, fields: &[(&str, String)]) {
     let mut line = format!("{{\"node\":\"{node}\",\"event\":\"{event}\"");
     for (key, value) in fields {
@@ -786,7 +804,7 @@ pub fn write_link_metrics(
             output.push_str(",\n");
         }
         output.push_str(&format!(
-            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{}}}",
+            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"duplicate_fragments\":{},\"capacity_drops\":{},\"metadata_failures\":{},\"peak_reassembly_messages\":{},\"peak_reassembly_bytes\":{},\"chaff_to_real_cell_ratio\":{:.4},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{}}}",
             metrics.sent_cells,
             metrics.received_cells,
             metrics.malformed_cells,
@@ -796,6 +814,12 @@ pub fn write_link_metrics(
             metrics.transmission_failures,
             metrics.ack_drops,
             metrics.ack_coalesced,
+            metrics.reassembly.duplicate_fragments,
+            metrics.reassembly.capacity_drops,
+            metrics.reassembly.metadata_failures,
+            metrics.reassembly.peak_messages,
+            metrics.reassembly.peak_reserved_bytes,
+            chaff_to_real_ratio(metrics),
             metrics.peak_queue_cells,
             metrics.schedule.slots,
             metrics.schedule.ack_cells,

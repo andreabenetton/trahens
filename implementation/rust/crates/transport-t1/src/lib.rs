@@ -532,10 +532,22 @@ pub struct ReceiveResult {
     pub complete: Option<([u8; 2], Vec<u8>)>,
 }
 
+/// Bounded-reassembly observability counters required by ADR 0020 and the
+/// P1 measurement list.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ReceiverMetrics {
+    pub duplicate_fragments: u64,
+    pub capacity_drops: u64,
+    pub metadata_failures: u64,
+    pub peak_messages: usize,
+    pub peak_reserved_bytes: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct Receiver {
     inbound: HashMap<[u8; 16], Inbound>,
     reserved_bytes: usize,
+    metrics: ReceiverMetrics,
 }
 
 impl Receiver {
@@ -543,7 +555,14 @@ impl Receiver {
         Self {
             inbound: HashMap::new(),
             reserved_bytes: 0,
+            metrics: ReceiverMetrics::default(),
         }
+    }
+
+    /// Snapshot of the bounded-reassembly counters.
+    #[must_use]
+    pub fn metrics(&self) -> ReceiverMetrics {
+        self.metrics
     }
 
     pub fn expire(&mut self, now_ms: u64) -> usize {
@@ -591,6 +610,7 @@ impl Receiver {
                 || self.reserved_bytes + usize::from(total_length)
                     > LIMIT_MAX_REASSEMBLY_BYTES_GLOBAL
             {
+                self.metrics.capacity_drops = self.metrics.capacity_drops.saturating_add(1);
                 return Err(TransportError::ResourceLimit);
             }
             self.reserved_bytes += usize::from(total_length);
@@ -613,6 +633,7 @@ impl Receiver {
                 || entry.total_length != total_length
         });
         if metadata_mismatch {
+            self.metrics.metadata_failures = self.metrics.metadata_failures.saturating_add(1);
             self.remove_inbound(transmission_id);
             return Err(TransportError::Malformed);
         }
@@ -624,9 +645,11 @@ impl Receiver {
             .and_then(|entry| entry.fragments.get(position))
             .is_none_or(|slot| slot.as_ref().is_some_and(|existing| existing != &fragment));
         if conflicting_fragment {
+            self.metrics.metadata_failures = self.metrics.metadata_failures.saturating_add(1);
             self.remove_inbound(transmission_id);
             return Err(TransportError::Malformed);
         }
+        let mut duplicate = false;
         let (bitmap, deliver_now) = {
             let entry = self
                 .inbound
@@ -634,6 +657,8 @@ impl Receiver {
                 .ok_or(TransportError::Malformed)?;
             if entry.fragments[position].is_none() {
                 entry.fragments[position] = Some(fragment);
+            } else {
+                duplicate = true;
             }
             let mut bitmap = 0_u32;
             for (index, value) in entry.fragments.iter().enumerate() {
@@ -652,6 +677,13 @@ impl Receiver {
             }
             (bitmap, deliver_now)
         };
+
+        if duplicate {
+            self.metrics.duplicate_fragments = self.metrics.duplicate_fragments.saturating_add(1);
+        }
+        self.metrics.peak_messages = self.metrics.peak_messages.max(self.inbound.len());
+        self.metrics.peak_reserved_bytes =
+            self.metrics.peak_reserved_bytes.max(self.reserved_bytes);
 
         let ack = Frame::Ack {
             suite,
