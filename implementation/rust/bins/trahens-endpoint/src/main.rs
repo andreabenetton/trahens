@@ -154,6 +154,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut setup_latency_ms = 0_u64;
     let mut cleanup_started = None;
     let mut transport_failed = false;
+    let redeem_twice = args.flag("redeem-twice");
+    let mut redemptions = 0_u32;
 
     while unix_time_ms() < absolute_deadline {
         let event = match event_receiver.recv_timeout(Duration::from_millis(100)) {
@@ -277,6 +279,49 @@ fn run() -> Result<(), Box<dyn Error>> {
                             )?;
                         }
                         (MessageType::RendezvousResult, P1Payload::RendezvousResult { status }) => {
+                            if redeem_twice && status == 0 && redemptions == 0 {
+                                // Replay arm: present the same capability a
+                                // second time. R1 section 5 makes redemption
+                                // one-time, so the gateway must answer with a
+                                // generic failure.
+                                redemptions += 1;
+                                structured_event("endpoint", "replaying_capability", &[]);
+                                send_control(
+                                    &link,
+                                    route,
+                                    MessageType::RendezvousOpen,
+                                    &P1Payload::RendezvousOpen {
+                                        capability: capability.0,
+                                        client_nonce: random_nonzero_16()?,
+                                        expiration_ms: unix_time_ms()
+                                            .saturating_add(LIMIT_CAPABILITY_TTL_MS as u64),
+                                        endpoint_handshake: endpoint_handshake.clone(),
+                                    },
+                                )?;
+                                continue;
+                            }
+                            if redeem_twice && redemptions == 1 {
+                                if status == 0 {
+                                    return Err("replayed capability was accepted".into());
+                                }
+                                structured_event(
+                                    "endpoint",
+                                    "replay_rejected",
+                                    &[("status", status.to_string())],
+                                );
+                                // Rejection is the expected outcome: close the
+                                // route so every node still reclaims state.
+                                send_control(
+                                    &link,
+                                    route,
+                                    MessageType::Close,
+                                    &P1Payload::Close { reason: 0 },
+                                )?;
+                                cleanup_started = Some(Instant::now());
+                                state.apply(branch_token, Event::CloseAccepted)?;
+                                success = true;
+                                break;
+                            }
                             if status != 0 {
                                 return Err(format!(
                                     "rendezvous redemption failed with status {status}"

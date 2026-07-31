@@ -758,6 +758,12 @@ impl CliArgs {
             .ok_or_else(|| RuntimeError::Arguments(format!("missing --{name}")))
     }
 
+    /// True when `--name` was supplied with any value.
+    #[must_use]
+    pub fn flag(&self, name: &str) -> bool {
+        self.values.contains_key(name)
+    }
+
     pub fn optional<'a>(&'a self, name: &str, default: &'a str) -> &'a str {
         self.values.get(name).map_or(default, String::as_str)
     }

@@ -12,6 +12,8 @@ MTU=1500
 TIMEOUT_MS=30000
 OUTPUT="${PWD}/build/p1-netns"
 BIN_DIR="${PWD}/implementation/rust/target/release"
+# ok | replay | wrong-capability | expired-capability
+SCENARIO=ok
 
 while (($#)); do
   case "$1" in
@@ -25,6 +27,7 @@ while (($#)); do
     --timeout-ms) TIMEOUT_MS="$2"; shift 2 ;;
     --output) OUTPUT="$2"; shift 2 ;;
     --bin-dir) BIN_DIR="$2"; shift 2 ;;
+    --scenario) SCENARIO="$2"; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -113,6 +116,34 @@ PY
 PORT=4242
 EPOCH=1
 
+# Scenario wiring. Negative arms must still reclaim all remote state, which is
+# what the P1 gate requires of a rejected redemption.
+GATEWAY_TTL_MS=5000
+ENDPOINT_CAPABILITY="$CAPABILITY"
+ENDPOINT_EXTRA=()
+EXPECT_ENDPOINT_FAILURE=0
+case "$SCENARIO" in
+  ok) ;;
+  replay)
+    # The endpoint presents the same capability twice. The replay never
+    # reaches the gateway: the relay only forwards RENDEZVOUS_OPEN while the
+    # route is in PENDING_READY, and redemption has already advanced it, so
+    # the second presentation is dropped in-path. The endpoint therefore times
+    # out rather than receiving a rejection, which still satisfies the gate:
+    # the replay is refused and every node reclaims its state.
+    ENDPOINT_EXTRA=(--redeem-twice 1)
+    EXPECT_ENDPOINT_FAILURE=1 ;;
+  wrong-capability)
+    # A capability the gateway never registered: the token hash misses.
+    ENDPOINT_CAPABILITY=$(printf '33%.0s' {1..32})
+    EXPECT_ENDPOINT_FAILURE=1 ;;
+  expired-capability)
+    # The registration lapses before the route reaches redemption.
+    GATEWAY_TTL_MS=1
+    EXPECT_ENDPOINT_FAILURE=1 ;;
+  *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;;
+esac
+
 run_node() {
   local ns=$1 name=$2 offset=$3
   shift 3
@@ -128,7 +159,7 @@ run_node "${NAMES[$GIDX]}" rendezvous 7 \
   --id "$((GIDX+1))" --peer-id "$GIDX" --gateway-id 7 --epoch "$EPOCH" \
   --bind "10.200.$((GIDX-1)).2:${PORT}" --peer "10.200.$((GIDX-1)).1:${PORT}" \
   --key "$(key_for $((GIDX-1)))" --signing-seed "$SIGNING_SEED" \
-  --capability "$CAPABILITY" --capability-ttl-ms 5000 \
+  --capability "$CAPABILITY" --capability-ttl-ms "$GATEWAY_TTL_MS" \
   --timeout-ms "$TIMEOUT_MS" --metrics "$OUTPUT/rendezvous.metrics.json"
 
 for ((r=RELAYS; r>=1; r--)); do
@@ -147,7 +178,8 @@ run_node "${NAMES[0]}" endpoint -7 \
   "$BIN_DIR/trahens-endpoint" \
   --id 1 --peer-id 2 --epoch "$EPOCH" \
   --bind "10.200.0.1:${PORT}" --peer "10.200.0.2:${PORT}" --key "$(key_for 0)" \
-  --gateway-public "$GATEWAY_PUBLIC" --capability "$CAPABILITY" \
+  --gateway-public "$GATEWAY_PUBLIC" --capability "$ENDPOINT_CAPABILITY" \
+  "${ENDPOINT_EXTRA[@]}" \
   --message "interoperable-p1" --timeout-ms "$TIMEOUT_MS" \
   --metrics "$OUTPUT/endpoint.metrics.json"
 
@@ -177,4 +209,12 @@ for path in files:
 report=json.loads((root/'run-metrics.json').read_text())
 assert report['all_remote_state_reclaimed']
 PY
+if (( EXPECT_ENDPOINT_FAILURE )); then
+  if (( STATUS == 0 )); then
+    echo "scenario ${SCENARIO}: expected the redemption to be rejected" >&2
+    exit 1
+  fi
+  echo "scenario ${SCENARIO}: rejected as required, all state reclaimed"
+  exit 0
+fi
 exit "$STATUS"

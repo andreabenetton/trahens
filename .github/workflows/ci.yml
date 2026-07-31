@@ -89,6 +89,23 @@ jobs:
           sudo -E implementation/harness/netns-p1.sh \
             --relays 5 --loss 5 --delay 8ms --jitter 2ms \
             --timeout-ms 90000 --output "$GITHUB_WORKSPACE/build/p1-multifragment"
+      # Gate line: capability replay, wrong-gateway use, and expiry are
+      # rejected. Each arm additionally asserts every node reclaimed its state.
+      - name: Capability replay is refused
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 2 --loss 0 --delay 2ms --jitter 0ms --scenario replay \
+            --timeout-ms 12000 --output "$GITHUB_WORKSPACE/build/p1-replay"
+      - name: Unregistered capability is refused
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 2 --loss 0 --delay 2ms --jitter 0ms --scenario wrong-capability \
+            --timeout-ms 20000 --output "$GITHUB_WORKSPACE/build/p1-wrong-capability"
+      - name: Expired capability is refused
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 2 --loss 0 --delay 2ms --jitter 0ms --scenario expired-capability \
+            --timeout-ms 20000 --output "$GITHUB_WORKSPACE/build/p1-expired-capability"
       - name: Twelve-relay establishment and cleanup
         run: |
           sudo -E implementation/harness/netns-p1.sh \
