@@ -6,16 +6,19 @@ pub mod p1;
 
 use codec_m2::{decode, encode, Envelope};
 use protocol_registry::{
-    ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_UNSUPPORTED_SUITE,
-    FIXED_T2_ACK_RESERVE_PER_EPOCH, FIXED_T2_CELLS_PER_EPOCH, FIXED_T2_EPOCH_MS,
-    FIXED_T2_QUEUE_CELLS_PER_PEER, FIXED_T2_RETRANSMIT_RESERVE_PER_EPOCH, LIMIT_MAX_T1_RETRIES,
-    LIMIT_T1_ACK_DELAY_MAX_MS, LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS, SUITE_R1,
+    BYTES_CELL_PAYLOAD, ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED,
+    ERROR_UNSUPPORTED_SUITE, FIXED_T2_ACK_RESERVE_PER_EPOCH, FIXED_T2_CELLS_PER_EPOCH,
+    FIXED_T2_EPOCH_MS, FIXED_T2_QUEUE_CELLS_GLOBAL, FIXED_T2_QUEUE_CELLS_PER_PEER,
+    FIXED_T2_RETRANSMIT_RESERVE_PER_EPOCH, LIMIT_MAX_T1_RETRIES, LIMIT_T1_ACK_DELAY_MAX_MS,
+    LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS, SUITE_R1,
 };
-use scheduling_t2::{FixedSchedule, ScheduleMetrics, SlotClass};
-use std::collections::VecDeque;
+use scheduling_t2::{FixedSchedule, QueueBudget, Reservation, ScheduleMetrics, SlotClass};
+use std::collections::{HashMap, VecDeque};
 use std::io::ErrorKind;
 use std::net::{SocketAddr, UdpSocket};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver as ChannelReceiver, SyncSender, TryRecvError};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use trahens_crypto::{hmac_sha256, random_bytes, zeroize};
@@ -43,6 +46,9 @@ pub struct LinkMetrics {
     pub transmission_failures: u64,
     pub ack_drops: u64,
     pub ack_coalesced: u64,
+    /// Transmissions refused because their fragment set did not fit the
+    /// per-peer or node-global cell budget.
+    pub queue_cells_rejected: u64,
     pub reassembly: transport_t1::ReceiverMetrics,
     pub peak_queue_cells: usize,
     pub schedule: ScheduleMetrics,
@@ -223,9 +229,66 @@ pub fn unix_time_ms() -> u64 {
     }
 }
 
+/// Node-global queue admission shared by every link of one process.
+///
+/// `transport-profile-t2.md` section 7 bounds queued cells both per peer and
+/// across the node. The per-peer half lives inside each worker; this half is
+/// shared, so it is an atomic counter rather than a lock: a worker must never
+/// block on another worker to admit a message.
+#[derive(Debug, Clone, Default)]
+pub struct NodeQueueBudget {
+    reserved_cells: Arc<AtomicUsize>,
+    rejected: Arc<AtomicU64>,
+}
+
+impl NodeQueueBudget {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Reserve `cells` against the node ceiling, all or nothing.
+    fn reserve(&self, cells: usize) -> bool {
+        let mut current = self.reserved_cells.load(Ordering::Acquire);
+        loop {
+            if current.saturating_add(cells) > FIXED_T2_QUEUE_CELLS_GLOBAL {
+                self.rejected.fetch_add(1, Ordering::Relaxed);
+                return false;
+            }
+            match self.reserved_cells.compare_exchange_weak(
+                current,
+                current + cells,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return true,
+                Err(observed) => current = observed,
+            }
+        }
+    }
+
+    /// Give back cells reserved by an earlier successful [`Self::reserve`].
+    fn release(&self, cells: usize) {
+        let previous = self.reserved_cells.fetch_sub(cells, Ordering::AcqRel);
+        debug_assert!(previous >= cells, "released more cells than were reserved");
+    }
+
+    #[must_use]
+    pub fn reserved_cells(&self) -> usize {
+        self.reserved_cells.load(Ordering::Acquire)
+    }
+
+    /// Transmissions refused for want of node-wide queue capacity.
+    #[must_use]
+    pub fn rejected(&self) -> u64 {
+        self.rejected.load(Ordering::Relaxed)
+    }
+}
+
 pub fn spawn_link(
     config: LinkConfig,
     events: SyncSender<LinkEvent>,
+    budget: NodeQueueBudget,
 ) -> Result<LinkHandle, RuntimeError> {
     let socket = UdpSocket::bind(config.bind)?;
     socket.connect(config.peer)?;
@@ -247,6 +310,7 @@ pub fn spawn_link(
                 receive_key,
                 command_receiver,
                 events,
+                budget,
             )
         })?;
     Ok(LinkHandle {
@@ -293,6 +357,7 @@ fn with_ack_delay(frame: Frame, held_ms: u64) -> Frame {
     frame
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_link(
     mut config: LinkConfig,
     socket: UdpSocket,
@@ -300,6 +365,7 @@ fn run_link(
     mut receive_key: [u8; 32],
     commands: ChannelReceiver<LinkCommand>,
     events: SyncSender<LinkEvent>,
+    node_budget: NodeQueueBudget,
 ) {
     let origin = Instant::now();
     let mut schedule = FixedSchedule::new(origin);
@@ -314,6 +380,11 @@ fn run_link(
     // Queued ACKs with the time each was first queued, so the emitted
     // ack_delay_ms reports the real hold rather than a constant zero.
     let mut ack_queue: VecDeque<(Frame, u64)> = VecDeque::new();
+    // Queue admission is counted in cells. The channel above bounds queued
+    // envelopes, which says nothing about the ceiling: 64 transmissions of 17
+    // fragments is 1,088 cells against a 256-cell per-peer limit.
+    let mut peer_budget = QueueBudget::new(FIXED_T2_QUEUE_CELLS_PER_PEER);
+    let mut reservations: HashMap<[u8; 16], Reservation> = HashMap::new();
     let mut metrics = LinkMetrics::default();
     let mut buffer = [0_u8; 2_048];
     let mut running = true;
@@ -346,11 +417,46 @@ fn run_link(
                         });
                         continue;
                     };
+                    // Reserve the whole canonical fragment set before the first
+                    // emission, against the node ceiling and then this peer's.
+                    // An over-budget transmission is refused up front rather
+                    // than admitted and abandoned part-way.
+                    let cells = encoded.len().div_ceil(BYTES_CELL_PAYLOAD);
+                    if !node_budget.reserve(cells) {
+                        metrics.queue_cells_rejected =
+                            metrics.queue_cells_rejected.saturating_add(1);
+                        let _ = events.try_send(LinkEvent::SecurityEvent {
+                            peer_id: config.peer_id,
+                            error_id: ERROR_RESOURCE_EXHAUSTED,
+                            detail: "node_queue_cells",
+                        });
+                        let _ = events.try_send(LinkEvent::TransmissionFailed {
+                            peer_id: config.peer_id,
+                        });
+                        continue;
+                    }
+                    let Some(reservation) = peer_budget.reserve(cells) else {
+                        node_budget.release(cells);
+                        metrics.queue_cells_rejected =
+                            metrics.queue_cells_rejected.saturating_add(1);
+                        let _ = events.try_send(LinkEvent::SecurityEvent {
+                            peer_id: config.peer_id,
+                            error_id: ERROR_RESOURCE_EXHAUSTED,
+                            detail: "peer_queue_cells",
+                        });
+                        let _ = events.try_send(LinkEvent::TransmissionFailed {
+                            peer_id: config.peer_id,
+                        });
+                        continue;
+                    };
                     if sender.enqueue(envelope.suite_id, id, &encoded).is_err() {
+                        peer_budget.release(reservation);
+                        node_budget.release(cells);
                         let _ = events.try_send(LinkEvent::TransmissionFailed {
                             peer_id: config.peer_id,
                         });
                     } else {
+                        reservations.insert(id, reservation);
                         metrics.logical_messages_sent =
                             metrics.logical_messages_sent.saturating_add(1);
                     }
@@ -383,17 +489,28 @@ fn run_link(
                                     bitmap,
                                     ..
                                 }) => {
-                                    if sender
-                                        .on_ack(
-                                            transmission_id,
-                                            fragment_count,
-                                            bitmap,
-                                            elapsed_ms(origin),
-                                        )
-                                        .is_err()
-                                    {
-                                        metrics.malformed_cells =
-                                            metrics.malformed_cells.saturating_add(1);
+                                    match sender.on_ack(
+                                        transmission_id,
+                                        fragment_count,
+                                        bitmap,
+                                        elapsed_ms(origin),
+                                    ) {
+                                        // Fully acknowledged: the transmission
+                                        // has left the sender, so its cells go
+                                        // back to both budgets exactly once.
+                                        Ok(true) => {
+                                            if let Some(reservation) =
+                                                reservations.remove(&transmission_id)
+                                            {
+                                                node_budget.release(reservation.cells());
+                                                peer_budget.release(reservation);
+                                            }
+                                        }
+                                        Ok(false) => {}
+                                        Err(_) => {
+                                            metrics.malformed_cells =
+                                                metrics.malformed_cells.saturating_add(1);
+                                        }
                                     }
                                 }
                                 Ok(frame @ Frame::Data { .. }) => match receiver
@@ -498,6 +615,10 @@ fn run_link(
         // stalled message fail unrelated routes that were making progress.
         for transmission_id in sender.poll_timeouts(now_ms).exhausted {
             if sender.abort(transmission_id) {
+                if let Some(reservation) = reservations.remove(&transmission_id) {
+                    node_budget.release(reservation.cells());
+                    peer_budget.release(reservation);
+                }
                 metrics.transmission_failures = metrics.transmission_failures.saturating_add(1);
                 let _ = events.try_send(LinkEvent::TransmissionFailed {
                     peer_id: config.peer_id,
@@ -622,6 +743,12 @@ fn run_link(
         }
     }
 
+    // Anything still outstanding when the worker stops is abandoned, so its
+    // cells return to the node budget rather than leaking for the run's life.
+    for (_, reservation) in reservations.drain() {
+        node_budget.release(reservation.cells());
+        peer_budget.release(reservation);
+    }
     metrics.schedule = schedule.metrics();
     metrics.reassembly = receiver.metrics();
     zeroize(&mut send_key);
@@ -906,7 +1033,7 @@ pub fn write_link_metrics(
             output.push_str(",\n");
         }
         output.push_str(&format!(
-            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"duplicate_fragments\":{},\"capacity_drops\":{},\"metadata_failures\":{},\"peak_reassembly_messages\":{},\"peak_reassembly_bytes\":{},\"chaff_to_real_cell_ratio\":{:.4},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{}}}",
+            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"queue_cells_rejected\":{},\"duplicate_fragments\":{},\"capacity_drops\":{},\"metadata_failures\":{},\"peak_reassembly_messages\":{},\"peak_reassembly_bytes\":{},\"chaff_to_real_cell_ratio\":{:.4},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{}}}",
             metrics.sent_cells,
             metrics.received_cells,
             metrics.malformed_cells,
@@ -916,6 +1043,7 @@ pub fn write_link_metrics(
             metrics.transmission_failures,
             metrics.ack_drops,
             metrics.ack_coalesced,
+            metrics.queue_cells_rejected,
             metrics.reassembly.duplicate_fragments,
             metrics.reassembly.capacity_drops,
             metrics.reassembly.metadata_failures,

@@ -4,7 +4,8 @@
 
 use protocol_registry::{
     suite_is_network_valid, FIXED_T2_CELLS_PER_EPOCH, FIXED_T2_EPOCH_MS, FIXED_T2_PROFILE_ID,
-    FIXED_T2_QUEUE_CELLS_GLOBAL, FIXED_T2_SLOT_INTERVAL_US, LIFECYCLE_PROFILE_E1,
+    FIXED_T2_QUEUE_CELLS_GLOBAL, FIXED_T2_QUEUE_CELLS_PER_PEER, FIXED_T2_SLOT_INTERVAL_US,
+    LIFECYCLE_PROFILE_E1, LIMIT_MAX_FRAGMENTS, LIMIT_MAX_SENDER_TRANSMISSIONS_PER_PEER,
     PRIVACY_PROFILE_U1, SCHEDULE_PROFILE_T2, T2_ACTION_ACCEPT, T2_ACTION_OFFER, T2_ACTION_REJECT,
     T2_FRAME_SCHEDULE, VERSION,
 };
@@ -448,36 +449,73 @@ impl DeficitScheduler {
     }
 }
 
-/// Node-global queue admission (`transport-profile-t2.md` section 7).
+/// Proof that a given number of cells is reserved in a [`QueueBudget`].
+///
+/// Releasing takes the token by value, so the budget can only ever be credited
+/// for a reservation that was actually made, exactly once. That is why release
+/// does not use `saturating_sub`: a double release would silently under-count
+/// and let the queue exceed its ceiling.
+#[derive(Debug, PartialEq, Eq)]
+#[must_use = "an unreleased reservation leaks queue capacity"]
+pub struct Reservation {
+    cells: usize,
+}
+
+impl Reservation {
+    #[must_use]
+    pub fn cells(&self) -> usize {
+        self.cells
+    }
+}
+
+/// Queue admission counted in cells (`transport-profile-t2.md` section 7).
 ///
 /// A transmission reserves its whole fragment set before its first emission,
 /// so an over-budget transmission is refused up front rather than being
-/// admitted and then abandoned part-way.
-#[derive(Debug, Clone, Copy, Default)]
+/// admitted and then abandoned part-way. The unit is the cell, not the logical
+/// message: 64 messages of 17 fragments are 1,088 cells, four times the
+/// per-peer ceiling, so counting messages does not bound the queue at all.
+#[derive(Debug, Clone, Copy)]
 pub struct QueueBudget {
+    capacity_cells: usize,
     reserved_cells: usize,
     rejected: u64,
 }
 
 impl QueueBudget {
+    /// A budget bounded by `capacity_cells`, e.g.
+    /// `FIXED_T2_QUEUE_CELLS_PER_PEER` or `FIXED_T2_QUEUE_CELLS_GLOBAL`.
     #[must_use]
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(capacity_cells: usize) -> Self {
+        Self {
+            capacity_cells,
+            reserved_cells: 0,
+            rejected: 0,
+        }
     }
 
     /// Reserve `cells` atomically, or refuse the whole transmission.
-    pub fn reserve(&mut self, cells: usize) -> bool {
-        if self.reserved_cells + cells > FIXED_T2_QUEUE_CELLS_GLOBAL {
+    pub fn reserve(&mut self, cells: usize) -> Option<Reservation> {
+        if self.reserved_cells.saturating_add(cells) > self.capacity_cells {
             self.rejected = self.rejected.saturating_add(1);
-            return false;
+            return None;
         }
         self.reserved_cells += cells;
-        true
+        Some(Reservation { cells })
     }
 
-    /// Release cells once emitted or abandoned.
-    pub fn release(&mut self, cells: usize) {
-        self.reserved_cells = self.reserved_cells.saturating_sub(cells);
+    /// Give the cells back once the transmission completes or is abandoned.
+    pub fn release(&mut self, reservation: Reservation) {
+        debug_assert!(
+            self.reserved_cells >= reservation.cells,
+            "released more cells than were reserved"
+        );
+        self.reserved_cells -= reservation.cells.min(self.reserved_cells);
+    }
+
+    #[must_use]
+    pub fn capacity_cells(&self) -> usize {
+        self.capacity_cells
     }
 
     #[must_use]
@@ -488,6 +526,12 @@ impl QueueBudget {
     #[must_use]
     pub fn rejected(&self) -> u64 {
         self.rejected
+    }
+}
+
+impl Default for QueueBudget {
+    fn default() -> Self {
+        Self::new(FIXED_T2_QUEUE_CELLS_GLOBAL)
     }
 }
 
@@ -539,19 +583,51 @@ mod fairness_tests {
     }
 
     #[test]
-    fn the_global_budget_reserves_whole_transmissions() {
-        let mut budget = QueueBudget::new();
-        assert!(budget.reserve(FIXED_T2_QUEUE_CELLS_GLOBAL));
+    fn the_global_budget_reserves_whole_transmissions() -> Result<(), ScheduleError> {
+        let mut budget = QueueBudget::default();
+        let whole = budget
+            .reserve(FIXED_T2_QUEUE_CELLS_GLOBAL)
+            .ok_or(ScheduleError::Malformed)?;
         assert_eq!(budget.reserved_cells(), FIXED_T2_QUEUE_CELLS_GLOBAL);
 
         // One more cell does not fit, and the refusal is atomic: nothing of the
         // rejected transmission is reserved.
-        assert!(!budget.reserve(1));
+        assert!(budget.reserve(1).is_none());
         assert_eq!(budget.reserved_cells(), FIXED_T2_QUEUE_CELLS_GLOBAL);
         assert_eq!(budget.rejected(), 1);
 
-        budget.release(FIXED_T2_QUEUE_CELLS_GLOBAL);
+        budget.release(whole);
         assert_eq!(budget.reserved_cells(), 0);
-        assert!(budget.reserve(1));
+        assert!(budget.reserve(1).is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn the_per_peer_ceiling_is_counted_in_cells_not_messages() -> Result<(), ScheduleError> {
+        // The sender admits 64 transmissions per peer and each may hold 17
+        // fragments, so counting messages would let one peer queue 1,088
+        // first-send cells against a 256-cell ceiling.
+        let mut budget = QueueBudget::new(FIXED_T2_QUEUE_CELLS_PER_PEER);
+        let mut held = Vec::new();
+        for _ in 0..LIMIT_MAX_SENDER_TRANSMISSIONS_PER_PEER {
+            match budget.reserve(LIMIT_MAX_FRAGMENTS) {
+                Some(reservation) => held.push(reservation),
+                None => break,
+            }
+        }
+        assert_eq!(
+            held.len(),
+            FIXED_T2_QUEUE_CELLS_PER_PEER / LIMIT_MAX_FRAGMENTS,
+            "admission stops at the cell ceiling, not the message ceiling"
+        );
+        assert!(budget.reserved_cells() <= FIXED_T2_QUEUE_CELLS_PER_PEER);
+        assert!(budget.rejected() >= 1);
+
+        // Completing one transmission frees exactly its own cells.
+        let reservation = held.pop().ok_or(ScheduleError::Malformed)?;
+        let before = budget.reserved_cells();
+        budget.release(reservation);
+        assert_eq!(budget.reserved_cells(), before - LIMIT_MAX_FRAGMENTS);
+        Ok(())
     }
 }

@@ -5,7 +5,8 @@ use codec_m2::{Candidate, Control, Discover, Envelope, Message, MessageType};
 use node_runtime::p1::wrap_candidate;
 use node_runtime::{
     drain_in_precedence_order, drain_links, event_channel, parse_hex, spawn_link, structured_event,
-    write_link_metrics, CliArgs, Clock, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
+    write_link_metrics, CliArgs, Clock, LinkConfig, LinkEvent, LinkMetrics, NodeQueueBudget,
+    RemoteInputDrops,
 };
 use protocol_registry::{
     ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION,
@@ -132,6 +133,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     let metrics_path = args.optional("metrics", "relay-metrics.json").to_owned();
 
     let (event_sender, event_receiver) = event_channel();
+    // One budget shared by the upstream link and every child: the node-global
+    // cell ceiling is a property of the process, not of any one link.
+    let budget = NodeQueueBudget::new();
     let upstream = spawn_link(
         LinkConfig {
             local_id: node_id,
@@ -142,6 +146,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             epoch,
         },
         event_sender.clone(),
+        budget.clone(),
     )?;
     // Children are numbered: --downstream-id / -bind / -peer / -key describe
     // child 0, and --downstream-id-N and friends describe child N. Core v1.5
@@ -170,6 +175,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     epoch,
                 },
                 event_sender.clone(),
+                budget.clone(),
             )?,
         ));
     }

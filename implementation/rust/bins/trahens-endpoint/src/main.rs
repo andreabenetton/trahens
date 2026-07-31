@@ -7,7 +7,8 @@ use node_runtime::p1::{
 };
 use node_runtime::{
     drain_links, event_channel, parse_hex, spawn_link, structured_event, unix_time_ms,
-    write_link_metrics, CliArgs, Clock, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
+    write_link_metrics, CliArgs, Clock, LinkConfig, LinkEvent, LinkMetrics, NodeQueueBudget,
+    RemoteInputDrops,
 };
 use protocol_registry::{
     ERROR_AUTHENTICATION_FAILED, ERROR_INTERNAL, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
@@ -160,6 +161,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let epoch = args.u32("epoch")?;
 
     let (event_sender, event_receiver) = event_channel();
+    let budget = NodeQueueBudget::new();
     let link = spawn_link(
         LinkConfig {
             local_id: node_id,
@@ -170,6 +172,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             epoch,
         },
         event_sender,
+        budget.clone(),
     )?;
 
     let root_secret = SecretBytes(random_scalar()?);
