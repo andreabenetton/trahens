@@ -164,8 +164,28 @@ pub struct StatePeaks {
 #[derive(Debug, Default)]
 pub struct RouteTable {
     routes: HashMap<[u8; 16], RouteState>,
-    peer_counts: HashMap<u32, usize>,
+    /// Total routes held for a peer, against `LIMIT_MAX_ROUTES_PER_PEER`.
+    peer_routes: HashMap<u32, usize>,
+    /// Of those, the ones still in a branch phase, against the tighter
+    /// `LIMIT_MAX_BRANCHES_PER_PEER`. Counted separately because a branch is
+    /// state a peer creates before any commitment, so it has its own ceiling;
+    /// comparing one total against both made the smaller limit the only one
+    /// that ever applied and capped a peer at 64 routes of any kind.
+    peer_branches: HashMap<u32, usize>,
     peaks: StatePeaks,
+}
+
+fn bump(counts: &mut HashMap<u32, usize>, peer: u32) {
+    *counts.entry(peer).or_insert(0) += 1;
+}
+
+fn drop_one(counts: &mut HashMap<u32, usize>, peer: u32) {
+    if let Some(count) = counts.get_mut(&peer) {
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            counts.remove(&peer);
+        }
+    }
 }
 
 impl RouteTable {
@@ -193,8 +213,9 @@ impl RouteTable {
         if branches >= LIMIT_MAX_BRANCHES_GLOBAL {
             return Err(StateError::GlobalLimit);
         }
-        let count = self.peer_counts.get(&peer).copied().unwrap_or(0);
-        if count >= LIMIT_MAX_ROUTES_PER_PEER || count >= LIMIT_MAX_BRANCHES_PER_PEER {
+        if self.peer_routes.get(&peer).copied().unwrap_or(0) >= LIMIT_MAX_ROUTES_PER_PEER
+            || self.peer_branches.get(&peer).copied().unwrap_or(0) >= LIMIT_MAX_BRANCHES_PER_PEER
+        {
             return Err(StateError::PeerLimit);
         }
         self.routes.insert(
@@ -206,7 +227,9 @@ impl RouteTable {
                 expires_at_ms,
             },
         );
-        self.peer_counts.insert(peer, count + 1);
+        bump(&mut self.peer_routes, peer);
+        // A fresh route always starts as a branch.
+        bump(&mut self.peer_branches, peer);
         self.observe_peaks();
         Ok(())
     }
@@ -230,6 +253,7 @@ impl RouteTable {
             return self.remove(label).map(|()| Action::ReclaimState);
         }
         let state = self.routes.get_mut(&label).ok_or(StateError::Missing)?;
+        let was_branch = matches!(state.phase, Phase::Discovering | Phase::Candidate);
         let transition = match (state.phase, event) {
             (Phase::Discovering, Event::CandidateAccepted) => {
                 state.phase = Phase::Candidate;
@@ -258,6 +282,13 @@ impl RouteTable {
         };
         state.generation = state.generation.saturating_add(1);
         state.expires_at_ms = now_ms.saturating_add(state.phase.lifetime_ms());
+        let peer = state.peer;
+        let still_branch = matches!(state.phase, Phase::Discovering | Phase::Candidate);
+        if was_branch && !still_branch {
+            // Committing frees a branch slot while keeping the route slot, so
+            // the peer may open another branch alongside its active routes.
+            drop_one(&mut self.peer_branches, peer);
+        }
         self.observe_peaks();
         Ok(transition)
     }
@@ -283,7 +314,7 @@ impl RouteTable {
         self.peaks.peak_branches = self.peaks.peak_branches.max(branches);
         self.peaks.peak_pending_ready = self.peaks.peak_pending_ready.max(pending);
         self.peaks.peak_active = self.peaks.peak_active.max(active);
-        if let Some(highest) = self.peer_counts.values().copied().max() {
+        if let Some(highest) = self.peer_routes.values().copied().max() {
             self.peaks.peak_routes_per_peer = self.peaks.peak_routes_per_peer.max(highest);
         }
     }
@@ -320,11 +351,9 @@ impl RouteTable {
 
     pub fn remove(&mut self, label: [u8; 16]) -> Result<(), StateError> {
         let route = self.routes.remove(&label).ok_or(StateError::Missing)?;
-        if let Some(count) = self.peer_counts.get_mut(&route.peer) {
-            *count = count.saturating_sub(1);
-            if *count == 0 {
-                self.peer_counts.remove(&route.peer);
-            }
+        drop_one(&mut self.peer_routes, route.peer);
+        if matches!(route.phase, Phase::Discovering | Phase::Candidate) {
+            drop_one(&mut self.peer_branches, route.peer);
         }
         Ok(())
     }
@@ -650,6 +679,50 @@ mod tests {
         label[0] = 200;
         table.begin(label, 1, 0, 10_000)?;
         assert_eq!(table.live_routes(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn the_route_ceiling_is_reachable_once_branches_are_committed() -> Result<(), StateError> {
+        // Comparing one per-peer total against both ceilings made the smaller
+        // one the only one that ever applied, so a peer could never hold more
+        // than 64 routes of any kind and the 256-route ceiling was dead. The
+        // two classes are counted separately: committing frees a branch slot
+        // while keeping the route slot.
+        let mut table = RouteTable::default();
+        let mut label = [0_u8; 16];
+        let mut committed = 0;
+        while committed < LIMIT_MAX_ROUTES_PER_PEER {
+            label[0] = (committed % 251) as u8;
+            label[1] = (committed / 251) as u8;
+            table.begin(label, 1, 0, 10_000)?;
+            table.apply(label, Event::CandidateAccepted, 0)?;
+            table.apply(label, Event::CommitAccepted, 0)?;
+            committed += 1;
+        }
+        assert_eq!(table.live_routes(), LIMIT_MAX_ROUTES_PER_PEER);
+
+        // The route ceiling now bites, and it is the route ceiling, not the
+        // branch one.
+        label[0] = 255;
+        label[1] = 255;
+        assert_eq!(table.begin(label, 1, 0, 10_000), Err(StateError::PeerLimit));
+
+        // Branches are still bounded on their own: from an empty table a peer
+        // may hold 64 uncommitted branches and no more.
+        let mut branches = RouteTable::default();
+        for index in 0..LIMIT_MAX_BRANCHES_PER_PEER {
+            label[0] = (index % 251) as u8;
+            label[1] = (index / 251) as u8;
+            branches.begin(label, 1, 0, 10_000)?;
+        }
+        label[0] = 255;
+        label[1] = 255;
+        assert_eq!(
+            branches.begin(label, 1, 0, 10_000),
+            Err(StateError::PeerLimit),
+            "the branch ceiling still applies"
+        );
         Ok(())
     }
 
