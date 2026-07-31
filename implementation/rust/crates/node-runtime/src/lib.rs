@@ -8,7 +8,7 @@ use codec_m2::{decode, encode, Envelope};
 use protocol_registry::{
     ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_UNSUPPORTED_SUITE,
     FIXED_T2_EPOCH_MS, FIXED_T2_QUEUE_CELLS_PER_PEER, LIMIT_MAX_T1_RETRIES,
-    LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS, SUITE_R1,
+    LIMIT_T1_ACK_DELAY_MAX_MS, LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS, SUITE_R1,
 };
 use scheduling_t2::{FixedSchedule, ScheduleMetrics, SlotClass};
 use std::collections::VecDeque;
@@ -41,6 +41,7 @@ pub struct LinkMetrics {
     pub logical_messages_received: u64,
     pub transmission_failures: u64,
     pub ack_drops: u64,
+    pub ack_coalesced: u64,
     pub peak_queue_cells: usize,
     pub schedule: ScheduleMetrics,
 }
@@ -214,6 +215,43 @@ pub fn spawn_link(
     })
 }
 
+/// Transmission identifier of any frame, used to coalesce queued ACKs.
+fn ack_transmission_id(frame: &Frame) -> [u8; 16] {
+    match frame {
+        Frame::Data {
+            transmission_id, ..
+        }
+        | Frame::Ack {
+            transmission_id, ..
+        }
+        | Frame::Chaff {
+            transmission_id, ..
+        } => *transmission_id,
+    }
+}
+
+/// Stamp the measured hold time onto an ACK, bounded by the registry limit.
+fn with_ack_delay(frame: Frame, held_ms: u64) -> Frame {
+    if let Frame::Ack {
+        suite,
+        transmission_id,
+        fragment_count,
+        bitmap,
+        ..
+    } = frame
+    {
+        let bounded = held_ms.min(LIMIT_T1_ACK_DELAY_MAX_MS as u64);
+        return Frame::Ack {
+            suite,
+            transmission_id,
+            fragment_count,
+            ack_delay_ms: u16::try_from(bounded).unwrap_or(u16::MAX),
+            bitmap,
+        };
+    }
+    frame
+}
+
 fn run_link(
     mut config: LinkConfig,
     socket: UdpSocket,
@@ -232,7 +270,9 @@ fn run_link(
     let mut replay = ReplayWindow::new(config.epoch);
     let mut sender = Sender::new();
     let mut receiver = Receiver::new();
-    let mut ack_queue: VecDeque<Frame> = VecDeque::new();
+    // Queued ACKs with the time each was first queued, so the emitted
+    // ack_delay_ms reports the real hold rather than a constant zero.
+    let mut ack_queue: VecDeque<(Frame, u64)> = VecDeque::new();
     let mut metrics = LinkMetrics::default();
     let mut buffer = [0_u8; 2_048];
     let mut running = true;
@@ -313,8 +353,22 @@ fn run_link(
                                     .accept(frame, elapsed_ms(origin))
                                 {
                                     Ok(Some(result)) => {
-                                        if ack_queue.len() < LIMIT_T1_MAX_PENDING_ACKS {
-                                            ack_queue.push_back(result.ack);
+                                        // transport-profile-t1.md section 9:
+                                        // an ACK is cumulative for its
+                                        // transmission, so a newer one
+                                        // supersedes any still queued. Replace
+                                        // in place to coalesce a burst of
+                                        // fragment arrivals into one cell.
+                                        let queued_id = ack_transmission_id(&result.ack);
+                                        let existing = ack_queue.iter_mut().find(|(frame, _)| {
+                                            ack_transmission_id(frame) == queued_id
+                                        });
+                                        if let Some((frame, _)) = existing {
+                                            *frame = result.ack;
+                                            metrics.ack_coalesced =
+                                                metrics.ack_coalesced.saturating_add(1);
+                                        } else if ack_queue.len() < LIMIT_T1_MAX_PENDING_ACKS {
+                                            ack_queue.push_back((result.ack, elapsed_ms(origin)));
                                         } else {
                                             // Dropping an ACK silently forces
                                             // the peer into an avoidable
@@ -407,7 +461,8 @@ fn run_link(
 
         let now = Instant::now();
         if now >= schedule.next_deadline() {
-            let (class, frame) = if let Some(frame) = ack_queue.pop_front() {
+            let (class, frame) = if let Some((frame, queued_at)) = ack_queue.pop_front() {
+                let frame = with_ack_delay(frame, elapsed_ms(origin).saturating_sub(queued_at));
                 (SlotClass::Ack, frame)
             } else if let Some(frame) = sender.next_retry(now_ms) {
                 (SlotClass::Retransmission, frame)
@@ -688,7 +743,7 @@ pub fn write_link_metrics(
             output.push_str(",\n");
         }
         output.push_str(&format!(
-            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{}}}",
+            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{}}}",
             metrics.sent_cells,
             metrics.received_cells,
             metrics.malformed_cells,
@@ -697,6 +752,7 @@ pub fn write_link_metrics(
             metrics.logical_messages_received,
             metrics.transmission_failures,
             metrics.ack_drops,
+            metrics.ack_coalesced,
             metrics.peak_queue_cells,
             metrics.schedule.slots,
             metrics.schedule.ack_cells,
@@ -713,6 +769,58 @@ pub fn write_link_metrics(
 mod tests {
     use super::*;
     use protocol_registry::{ERROR_AUTHENTICATION_FAILED, ERROR_MALFORMED};
+
+    #[test]
+    fn ack_delay_reports_the_measured_hold_bounded_by_the_registry() {
+        let ack = Frame::Ack {
+            suite: SUITE_R1,
+            transmission_id: [3_u8; 16],
+            fragment_count: 2,
+            ack_delay_ms: 0,
+            bitmap: 0b11,
+        };
+        let Frame::Ack { ack_delay_ms, .. } = with_ack_delay(ack.clone(), 7) else {
+            panic!("expected an ACK");
+        };
+        assert_eq!(
+            ack_delay_ms, 7,
+            "reports the real hold, not a constant zero"
+        );
+
+        let Frame::Ack { ack_delay_ms, .. } = with_ack_delay(ack, 10_000) else {
+            panic!("expected an ACK");
+        };
+        assert_eq!(
+            u64::from(ack_delay_ms),
+            LIMIT_T1_ACK_DELAY_MAX_MS as u64,
+            "bounded by the registry limit"
+        );
+    }
+
+    #[test]
+    fn ack_coalescing_keys_on_the_transmission_identifier() {
+        let data = Frame::Data {
+            suite: SUITE_R1,
+            transmission_id: [1_u8; 16],
+            fragment_index: 0,
+            fragment_count: 1,
+            total_length: 3,
+            fragment: b"abc".to_vec(),
+        };
+        let ack = Frame::Ack {
+            suite: SUITE_R1,
+            transmission_id: [1_u8; 16],
+            fragment_count: 1,
+            ack_delay_ms: 0,
+            bitmap: 0b1,
+        };
+        let chaff = Frame::Chaff {
+            suite: SUITE_R1,
+            transmission_id: [2_u8; 16],
+        };
+        assert_eq!(ack_transmission_id(&data), ack_transmission_id(&ack));
+        assert_ne!(ack_transmission_id(&chaff), ack_transmission_id(&ack));
+    }
 
     #[test]
     fn remote_input_drops_count_by_error_id() {
