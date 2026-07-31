@@ -7,7 +7,8 @@ pub mod p1;
 use codec_m2::{decode, encode, Envelope};
 use protocol_registry::{
     ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_UNSUPPORTED_SUITE,
-    FIXED_T2_QUEUE_CELLS_PER_PEER, LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS, SUITE_R1,
+    FIXED_T2_EPOCH_MS, FIXED_T2_QUEUE_CELLS_PER_PEER, LIMIT_MAX_T1_RETRIES,
+    LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS, SUITE_R1,
 };
 use scheduling_t2::{FixedSchedule, ScheduleMetrics, SlotClass};
 use std::collections::VecDeque;
@@ -65,11 +66,17 @@ pub enum LinkEvent {
         peer_id: u32,
         metrics: LinkMetrics,
     },
+    /// Emitted once after `request_drain` when the sender has no pending
+    /// transmissions and no queued ACKs, so shutdown loses nothing in flight.
+    Drained {
+        peer_id: u32,
+    },
 }
 
 #[derive(Debug)]
 enum LinkCommand {
     Send(Envelope),
+    Drain,
     Shutdown,
 }
 
@@ -83,6 +90,13 @@ impl LinkHandle {
     pub fn send(&self, envelope: Envelope) -> Result<(), RuntimeError> {
         self.commands
             .try_send(LinkCommand::Send(envelope))
+            .map_err(|_| RuntimeError::QueueFull)
+    }
+
+    /// Ask the worker to report `LinkEvent::Drained` once it is idle.
+    pub fn request_drain(&self) -> Result<(), RuntimeError> {
+        self.commands
+            .try_send(LinkCommand::Drain)
             .map_err(|_| RuntimeError::QueueFull)
     }
 
@@ -222,6 +236,7 @@ fn run_link(
     let mut metrics = LinkMetrics::default();
     let mut buffer = [0_u8; 2_048];
     let mut running = true;
+    let mut draining = false;
 
     while running {
         loop {
@@ -252,6 +267,9 @@ fn run_link(
                         metrics.logical_messages_sent =
                             metrics.logical_messages_sent.saturating_add(1);
                     }
+                }
+                Ok(LinkCommand::Drain) => {
+                    draining = true;
                 }
                 Ok(LinkCommand::Shutdown) => {
                     running = false;
@@ -449,6 +467,13 @@ fn run_link(
                 .min(Duration::from_millis(1));
             thread::sleep(wait);
         }
+
+        if draining && sender.pending_count() == 0 && ack_queue.is_empty() {
+            draining = false;
+            let _ = events.try_send(LinkEvent::Drained {
+                peer_id: config.peer_id,
+            });
+        }
     }
 
     metrics.schedule = schedule.metrics();
@@ -533,6 +558,40 @@ impl RemoteInputDrops {
             .join(",");
         format!("{{{body}}}")
     }
+}
+
+/// Upper bound on the post-CLOSE drain.
+///
+/// A transmission that has not completed within its full T1 retry budget never
+/// will: the sender raises `TransmissionFailed` instead. One extra fixed-T2
+/// epoch covers the slot on which the final ACK is emitted.
+#[must_use]
+pub fn drain_budget() -> Duration {
+    Duration::from_millis((LIMIT_MAX_T1_RETRIES * LIMIT_T1_RTO_MS + FIXED_T2_EPOCH_MS) as u64)
+}
+
+/// Wait for every link to report `Drained`, bounded by [`drain_budget`].
+///
+/// Replaces a fixed sleep: returns as soon as the senders are idle, and caps
+/// the wait when a peer has stopped responding.
+pub fn drain_links(links: &[&LinkHandle], events: &ChannelReceiver<LinkEvent>) -> usize {
+    for link in links {
+        let _ = link.request_drain();
+    }
+    let deadline = Instant::now() + drain_budget();
+    let mut drained = 0;
+    while drained < links.len() {
+        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+            break;
+        };
+        match events.recv_timeout(remaining.min(Duration::from_millis(50))) {
+            Ok(LinkEvent::Drained { .. }) => drained += 1,
+            Ok(_) => {}
+            Err(_) if Instant::now() >= deadline => break,
+            Err(_) => {}
+        }
+    }
+    drained
 }
 
 pub fn structured_event(node: &str, event: &str, fields: &[(&str, String)]) {

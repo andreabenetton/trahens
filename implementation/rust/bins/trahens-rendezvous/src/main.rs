@@ -6,8 +6,8 @@ use node_runtime::p1::{
     commit_proof, open_control, ready_proof, seal_control, seal_gateway_offer, verify_proof,
 };
 use node_runtime::{
-    event_channel, parse_hex, spawn_link, structured_event, unix_time_ms, write_link_metrics,
-    CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
+    drain_links, event_channel, parse_hex, spawn_link, structured_event, unix_time_ms,
+    write_link_metrics, CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
 };
 use protocol_registry::{
     ERROR_AUTHENTICATION_FAILED, ERROR_CAPABILITY_INVALID, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
@@ -394,7 +394,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             _ => {}
         }
         if observed_close && routes.is_empty() {
-            std::thread::sleep(Duration::from_millis(1_500));
+            drain_links(&[&link], &event_receiver);
             break;
         }
     }

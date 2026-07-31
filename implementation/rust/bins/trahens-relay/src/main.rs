@@ -4,8 +4,8 @@
 use codec_m2::{Candidate, Control, Discover, Envelope, Message, MessageType};
 use node_runtime::p1::wrap_candidate;
 use node_runtime::{
-    event_channel, parse_hex, spawn_link, structured_event, unix_time_ms, write_link_metrics,
-    CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
+    drain_links, event_channel, parse_hex, spawn_link, structured_event, unix_time_ms,
+    write_link_metrics, CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
 };
 use protocol_registry::{
     ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
@@ -418,7 +418,8 @@ fn run() -> Result<(), Box<dyn Error>> {
             _ => {}
         }
         if observed_close && routes.is_empty() {
-            std::thread::sleep(Duration::from_millis(1_500));
+            // Drain in-flight T1 state instead of sleeping a fixed interval.
+            drain_links(&[&upstream, &downstream], &event_receiver);
             break;
         }
     }
