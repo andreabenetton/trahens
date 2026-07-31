@@ -8,9 +8,10 @@ use node_runtime::{
     write_link_metrics, CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
 };
 use protocol_registry::{
-    ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
-    LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_ROUTE_TTL_MS, SUITE_R1,
+    ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION,
+    ERROR_TIMEOUT, LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_ROUTE_TTL_MS, SUITE_R1,
 };
+use rendezvous_r1::suite::{EligibilitySuite, R1Suite};
 use state_machine::{Event, Phase, RouteTable};
 use std::collections::HashMap;
 use std::error::Error;
@@ -113,6 +114,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut routes: HashMap<[u8; 16], RelayRoute> = HashMap::new();
     let mut reverse: HashMap<[u8; 16], [u8; 16]> = HashMap::new();
     let mut drops = RemoteInputDrops::new();
+    let eligibility = R1Suite;
     let deadline = unix_time_ms().saturating_add(timeout_ms);
     let mut cleanup_started: Option<Instant> = None;
     let mut observed_close = false;
@@ -173,11 +175,16 @@ fn run() -> Result<(), Box<dyn Error>> {
                         drops.record("relay", ERROR_MALFORMED, "discover_nonce_length");
                         continue;
                     };
-                    let child_discovery_nonce = loop {
-                        let value = trahens_crypto::random_bytes::<32>()?;
-                        if value != [0_u8; 32] {
-                            break value;
-                        }
+                    // eligibility-suite-interface-v1.md: lifecycle code must
+                    // depend on the suite interface, not a concrete scheme.
+                    let Ok(child_field) = eligibility.transform(&discover.discovery_field) else {
+                        drops.record("relay", ERROR_MALFORMED, "discovery_field_transform");
+                        continue;
+                    };
+                    let Ok(child_discovery_nonce) = <[u8; 32]>::try_from(child_field.as_slice())
+                    else {
+                        drops.record("relay", ERROR_INTERNAL, "discovery_field_width");
+                        continue;
                     };
                     let depth = discover.options.saturating_add(1);
                     let expires_at_ms = unix_time_ms().saturating_add(LIMIT_ROUTE_TTL_MS as u64);

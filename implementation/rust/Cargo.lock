@@ -174,6 +174,7 @@ dependencies = [
  "codec-m2",
  "node-runtime",
  "protocol-registry",
+ "rendezvous-r1",
  "state-machine",
  "trahens-crypto",
 ]

@@ -2,7 +2,9 @@
 #![forbid(unsafe_code)]
 #![doc = "Bounded one-time R1 rendezvous capability registry."]
 
-use protocol_registry::{DOMAIN_R1_CAPABILITY, LIMIT_MAX_ROUTES_GLOBAL};
+pub mod suite;
+
+use protocol_registry::{BYTES_R1_CAPABILITY, DOMAIN_R1_CAPABILITY, LIMIT_MAX_ROUTES_GLOBAL};
 use std::collections::HashMap;
 use trahens_crypto::{sha256, CryptoError, SecretBytes};
 
@@ -44,6 +46,33 @@ pub struct Registration {
 #[derive(Debug, Default)]
 pub struct Registry {
     records: HashMap<(u32, [u8; 32]), Registration>,
+}
+
+/// Domain for the commitment a client presents to prove capability
+/// possession. Distinct from the gateway-local record key below; the Python
+/// reference uses the same separation.
+const DOMAIN_R1_CAPABILITY_COMMITMENT: &[u8] = b"Trahens-R1-capability-commitment-v1";
+
+/// Issue a fresh non-zero capability token.
+pub fn issue_capability() -> Result<SecretBytes<32>, RendezvousError> {
+    for _ in 0..32 {
+        let value = trahens_crypto::random_bytes::<32>().map_err(|_| RendezvousError::Crypto)?;
+        if value != [0_u8; BYTES_R1_CAPABILITY] {
+            return Ok(SecretBytes(value));
+        }
+    }
+    Err(RendezvousError::Crypto)
+}
+
+/// Commitment to a capability, revealing nothing about the token itself.
+pub fn capability_commitment(token: &[u8; 32]) -> Result<[u8; 32], RendezvousError> {
+    if *token == [0_u8; BYTES_R1_CAPABILITY] {
+        return Err(RendezvousError::Invalid);
+    }
+    let mut input = Vec::with_capacity(DOMAIN_R1_CAPABILITY_COMMITMENT.len() + token.len());
+    input.extend_from_slice(DOMAIN_R1_CAPABILITY_COMMITMENT);
+    input.extend_from_slice(token);
+    Ok(sha256(&input)?)
 }
 
 fn token_hash(token: &[u8; 32]) -> Result<[u8; 32], RendezvousError> {
@@ -121,7 +150,7 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use protocol_registry::{BYTES_R1_CAPABILITY, SUITE_R1};
+    use protocol_registry::SUITE_R1;
 
     #[test]
     fn one_time_wrong_gateway_and_expiry() -> Result<(), RendezvousError> {
@@ -173,10 +202,14 @@ mod tests {
         let expires = test_vectors::u64_at(&vectors, "capability/expires_at_ms")
             .map_err(|_| RendezvousError::Invalid)?;
 
-        // The gateway-local record key. The vector's separate `commitment`
-        // field uses a different domain ("Trahens-R1-capability-commitment-v1")
-        // and is the value a client presents to prove possession; that
-        // function does not exist in Rust yet and is asserted where it lands.
+        // The client-presented commitment and the gateway-local record key
+        // use distinct domains and must both match.
+        assert_eq!(
+            capability_commitment(&token.0)?.to_vec(),
+            test_vectors::hex_at(&vectors, "capability/commitment")
+                .map_err(|_| RendezvousError::Invalid)?,
+            "capability commitment"
+        );
         assert_eq!(
             token_hash(&token.0)?.to_vec(),
             test_vectors::hex_at(&vectors, "capability/registry_hash")
