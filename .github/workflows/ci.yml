@@ -124,6 +124,15 @@ jobs:
           sudo -E implementation/harness/netns-p1.sh \
             --relays 2 --scenario burst-loss --delay 8ms --jitter 2ms \
             --timeout-ms 30000 --output "$GITHUB_WORKSPACE/build/p1-burst-loss"
+      # Gate line: off-route subtree cancellation under fan-out. A relay with
+      # two children returns two competing candidates; the initiator selects
+      # one, and the arm asserts the losing subtree is released rather than
+      # left running to its own expiry.
+      - name: Fan-out selection cancels the off-route subtree
+        run: |
+          sudo -E implementation/harness/netns-fanout.sh \
+            --loss 0 --delay 2ms --jitter 0ms \
+            --timeout-ms 30000 --output "$GITHUB_WORKSPACE/build/p1-fanout"
       - name: Twelve-relay establishment and cleanup
         run: |
           sudo -E implementation/harness/netns-p1.sh \
