@@ -4,8 +4,9 @@
 
 use protocol_registry::{
     suite_is_network_valid, FIXED_T2_CELLS_PER_EPOCH, FIXED_T2_EPOCH_MS, FIXED_T2_PROFILE_ID,
-    FIXED_T2_SLOT_INTERVAL_US, LIFECYCLE_PROFILE_E1, PRIVACY_PROFILE_U1, SCHEDULE_PROFILE_T2,
-    T2_ACTION_ACCEPT, T2_ACTION_OFFER, T2_ACTION_REJECT, T2_FRAME_SCHEDULE, VERSION,
+    FIXED_T2_QUEUE_CELLS_GLOBAL, FIXED_T2_SLOT_INTERVAL_US, LIFECYCLE_PROFILE_E1,
+    PRIVACY_PROFILE_U1, SCHEDULE_PROFILE_T2, T2_ACTION_ACCEPT, T2_ACTION_OFFER, T2_ACTION_REJECT,
+    T2_FRAME_SCHEDULE, VERSION,
 };
 use std::time::{Duration, Instant};
 
@@ -364,5 +365,193 @@ mod schedule_tests {
             Err(ScheduleError::Malformed)
         );
         Ok(())
+    }
+}
+
+/// Weighted deficit round robin over per-peer DATA classes.
+///
+/// `transport-profile-t2.md` section 6: one unit of deficit pays for one DATA
+/// cell; visiting a backlogged class adds `w * quantum` to its deficit, cells
+/// are emitted while the deficit is at least one, and an empty class resets.
+/// Weights are local policy and are never carried across relays.
+#[derive(Debug, Clone)]
+pub struct DeficitScheduler {
+    classes: Vec<DeficitClass>,
+    cursor: usize,
+    quantum: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DeficitClass {
+    weight: u32,
+    deficit: u32,
+    backlog: usize,
+}
+
+impl DeficitScheduler {
+    /// Build a scheduler over `weights`, one entry per DATA class.
+    #[must_use]
+    pub fn new(weights: &[u32], quantum: u32) -> Self {
+        Self {
+            classes: weights
+                .iter()
+                .map(|weight| DeficitClass {
+                    weight: (*weight).max(1),
+                    deficit: 0,
+                    backlog: 0,
+                })
+                .collect(),
+            cursor: 0,
+            quantum: quantum.max(1),
+        }
+    }
+
+    /// Record how many cells a class currently has queued.
+    pub fn set_backlog(&mut self, class: usize, cells: usize) {
+        if let Some(entry) = self.classes.get_mut(class) {
+            entry.backlog = cells;
+            if cells == 0 {
+                // Section 6: an empty class resets its deficit, so an idle
+                // flow cannot bank credit and then burst.
+                entry.deficit = 0;
+            }
+        }
+    }
+
+    /// Choose the class whose turn it is, or `None` when nothing is backlogged.
+    pub fn next_class(&mut self) -> Option<usize> {
+        if self.classes.iter().all(|class| class.backlog == 0) {
+            return None;
+        }
+        for _ in 0..self.classes.len() * 2 {
+            let index = self.cursor % self.classes.len();
+            let class = &mut self.classes[index];
+            if class.backlog == 0 {
+                class.deficit = 0;
+                self.cursor += 1;
+                continue;
+            }
+            if class.deficit == 0 {
+                // Starting this class's turn: it may emit w * quantum cells
+                // before the cursor moves on.
+                class.deficit = class.weight.saturating_mul(self.quantum);
+            }
+            class.deficit -= 1;
+            class.backlog -= 1;
+            if class.deficit == 0 || class.backlog == 0 {
+                // Turn spent, or nothing left to send: hand over.
+                self.cursor += 1;
+            }
+            return Some(index);
+        }
+        None
+    }
+}
+
+/// Node-global queue admission (`transport-profile-t2.md` section 7).
+///
+/// A transmission reserves its whole fragment set before its first emission,
+/// so an over-budget transmission is refused up front rather than being
+/// admitted and then abandoned part-way.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct QueueBudget {
+    reserved_cells: usize,
+    rejected: u64,
+}
+
+impl QueueBudget {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Reserve `cells` atomically, or refuse the whole transmission.
+    pub fn reserve(&mut self, cells: usize) -> bool {
+        if self.reserved_cells + cells > FIXED_T2_QUEUE_CELLS_GLOBAL {
+            self.rejected = self.rejected.saturating_add(1);
+            return false;
+        }
+        self.reserved_cells += cells;
+        true
+    }
+
+    /// Release cells once emitted or abandoned.
+    pub fn release(&mut self, cells: usize) {
+        self.reserved_cells = self.reserved_cells.saturating_sub(cells);
+    }
+
+    #[must_use]
+    pub fn reserved_cells(&self) -> usize {
+        self.reserved_cells
+    }
+
+    #[must_use]
+    pub fn rejected(&self) -> u64 {
+        self.rejected
+    }
+}
+
+#[cfg(test)]
+mod fairness_tests {
+    use super::*;
+
+    #[test]
+    fn deficit_round_robin_shares_slots_by_weight() {
+        // Two backlogged classes weighted 1 and 3 should split emissions about
+        // one to three over a long run.
+        let mut scheduler = DeficitScheduler::new(&[1, 3], 1);
+        let mut counts = [0_usize; 2];
+        for _ in 0..400 {
+            scheduler.set_backlog(0, 100);
+            scheduler.set_backlog(1, 100);
+            if let Some(class) = scheduler.next_class() {
+                counts[class] += 1;
+            }
+        }
+        let ratio = counts[1] as f64 / counts[0].max(1) as f64;
+        assert!(
+            (2.0..=4.0).contains(&ratio),
+            "weight 3 class should take roughly three times the slots, got {ratio}"
+        );
+    }
+
+    #[test]
+    fn an_idle_class_cannot_bank_credit() {
+        let mut scheduler = DeficitScheduler::new(&[1, 8], 4);
+        // Class 1 stays idle while class 0 is served.
+        for _ in 0..20 {
+            scheduler.set_backlog(0, 10);
+            scheduler.set_backlog(1, 0);
+            scheduler.next_class();
+        }
+        // When it finally has traffic it starts from zero deficit, so it
+        // cannot immediately monopolise the link.
+        scheduler.set_backlog(0, 10);
+        scheduler.set_backlog(1, 1);
+        let mut served_one = 0;
+        for _ in 0..4 {
+            if scheduler.next_class() == Some(1) {
+                served_one += 1;
+            }
+            scheduler.set_backlog(1, 0);
+        }
+        assert!(served_one <= 1, "an idle class does not bank credit");
+    }
+
+    #[test]
+    fn the_global_budget_reserves_whole_transmissions() {
+        let mut budget = QueueBudget::new();
+        assert!(budget.reserve(FIXED_T2_QUEUE_CELLS_GLOBAL));
+        assert_eq!(budget.reserved_cells(), FIXED_T2_QUEUE_CELLS_GLOBAL);
+
+        // One more cell does not fit, and the refusal is atomic: nothing of the
+        // rejected transmission is reserved.
+        assert!(!budget.reserve(1));
+        assert_eq!(budget.reserved_cells(), FIXED_T2_QUEUE_CELLS_GLOBAL);
+        assert_eq!(budget.rejected(), 1);
+
+        budget.release(FIXED_T2_QUEUE_CELLS_GLOBAL);
+        assert_eq!(budget.reserved_cells(), 0);
+        assert!(budget.reserve(1));
     }
 }
