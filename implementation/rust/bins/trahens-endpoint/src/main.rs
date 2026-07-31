@@ -338,12 +338,15 @@ fn run() -> Result<(), Box<dyn Error>> {
                     candidates_dropped += held.len() as u64;
                     held.clear();
 
+                    // The offer is consumed, not copied: its secrets move
+                    // into the route, and every candidate not selected is
+                    // dropped with its own secrets wiped.
                     let route = ActiveRoute {
                         local_label: chosen.selector,
                         state_label: chosen.branch_token,
                         generation,
-                        route_secret: SecretBytes(chosen.opened.route_secret),
-                        challenge: SecretBytes(chosen.opened.commit_challenge),
+                        route_secret: chosen.opened.route_secret,
+                        challenge: chosen.opened.commit_challenge,
                         pseudonym: chosen.opened.gateway_pseudonym,
                     };
                     let proof =

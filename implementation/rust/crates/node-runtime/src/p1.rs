@@ -46,13 +46,19 @@ impl std::fmt::Display for P1Error {
 
 impl std::error::Error for P1Error {}
 
-#[derive(Clone, PartialEq, Eq)]
+/// An unwrapped gateway offer.
+///
+/// Deliberately not `Clone`: the route secret and commit challenge are key
+/// material, and a candidate that loses the selection or expires is dropped
+/// without ever being used. Holding them in `SecretBytes` means those copies
+/// are wiped on drop rather than left in the initiator's heap, and refusing
+/// `Clone` means there is only ever one copy to wipe.
 pub struct OpenedOffer {
     pub gateway_id: u32,
     pub expires_at_ms: u64,
     pub gateway_pseudonym: [u8; 16],
-    pub route_secret: [u8; 32],
-    pub commit_challenge: [u8; 32],
+    pub route_secret: SecretBytes<32>,
+    pub commit_challenge: SecretBytes<32>,
     pub discovery_nonce: [u8; 32],
     /// Token the innermost relay used towards the gateway. Diagnostic only:
     /// control is addressed with the tentative selector each relay mints per
@@ -257,8 +263,8 @@ pub fn open_candidate_chain(
                     gateway_id,
                     expires_at_ms,
                     gateway_pseudonym,
-                    route_secret,
-                    commit_challenge,
+                    route_secret: SecretBytes(route_secret),
+                    commit_challenge: SecretBytes(commit_challenge),
                     discovery_nonce,
                     gateway_candidate_token,
                     layer_count: relay_layers + 1,
@@ -412,6 +418,44 @@ mod tests {
         assert_eq!(opened.gateway_id, 9);
         assert_eq!(opened.gateway_candidate_token, Some(child2));
         assert_eq!(opened.layer_count, 3);
+        Ok(())
+    }
+
+    #[test]
+    fn an_opened_offer_owns_its_secrets_and_cannot_be_copied(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // A losing or expired candidate is dropped without ever being used.
+        // Its route secret and commit challenge are key material, so they live
+        // in SecretBytes and are wiped on drop. OpenedOffer is not Clone, so
+        // there is only ever the one copy to wipe: were it Clone, the
+        // initiator's held candidates would each leave a plain array behind.
+        let root_secret = random_scalar()?;
+        let root_public = scalar_base(&root_secret)?;
+        let seed = [21_u8; 32];
+        let (signing_public, signing_secret) = signing_keypair(&seed)?;
+        let nonce = [22_u8; 32];
+        let secret = [23_u8; 32];
+        let challenge = [24_u8; 32];
+        let offer = seal_gateway_offer(
+            &root_public,
+            5,
+            u64::MAX,
+            [25; 16],
+            secret,
+            challenge,
+            nonce,
+            signing_public,
+            &signing_secret,
+        )?;
+
+        let opened = open_candidate_chain(&root_secret, &offer, 1, &signing_public, &nonce, 1)?;
+        assert_eq!(opened.route_secret.0, secret);
+        assert_eq!(opened.commit_challenge.0, challenge);
+
+        // Selection consumes the offer rather than copying out of it, so the
+        // secrets have exactly one owner all the way to the active route.
+        let moved = opened.route_secret;
+        assert_eq!(moved.0, secret);
         Ok(())
     }
 
