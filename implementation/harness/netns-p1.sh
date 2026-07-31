@@ -89,7 +89,20 @@ case "$SCENARIO" in
     # retry budget. The gate requires that to terminate cleanly, so the
     # assertions below additionally demand that some node actually reported
     # exhaustion rather than the run merely failing some other way.
-    BURST_LOSS="20,20"
+    #
+    # Spending the budget takes about twelve seconds: eight rounds with the RTO
+    # doubling from 100ms and clamped at 3s. The initiator has to stay alive
+    # for at least that long, so this arm gets one long ring window. With the
+    # default window it gave up with NO_CANDIDATE first and tore the path down
+    # before any transmission reached exhaustion, which is why the arm was
+    # flaky rather than deterministic.
+    # A two-state channel only spends the whole budget if its bad state
+    # outlasts it, so this is a long outage rather than a stutter: entered
+    # quickly (p=40%) and left very slowly (r=0.01%, a mean run far longer than
+    # the twelve seconds the budget takes). "20,20" averaged five-packet
+    # bursts, which recovery absorbed, so exhaustion happened only by luck.
+    BURST_LOSS="40,0.01"
+    ENDPOINT_EXTRA=(--rings "16:20000")
     EXPECT_ENDPOINT_FAILURE=1
     EXPECT_RETRY_EXHAUSTION=1 ;;
   transport-failure)
@@ -169,6 +182,17 @@ for ((i=0; i<NODES-1; i++)); do
     sleep 0.05
   done
 done
+
+# The initiator's candidate window has to cover a candidate returning along
+# the whole path, not a fixed stopwatch. Return time grows with the number of
+# hops, and under loss a multi-fragment candidate needs several T1 recovery
+# rounds on top. A flat window made the five-relay arm marginal: it passes on
+# a quiet machine and reports NO_CANDIDATE on a slower one, which measures the
+# runner rather than recovery. Scenarios that set their own schedule keep it.
+if [[ ${#ENDPOINT_EXTRA[@]} -eq 0 || ! " ${ENDPOINT_EXTRA[*]} " =~ " --rings " ]]; then
+  RING_WINDOW_MS=$(( 1500 + RELAYS * 600 ))
+  ENDPOINT_EXTRA+=(--rings "16:${RING_WINDOW_MS}")
+fi
 
 key_for() { printf '%064x' "$(( $1 + 1 ))"; }
 GATEWAY_PUBLIC=$(python3 - "$SIGNING_SEED" <<'PY'
