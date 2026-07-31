@@ -297,7 +297,12 @@ fn run_link(
                                     ..
                                 }) => {
                                     if sender
-                                        .on_ack(transmission_id, fragment_count, bitmap)
+                                        .on_ack(
+                                            transmission_id,
+                                            fragment_count,
+                                            bitmap,
+                                            elapsed_ms(origin),
+                                        )
                                         .is_err()
                                     {
                                         metrics.malformed_cells =

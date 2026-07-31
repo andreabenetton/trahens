@@ -238,11 +238,78 @@ struct Outbound {
     recovery_rounds: u8,
 }
 
+/// RFC 6298-style RTO estimator, per `transport-profile-t1.md` section 10.
+///
+/// Samples come only from fragments that were never retransmitted (Karn's
+/// rule), the timer doubles on timeout, and the result is always clamped to
+/// the registry's `[t1_rto_min_ms, t1_rto_max_ms]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RtoEstimator {
+    smoothed_ms: Option<u64>,
+    variation_ms: u64,
+    current_ms: u64,
+}
+
+impl Default for RtoEstimator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RtoEstimator {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            smoothed_ms: None,
+            variation_ms: 0,
+            current_ms: LIMIT_T1_RTO_MS as u64,
+        }
+    }
+
+    /// Clock granularity `G`: one fixed-T2 slot, rounded up to a millisecond.
+    const fn granularity_ms() -> u64 {
+        (FIXED_T2_SLOT_INTERVAL_US as u64).div_ceil(1_000)
+    }
+
+    fn clamp(value: u64) -> u64 {
+        value.clamp(LIMIT_T1_RTO_MIN_MS as u64, LIMIT_T1_RTO_MAX_MS as u64)
+    }
+
+    /// Fold in one round-trip sample from a fragment sent exactly once.
+    pub fn on_sample(&mut self, sample_ms: u64) {
+        match self.smoothed_ms {
+            None => {
+                self.smoothed_ms = Some(sample_ms);
+                self.variation_ms = sample_ms / 2;
+            }
+            Some(smoothed) => {
+                let difference = smoothed.abs_diff(sample_ms);
+                self.variation_ms = (3 * self.variation_ms + difference) / 4;
+                self.smoothed_ms = Some((7 * smoothed + sample_ms) / 8);
+            }
+        }
+        let smoothed = self.smoothed_ms.unwrap_or(sample_ms);
+        let margin = Self::granularity_ms().max(4 * self.variation_ms);
+        self.current_ms = Self::clamp(smoothed.saturating_add(margin));
+    }
+
+    /// Double the timer on expiry, still bounded by `RTO_max`.
+    pub fn on_timeout(&mut self) {
+        self.current_ms = Self::clamp(self.current_ms.saturating_mul(2));
+    }
+
+    #[must_use]
+    pub fn current_ms(&self) -> u64 {
+        self.current_ms
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Sender {
     pending: HashMap<[u8; 16], Outbound>,
     new_queue: VecDeque<([u8; 16], u16)>,
     retry_queue: VecDeque<([u8; 16], u16)>,
+    rto: RtoEstimator,
 }
 
 impl Sender {
@@ -251,6 +318,7 @@ impl Sender {
             pending: HashMap::new(),
             new_queue: VecDeque::new(),
             retry_queue: VecDeque::new(),
+            rto: RtoEstimator::new(),
         }
     }
 
@@ -329,11 +397,17 @@ impl Sender {
         None
     }
 
+    /// Apply a cumulative ACK bitmap.
+    ///
+    /// `now_ms` supplies round-trip samples: a fragment acknowledged for the
+    /// first time contributes a sample only if it was never retransmitted,
+    /// which is Karn's rule as required by section 10.
     pub fn on_ack(
         &mut self,
         transmission_id: [u8; 16],
         fragment_count: u16,
         bitmap: u32,
+        now_ms: u64,
     ) -> Result<bool, TransportError> {
         let Some(outbound) = self.pending.get_mut(&transmission_id) else {
             return Ok(false);
@@ -345,21 +419,42 @@ impl Sender {
         if bitmap & !mask != 0 {
             return Err(TransportError::Malformed);
         }
+        let newly = bitmap & !outbound.acknowledged;
+        let mut samples = Vec::new();
+        for index in 0..outbound.fragments.len() {
+            if newly & (1_u32 << index) == 0 || outbound.send_count[index] != 1 {
+                continue;
+            }
+            if let Some(sent) = outbound.sent_at_ms[index] {
+                samples.push(now_ms.saturating_sub(sent));
+            }
+        }
         outbound.acknowledged |= bitmap;
-        if outbound.acknowledged == mask {
+        let complete = outbound.acknowledged == mask;
+        for sample in samples {
+            self.rto.on_sample(sample);
+        }
+        if complete {
             self.pending.remove(&transmission_id);
             return Ok(true);
         }
         Ok(false)
     }
 
+    /// Current retransmission timeout in milliseconds.
+    #[must_use]
+    pub fn rto_ms(&self) -> u64 {
+        self.rto.current_ms()
+    }
+
     pub fn poll_timeouts(&mut self, now_ms: u64) -> Result<usize, TransportError> {
         let mut queued = 0;
+        let mut expired = false;
+        let rto_ms = self.rto.current_ms();
         for (id, outbound) in &mut self.pending {
             let due = outbound.sent_at_ms.iter().enumerate().any(|(index, sent)| {
                 outbound.acknowledged & (1_u32 << index) == 0
-                    && sent
-                        .is_some_and(|time| now_ms.saturating_sub(time) >= LIMIT_T1_RTO_MS as u64)
+                    && sent.is_some_and(|time| now_ms.saturating_sub(time) >= rto_ms)
             });
             if !due {
                 continue;
@@ -368,6 +463,7 @@ impl Sender {
                 return Err(TransportError::RetryExhausted);
             }
             outbound.recovery_rounds = outbound.recovery_rounds.saturating_add(1);
+            expired = true;
             for index in 0..outbound.fragments.len() {
                 if outbound.acknowledged & (1_u32 << index) == 0 {
                     self.retry_queue.push_back((*id, index as u16));
@@ -380,6 +476,10 @@ impl Sender {
                     queued += 1;
                 }
             }
+        }
+        if expired {
+            // section 10: on timeout the sender doubles the current RTO.
+            self.rto.on_timeout();
         }
         Ok(queued)
     }
@@ -639,13 +739,14 @@ mod tests {
         else {
             return Err(TransportError::Malformed);
         };
-        sender.on_ack(id, fragment_count, bitmap)?;
-        sender.poll_timeouts(LIMIT_T1_RTO_MS as u64)?;
+        sender.on_ack(id, fragment_count, bitmap, LIMIT_T1_RTO_MS as u64)?;
+        let deadline = sender.rto_ms();
+        sender.poll_timeouts(deadline)?;
         let retry = sender
-            .next_retry(LIMIT_T1_RTO_MS as u64)
+            .next_retry(deadline)
             .ok_or(TransportError::Malformed)?;
         let completed = receiver
-            .accept(retry, LIMIT_T1_RTO_MS as u64)?
+            .accept(retry, deadline)?
             .ok_or(TransportError::Malformed)?;
         assert_eq!(completed.complete, Some((SUITE_R1, message)));
         let Frame::Ack {
@@ -656,7 +757,7 @@ mod tests {
         else {
             return Err(TransportError::Malformed);
         };
-        assert!(sender.on_ack(id, fragment_count, bitmap)?);
+        assert!(sender.on_ack(id, fragment_count, bitmap, LIMIT_T1_RTO_MS as u64)?);
         assert_eq!(sender.pending_count(), 0);
         let _ = first;
         Ok(())
@@ -700,7 +801,7 @@ mod tests {
             return Err(TransportError::Malformed);
         };
         assert!(
-            sender.on_ack(id, fragment_count, bitmap)?,
+            sender.on_ack(id, fragment_count, bitmap, LIMIT_T1_RTO_MS as u64)?,
             "duplicate must still produce a full cumulative ACK"
         );
 
@@ -738,7 +839,7 @@ mod tests {
             return Err(TransportError::Malformed);
         };
         assert!(sender.next_retry(rto).is_none(), "exactly one retry queued");
-        assert!(sender.on_ack(id, fragment_count, 0b1)?);
+        assert!(sender.on_ack(id, fragment_count, 0b1, rto)?);
         assert_eq!(sender.pending_count(), 0);
         Ok(())
     }
@@ -749,14 +850,17 @@ mod tests {
         let id = [4_u8; 16];
         sender.enqueue(SUITE_R1, id, b"burst-loss")?;
         let _initial = sender.next_new(0).ok_or(TransportError::Malformed)?;
-        for round in 1..=LIMIT_MAX_T1_RETRIES {
-            let now = (round * LIMIT_T1_RTO_MS) as u64;
+        // The timer doubles each round, so step by the live RTO rather than a
+        // fixed interval.
+        let mut now = 0_u64;
+        for _ in 1..=LIMIT_MAX_T1_RETRIES {
+            now += sender.rto_ms();
             sender.poll_timeouts(now)?;
             let _retry = sender.next_retry(now).ok_or(TransportError::Malformed)?;
         }
-        let exhausted_at = ((LIMIT_MAX_T1_RETRIES + 1) * LIMIT_T1_RTO_MS) as u64;
+        now += sender.rto_ms();
         assert_eq!(
-            sender.poll_timeouts(exhausted_at),
+            sender.poll_timeouts(now),
             Err(TransportError::RetryExhausted)
         );
         assert_eq!(sender.abort_all(), 1);
@@ -774,6 +878,68 @@ mod tests {
     fn header_of(frame: &Frame) -> Result<[u8; 32], TransportError> {
         let encoded = encode_frame(frame)?;
         <[u8; 32]>::try_from(&encoded[..32]).map_err(|_| TransportError::Malformed)
+    }
+
+    #[test]
+    fn rto_estimator_follows_the_specified_recurrence() {
+        let mut rto = RtoEstimator::new();
+        assert_eq!(rto.current_ms(), LIMIT_T1_RTO_MS as u64, "initial RTO");
+
+        // First sample: SRTT = R, RTTVAR = R/2, so RTO = R + 4*(R/2) = 3R,
+        // clamped into [RTO_min, RTO_max].
+        rto.on_sample(40);
+        assert_eq!(rto.current_ms(), 120);
+
+        // Later samples follow the 7/8 and 3/4 recurrences.
+        // RTTVAR = (3*20 + |40-40|)/4 = 15; SRTT = (7*40 + 40)/8 = 40.
+        rto.on_sample(40);
+        assert_eq!(rto.current_ms(), 40 + 4 * 15);
+
+        // Timeout doubles the current value.
+        let before = rto.current_ms();
+        rto.on_timeout();
+        assert_eq!(rto.current_ms(), before * 2);
+
+        // Both bounds are enforced.
+        let mut low = RtoEstimator::new();
+        low.on_sample(0);
+        assert_eq!(
+            low.current_ms(),
+            LIMIT_T1_RTO_MIN_MS as u64,
+            "clamped to min"
+        );
+        let mut high = RtoEstimator::new();
+        for _ in 0..20 {
+            high.on_timeout();
+        }
+        assert_eq!(
+            high.current_ms(),
+            LIMIT_T1_RTO_MAX_MS as u64,
+            "clamped to max"
+        );
+    }
+
+    #[test]
+    fn retransmitted_fragments_do_not_contribute_rtt_samples() -> Result<(), TransportError> {
+        // Karn's rule: a fragment that was retransmitted has an ambiguous
+        // round trip, so acknowledging it must leave the estimator untouched.
+        let mut sender = Sender::new();
+        let id = [5_u8; 16];
+        sender.enqueue(SUITE_R1, id, b"karn")?;
+        let _first = sender.next_new(0).ok_or(TransportError::Malformed)?;
+        let baseline = sender.rto_ms();
+
+        sender.poll_timeouts(baseline)?;
+        let _retry = sender
+            .next_retry(baseline)
+            .ok_or(TransportError::Malformed)?;
+        let after_timeout = sender.rto_ms();
+        assert_eq!(after_timeout, baseline * 2, "timeout doubled the timer");
+
+        // Acknowledging the twice-sent fragment must not fold in a sample.
+        assert!(sender.on_ack(id, 1, 0b1, baseline + 5)?);
+        assert_eq!(sender.rto_ms(), after_timeout, "no sample from a retry");
+        Ok(())
     }
 
     #[test]
