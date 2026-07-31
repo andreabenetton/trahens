@@ -345,15 +345,36 @@ fn run() -> Result<(), Box<dyn Error>> {
                     continue;
                 }
 
+                // Section 3 step 5: terminating with NO_CANDIDATE still has to
+                // release every branch this discovery opened, exactly as
+                // selection does for the branches it does not choose.
+                for context in &contexts {
+                    link.send(Envelope {
+                        suite_id: SUITE_R1,
+                        message: Message::Control(Control {
+                            message_type: MessageType::Cancel,
+                            local_label: context.branch_token,
+                            generation,
+                            expiry_class: 1,
+                            protected_body: vec![0_u8],
+                        }),
+                    })?;
+                    let _ =
+                        state.apply(context.branch_token, Event::CancelAccepted, unix_time_ms());
+                    cancelled_branches += 1;
+                }
                 structured_event(
                     "endpoint",
                     "no_candidate",
                     &[
                         ("rings", rings.len().to_string()),
                         ("candidates", candidates_seen.to_string()),
+                        ("branches_cancelled", cancelled_branches.to_string()),
                     ],
                 );
                 no_candidate = true;
+                // Let the cancellations reach the path before shutting down.
+                drain_links(&[&link], &event_receiver);
                 break;
             }
             Err(RecvTimeoutError::Disconnected) => break,

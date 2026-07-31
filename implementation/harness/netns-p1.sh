@@ -12,7 +12,8 @@ MTU=1500
 TIMEOUT_MS=30000
 OUTPUT="${PWD}/build/p1-netns"
 BIN_DIR="${PWD}/implementation/rust/target/release"
-# ok | replay | wrong-capability | expired-capability
+# ok | replay | wrong-capability | expired-capability | no-candidate |
+# transport-failure
 SCENARIO=ok
 
 while (($#)); do
@@ -122,6 +123,7 @@ GATEWAY_TTL_MS=5000
 ENDPOINT_CAPABILITY="$CAPABILITY"
 ENDPOINT_EXTRA=()
 EXPECT_ENDPOINT_FAILURE=0
+BLACKHOLE_AFTER_MS=0
 case "$SCENARIO" in
   ok) ;;
   replay)
@@ -140,6 +142,17 @@ case "$SCENARIO" in
   expired-capability)
     # The registration lapses before the route reaches redemption.
     GATEWAY_TTL_MS=1
+    EXPECT_ENDPOINT_FAILURE=1 ;;
+  no-candidate)
+    # Every ring is too shallow to reach the gateway, so the schedule is
+    # exhausted and discovery terminates with NO_CANDIDATE. Each ring's branch
+    # is cancelled, and every node must still finish with no live routes.
+    ENDPOINT_EXTRA=(--rings "1:300,1:300")
+    EXPECT_ENDPOINT_FAILURE=1 ;;
+  transport-failure)
+    # The far link blackholes after setup begins, so a sender exhausts its T1
+    # retry budget. The gate requires that path to reclaim all remote state.
+    BLACKHOLE_AFTER_MS=120
     EXPECT_ENDPOINT_FAILURE=1 ;;
   *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;;
 esac
@@ -182,6 +195,16 @@ run_node "${NAMES[0]}" endpoint -7 \
   "${ENDPOINT_EXTRA[@]}" \
   --message "interoperable-p1" --timeout-ms "$TIMEOUT_MS" \
   --metrics "$OUTPUT/endpoint.metrics.json"
+
+if (( BLACKHOLE_AFTER_MS > 0 )); then
+  (
+    sleep "$(python3 -c "print(${BLACKHOLE_AFTER_MS}/1000)")"
+    last=$((NODES-2))
+    ip netns exec "${NAMES[$last]}" tc qdisc change dev "t${TAG}${last}a" root netem loss 100% \
+      >/dev/null 2>&1 || true
+  ) &
+  PIDS+=("$!")
+fi
 
 NODE_START=$((NODES-1))
 STATUS=0

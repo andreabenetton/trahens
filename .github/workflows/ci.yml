@@ -106,6 +106,18 @@ jobs:
           sudo -E implementation/harness/netns-p1.sh \
             --relays 2 --loss 0 --delay 2ms --jitter 0ms --scenario expired-capability \
             --timeout-ms 20000 --output "$GITHUB_WORKSPACE/build/p1-expired-capability"
+      # Gate line: success, cancellation, timeout, and transport failure all
+      # reclaim remote state.
+      - name: Exhausted ring schedule terminates with NO_CANDIDATE
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 2 --loss 0 --delay 2ms --jitter 0ms --scenario no-candidate \
+            --timeout-ms 20000 --output "$GITHUB_WORKSPACE/build/p1-no-candidate"
+      - name: Transport failure reclaims all remote state
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 2 --loss 0 --delay 2ms --jitter 0ms --scenario transport-failure \
+            --timeout-ms 20000 --output "$GITHUB_WORKSPACE/build/p1-transport-failure"
       - name: Twelve-relay establishment and cleanup
         run: |
           sudo -E implementation/harness/netns-p1.sh \
