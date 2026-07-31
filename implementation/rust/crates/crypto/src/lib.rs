@@ -450,7 +450,13 @@ fn reply_commitment(
     hmac_sha256(key, &transcript)
 }
 
-fn reply_seal_with_scalar(
+/// Seal with a caller-supplied ephemeral scalar.
+///
+/// Exposed so tests can reproduce the published C1 vectors, whose
+/// `reply_kem` case fixes the ephemeral secret. Production callers use
+/// [`reply_seal`], which draws the scalar randomly.
+#[doc(hidden)]
+pub fn reply_seal_with_scalar(
     recipient_public: &[u8; 32],
     plaintext: &[u8],
     aad: &[u8],
@@ -674,6 +680,49 @@ mod tests {
             blind_public(&public, &factor)?,
             scalar_base(&blinded_secret)?
         );
+        Ok(())
+    }
+
+    #[test]
+    fn published_c1_reply_kem_vector_reproduces_exactly() -> Result<(), CryptoError> {
+        // The reply_kem case fixes the ephemeral secret, so the sealed output
+        // is fully determined and can be compared byte-for-byte against the
+        // published vector rather than only round-tripped.
+        let vectors = test_vectors::crypto_c1().map_err(|_| CryptoError::Initialization)?;
+        let get = |path: &str| {
+            test_vectors::hex_at(&vectors, path).map_err(|_| CryptoError::Initialization)
+        };
+        let get32 = |path: &str| {
+            test_vectors::hex_array_at::<32>(&vectors, path)
+                .map_err(|_| CryptoError::Initialization)
+        };
+
+        let root_secret = get32("reply_kem/root_secret")?;
+        let root_public = get32("reply_kem/root_public")?;
+        assert_eq!(scalar_base(&root_secret)?, root_public, "root public key");
+
+        // Blinding: the blinded secret and blinded public must agree.
+        let factor = get32("reply_kem/blinding_factor")?;
+        let blinded_public = get32("reply_kem/blinded_public")?;
+        let blinded_secret = get32("reply_kem/blinded_secret")?;
+        assert_eq!(blind_public(&root_public, &factor)?, blinded_public);
+        assert_eq!(blind_secret(&root_secret, &factor)?, blinded_secret);
+        assert_eq!(
+            scalar_base(&blinded_secret)?,
+            get32("reply_kem/public_from_blinded_secret")?,
+        );
+
+        // Sealing with the vector's ephemeral scalar is deterministic.
+        let ephemeral = get32("reply_kem/ephemeral_secret")?;
+        let plaintext = get("reply_kem/plaintext")?;
+        let aad = get("reply_kem/aad")?;
+        let info = get("reply_kem/info")?;
+        let sealed = reply_seal_with_scalar(&blinded_public, &plaintext, &aad, &info, &ephemeral)?;
+        assert_eq!(sealed, get("reply_kem/sealed")?, "sealed ciphertext");
+
+        // And the blinded secret opens it back to the published plaintext.
+        let opened = reply_open(&blinded_secret, &sealed, &aad, &info)?;
+        assert_eq!(opened, get("reply_kem/opened")?, "opened plaintext");
         Ok(())
     }
 }

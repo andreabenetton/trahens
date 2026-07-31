@@ -121,6 +121,7 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use protocol_registry::{BYTES_R1_CAPABILITY, SUITE_R1};
 
     #[test]
     fn one_time_wrong_gateway_and_expiry() -> Result<(), RendezvousError> {
@@ -135,6 +136,103 @@ mod tests {
         let expired = SecretBytes([2_u8; 32]);
         registry.register(7, &expired, b"endpoint".to_vec(), 20, 2)?;
         assert_eq!(registry.redeem(7, &expired, 22)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn published_r1_capability_vector_matches() -> Result<(), RendezvousError> {
+        // spec/r1-test-vectors.json had no consumer on either side: only a
+        // regeneration byte-compare in check_repo.sh. It pins the behaviours
+        // this registry reimplements independently of the Python reference.
+        let vectors = test_vectors::r1().map_err(|_| RendezvousError::Invalid)?;
+
+        assert_eq!(
+            test_vectors::hex_at(&vectors, "suite_id").map_err(|_| RendezvousError::Invalid)?,
+            SUITE_R1.to_vec(),
+            "suite id"
+        );
+        assert_eq!(
+            test_vectors::u64_at(&vectors, "sizes/capability_bytes")
+                .map_err(|_| RendezvousError::Invalid)? as usize,
+            BYTES_R1_CAPABILITY,
+        );
+
+        let token = SecretBytes(
+            test_vectors::hex_array_at::<32>(&vectors, "capability/token")
+                .map_err(|_| RendezvousError::Invalid)?,
+        );
+        let handle = test_vectors::hex_at(&vectors, "capability/endpoint_handle")
+            .map_err(|_| RendezvousError::Invalid)?;
+        let gateway_id = u32::try_from(
+            test_vectors::u64_at(&vectors, "capability/gateway_id")
+                .map_err(|_| RendezvousError::Invalid)?,
+        )
+        .map_err(|_| RendezvousError::Invalid)?;
+        let created = test_vectors::u64_at(&vectors, "capability/created_at_ms")
+            .map_err(|_| RendezvousError::Invalid)?;
+        let expires = test_vectors::u64_at(&vectors, "capability/expires_at_ms")
+            .map_err(|_| RendezvousError::Invalid)?;
+
+        // The gateway-local record key. The vector's separate `commitment`
+        // field uses a different domain ("Trahens-R1-capability-commitment-v1")
+        // and is the value a client presents to prove possession; that
+        // function does not exist in Rust yet and is asserted where it lands.
+        assert_eq!(
+            token_hash(&token.0)?.to_vec(),
+            test_vectors::hex_at(&vectors, "capability/registry_hash")
+                .map_err(|_| RendezvousError::Invalid)?,
+            "gateway-local registry hash"
+        );
+
+        let mut registry = Registry::default();
+        registry.register(
+            gateway_id,
+            &token,
+            handle.clone(),
+            created,
+            expires - created,
+        )?;
+
+        // A wrong gateway is rejected and leaves the record intact.
+        assert!(
+            test_vectors::value_is_null(&vectors, "capability/wrong_gateway_redemption"),
+            "vector expects no handle for the wrong gateway"
+        );
+        assert_eq!(registry.redeem(gateway_id + 1, &token, created + 1)?, None);
+        assert_eq!(registry.live_records(), 1);
+
+        // First redemption returns the handle; the replay returns nothing.
+        assert_eq!(
+            registry.redeem(gateway_id, &token, created + 1)?,
+            Some(
+                test_vectors::hex_at(&vectors, "capability/first_redemption")
+                    .map_err(|_| RendezvousError::Invalid)?
+            ),
+            "first redemption"
+        );
+        assert!(test_vectors::value_is_null(
+            &vectors,
+            "capability/replay_redemption"
+        ));
+        assert_eq!(registry.redeem(gateway_id, &token, created + 1)?, None);
+        assert_eq!(
+            registry.live_records(),
+            test_vectors::u64_at(&vectors, "capability/live_records_after_redemption")
+                .map_err(|_| RendezvousError::Invalid)? as usize,
+        );
+
+        // An expired capability yields nothing and leaves no live record.
+        let mut registry = Registry::default();
+        registry.register(gateway_id, &token, handle, created, expires - created)?;
+        assert_eq!(registry.redeem(gateway_id, &token, expires)?, None);
+        assert_eq!(
+            registry.live_records(),
+            test_vectors::u64_at(&vectors, "capability/expired_live_records")
+                .map_err(|_| RendezvousError::Invalid)? as usize,
+        );
+
+        // An all-zero token is never a valid capability.
+        assert_eq!(token_hash(&[0_u8; 32]), Err(RendezvousError::Invalid));
         Ok(())
     }
 }

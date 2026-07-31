@@ -100,6 +100,12 @@ pub fn u64_list_at(root: &Value, path: &str) -> Result<Vec<u64>, VectorError> {
         .collect()
 }
 
+/// True when `path` exists and is JSON null.
+#[must_use]
+pub fn value_is_null(root: &Value, path: &str) -> bool {
+    value_at(root, path).map(Value::is_null).unwrap_or(false)
+}
+
 fn value_at<'a>(root: &'a Value, path: &str) -> Result<&'a Value, VectorError> {
     let mut cursor = root;
     for segment in path.split('/') {
