@@ -4,11 +4,11 @@
 use codec_m2::{decode_p1, encode_p1, CodecError, MessageType, P1Payload};
 use protocol_registry::{
     DOMAIN_C1_CANDIDATE_AAD, DOMAIN_C1_CANDIDATE_INFO, DOMAIN_C1_COMMIT, DOMAIN_C1_READY,
-    LIMIT_MAX_CANDIDATE_LAYERS,
+    LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_MAX_CANDIDATE_RESPONSES_PER_DISCOVERY,
 };
 use trahens_crypto::{
-    blind_secret, constant_time_equal, keyed_proof, reply_open, reply_seal, route_open, route_seal,
-    sign, verify, zeroize_slice, CryptoError, SecretBytes,
+    blind_secret, constant_time_equal, hmac_sha256, keyed_proof, reply_open, reply_seal,
+    route_open, route_seal, sign, verify, zeroize_slice, CryptoError, SecretBytes,
 };
 
 #[derive(Debug)]
@@ -54,9 +54,44 @@ pub struct OpenedOffer {
     pub route_secret: [u8; 32],
     pub commit_challenge: [u8; 32],
     pub discovery_nonce: [u8; 32],
-    pub first_forward_label: Option<[u8; 16]>,
+    /// Token the innermost relay used towards the gateway. Diagnostic only:
+    /// control is addressed with the tentative selector each relay mints per
+    /// returned offer, which is what disambiguates a fanned-out branch.
     pub gateway_candidate_token: Option<[u8; 16]>,
     pub layer_count: usize,
+}
+
+/// How many offer labels a node keeps registered per child at once.
+///
+/// Offers may arrive out of order within the window; the window slides as each
+/// is consumed, so live state stays small while the total per child is still
+/// bounded by `LIMIT_MAX_CANDIDATE_RESPONSES_PER_DISCOVERY`.
+pub const OFFER_LABEL_WINDOW: u16 = 4;
+
+/// Parent-facing label for the `index`-th offer returned on one branch.
+///
+/// `core-v0.1.md` section 11 has a relay create a tentative mapping from a
+/// parent-facing label to a child-facing one, and receive COMMIT on that
+/// parent-facing label. For the parent to resolve a label it did not mint, the
+/// two ends need a shared secret to derive it from, and they already have
+/// one: the discovery nonce the parent independently replaced for this child
+/// and sent in the DISCOVER. Deriving from it keeps successive labels
+/// unlinkable to anyone who has not seen the nonce, which a counter or an XOR
+/// of the branch token would not.
+pub fn offer_label(discovery_nonce: &[u8; 32], index: u16) -> Result<[u8; 16], P1Error> {
+    if usize::from(index) >= LIMIT_MAX_CANDIDATE_RESPONSES_PER_DISCOVERY {
+        return Err(P1Error::TooManyLayers);
+    }
+    let mut input = b"Trahens-P1-offer-label-v1".to_vec();
+    input.extend_from_slice(&index.to_be_bytes());
+    let full = hmac_sha256(discovery_nonce, &input).map_err(|_| P1Error::InvalidOffer)?;
+    let mut label = [0_u8; 16];
+    label.copy_from_slice(&full[..16]);
+    // A zero label is not a valid token anywhere in M2.
+    if label == [0_u8; 16] {
+        return Err(P1Error::InvalidOffer);
+    }
+    Ok(label)
 }
 
 fn append_field(output: &mut Vec<u8>, value: &[u8]) -> Result<(), P1Error> {
@@ -174,7 +209,6 @@ pub fn open_candidate_chain(
     }
     let mut secret = SecretBytes(*root_secret);
     let mut blob = candidate_blob.to_vec();
-    let mut first_forward_label = None;
     let mut gateway_candidate_token = None;
     let mut relay_layers = 0_usize;
     let mut expected_nonce = *expected_discovery_nonce;
@@ -226,7 +260,6 @@ pub fn open_candidate_chain(
                     route_secret,
                     commit_challenge,
                     discovery_nonce,
-                    first_forward_label,
                     gateway_candidate_token,
                     layer_count: relay_layers + 1,
                 });
@@ -234,7 +267,7 @@ pub fn open_candidate_chain(
             P1Payload::RelayLayer {
                 blinding_factor,
                 child_candidate_token,
-                forward_label,
+                forward_label: _,
                 parent_discovery_nonce,
                 child_discovery_nonce,
                 child_blob,
@@ -247,9 +280,6 @@ pub fn open_candidate_chain(
                     return Err(P1Error::InvalidOffer);
                 }
                 expected_nonce = child_discovery_nonce;
-                if first_forward_label.is_none() {
-                    first_forward_label = Some(forward_label);
-                }
                 gateway_candidate_token = Some(child_candidate_token);
                 secret = SecretBytes(blind_secret(&secret.0, &blinding_factor)?);
                 blob = child_blob;
@@ -380,7 +410,6 @@ mod tests {
         )?;
         let opened = open_candidate_chain(&root_secret, &layer1, 3, &signing_public, &nonce, 1)?;
         assert_eq!(opened.gateway_id, 9);
-        assert_eq!(opened.first_forward_label, Some(forward1));
         assert_eq!(opened.gateway_candidate_token, Some(child2));
         assert_eq!(opened.layer_count, 3);
         Ok(())
@@ -406,7 +435,6 @@ mod tests {
         )?;
         let opened = open_candidate_chain(&root_secret, &offer, 1, &signing_public, &nonce, 1)?;
         assert_eq!(opened.gateway_id, 7);
-        assert_eq!(opened.first_forward_label, None);
         assert_eq!(opened.gateway_candidate_token, None);
         assert_eq!(opened.layer_count, 1);
         Ok(())

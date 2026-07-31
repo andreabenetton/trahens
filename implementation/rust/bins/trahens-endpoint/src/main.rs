@@ -23,7 +23,10 @@ use trahens_crypto::{
 };
 
 struct ActiveRoute {
+    /// Wire address for this route: the selector the initiator committed to.
     local_label: [u8; 16],
+    /// Branch this route came from, which keys the local route state.
+    state_label: [u8; 16],
     generation: u32,
     route_secret: SecretBytes<32>,
     // The commit challenge is a keyed-proof input shared with the gateway;
@@ -111,7 +114,12 @@ struct RingContext {
 /// A candidate offer held until its ring window closes.
 struct HeldCandidate {
     ring: usize,
+    /// Branch this offer answered. Keys the local route state.
     branch_token: [u8; 16],
+    /// Tentative selector the adjacent relay minted for this one offer. A
+    /// COMMIT addressed to it names this chain out of the several a fanned-out
+    /// branch may return; the branch token alone would not.
+    selector: [u8; 16],
     hop_count: u8,
     arrived_ms: u64,
     opened: node_runtime::p1::OpenedOffer,
@@ -330,7 +338,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                     held.clear();
 
                     let route = ActiveRoute {
-                        local_label: chosen.branch_token,
+                        local_label: chosen.selector,
+                        state_label: chosen.branch_token,
                         generation,
                         route_secret: SecretBytes(chosen.opened.route_secret),
                         challenge: SecretBytes(chosen.opened.commit_challenge),
@@ -344,7 +353,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         MessageType::Commit,
                         &P1Payload::Commit { proof },
                     )?;
-                    state.apply(route.local_label, Event::CommitAccepted, clock.now_ms())?;
+                    state.apply(route.state_label, Event::CommitAccepted, clock.now_ms())?;
                     active = Some(route);
                     continue;
                 }
@@ -404,17 +413,6 @@ fn run() -> Result<(), Box<dyn Error>> {
                     // Hold the offer until its ring window closes: section 5
                     // makes selection a window-boundary decision, so accepting
                     // the first arrival would defeat the ordering rule.
-                    let Some(context) = contexts
-                        .iter()
-                        .find(|context| context.branch_token == candidate_token)
-                    else {
-                        drops.record(
-                            "endpoint",
-                            ERROR_STATE_VIOLATION,
-                            "candidate_unknown_branch",
-                        );
-                        continue;
-                    };
                     if selected_branch.is_some() {
                         // Section 5: after selection no further branches are
                         // admitted for this logical discovery.
@@ -423,32 +421,43 @@ fn run() -> Result<(), Box<dyn Error>> {
                         structured_event("endpoint", "late_candidate_dropped", &[]);
                         continue;
                     }
-                    let Ok(opened) = open_candidate_chain(
-                        &root_secret.0,
-                        &candidate_blob,
-                        layer_count,
-                        &expected_gateway_public,
-                        &context.discovery_nonce,
-                        unix_time_ms(),
-                    ) else {
+                    // Each returned offer now carries its own tentative
+                    // selector, minted by the first relay, so the token is not
+                    // a branch token this node has seen. The ring is
+                    // identified instead by the discovery-nonce chain the
+                    // candidate is bound to, which is the binding that
+                    // actually authenticates the offer.
+                    let Some((ring, branch_token, opened)) = contexts.iter().find_map(|context| {
+                        open_candidate_chain(
+                            &root_secret.0,
+                            &candidate_blob,
+                            layer_count,
+                            &expected_gateway_public,
+                            &context.discovery_nonce,
+                            unix_time_ms(),
+                        )
+                        .ok()
+                        .map(|opened| (context.ring, context.branch_token, opened))
+                    }) else {
                         drops.record("endpoint", ERROR_AUTHENTICATION_FAILED, "candidate_chain");
                         continue;
                     };
                     if state
-                        .apply(candidate_token, Event::CandidateAccepted, clock.now_ms())
+                        .apply(branch_token, Event::CandidateAccepted, clock.now_ms())
                         .is_err()
                     {
                         drops.record("endpoint", ERROR_STATE_VIOLATION, "candidate_transition");
                         continue;
                     }
                     candidates_seen += 1;
-                    if context.ring != ring_index {
+                    if ring != ring_index {
                         // Eligible but from a ring that has already closed.
                         late_candidates += 1;
                     }
                     held.push(HeldCandidate {
-                        ring: context.ring,
-                        branch_token: candidate_token,
+                        ring,
+                        branch_token,
+                        selector: candidate_token,
                         hop_count: layer_count,
                         arrived_ms: clock.now_ms(),
                         opened,
@@ -457,7 +466,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         "endpoint",
                         "candidate_held",
                         &[
-                            ("ring", context.ring.to_string()),
+                            ("ring", ring.to_string()),
                             ("layers", layer_count.to_string()),
                         ],
                     );
@@ -506,7 +515,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 continue;
                             }
                             if state
-                                .apply(route.local_label, Event::ReadyAccepted, clock.now_ms())
+                                .apply(route.state_label, Event::ReadyAccepted, clock.now_ms())
                                 .is_err()
                             {
                                 drops.record("endpoint", ERROR_STATE_VIOLATION, "ready_transition");
@@ -573,7 +582,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 )?;
                                 cleanup_started = Some(Instant::now());
                                 state.apply(
-                                    route.local_label,
+                                    route.state_label,
                                     Event::CloseAccepted,
                                     clock.now_ms(),
                                 )?;
@@ -587,7 +596,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 .into());
                             }
                             state.apply(
-                                route.local_label,
+                                route.state_label,
                                 Event::CapabilityAccepted,
                                 clock.now_ms(),
                             )?;
@@ -613,7 +622,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             if payload != message {
                                 return Err("echo payload mismatch".into());
                             }
-                            state.apply(route.local_label, Event::DataAccepted, clock.now_ms())?;
+                            state.apply(route.state_label, Event::DataAccepted, clock.now_ms())?;
                             send_control(
                                 &link,
                                 route,
@@ -621,7 +630,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 &P1Payload::Close { reason: 0 },
                             )?;
                             cleanup_started = Some(Instant::now());
-                            state.apply(route.local_label, Event::CloseAccepted, clock.now_ms())?;
+                            state.apply(route.state_label, Event::CloseAccepted, clock.now_ms())?;
                             success = true;
                             break;
                         }

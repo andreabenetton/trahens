@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 use codec_m2::{Candidate, Control, Discover, Envelope, Message, MessageType};
-use node_runtime::p1::wrap_candidate;
+use node_runtime::p1::{offer_label, wrap_candidate, OFFER_LABEL_WINDOW};
 use node_runtime::{
     drain_in_precedence_order, drain_links, event_channel, parse_hex, spawn_link, structured_event,
     write_link_metrics, CliArgs, Clock, LinkConfig, LinkEvent, LinkMetrics, NodeQueueBudget,
@@ -37,14 +37,48 @@ impl Drop for RelayChild {
     }
 }
 
+/// One offer label this relay published to a child, and what it resolves to.
+///
+/// The labels are derived from the discovery nonce the relay replaced for that
+/// child, so both ends compute the same sequence without any of it appearing
+/// as a pattern on the wire. A sliding window keeps live state small while the
+/// total per child stays bounded by the registry's response ceiling.
+#[derive(Clone, Copy)]
+struct IncomingOffer {
+    parent_label: [u8; 16],
+    child_index: usize,
+    index: u16,
+}
+
+/// One CANDIDATE this relay forwarded upstream.
+///
+/// Every returned offer gets its own tentative selector, so the initiator can
+/// name the exact chain it chose. Addressing COMMIT with the branch token
+/// instead would name the branch but not which child answered, and the relay
+/// would have to guess — in practice by taking the first arrival, which is
+/// rarely the candidate the initiator selects.
+#[derive(Clone)]
+struct TentativeOffer {
+    parent_label: [u8; 16],
+    child_index: usize,
+    /// Token the child accepts control on: its own tentative selector, or its
+    /// branch token when the child is a gateway.
+    child_selector: [u8; 16],
+}
+
 #[derive(Clone)]
 struct RelayRoute {
     parent_label: [u8; 16],
     children: Vec<RelayChild>,
-    /// Index of the child whose CANDIDATE was forwarded upstream. Control
-    /// traffic follows that child; until one exists there is nothing to
-    /// forward control to.
+    /// Index of the child named by the COMMIT that arrived. Control traffic
+    /// follows that child; until a COMMIT arrives there is nothing to forward.
     committed_child: Option<usize>,
+    /// Tentative selector the initiator committed to. Upstream control is
+    /// rewritten to it so the initiator recognises its own route.
+    committed_selector: Option<[u8; 16]>,
+    /// How many offers this branch has already forwarded upstream, which fixes
+    /// the next parent-facing label to derive.
+    offers_forwarded: u16,
     incoming_reply_public: [u8; 32],
     depth: u8,
     parent_discovery_nonce: [u8; 32],
@@ -61,10 +95,13 @@ fn forward_control(message: Control, label: [u8; 16]) -> Envelope {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cleanup_route(
     parent: [u8; 16],
     routes: &mut HashMap<[u8; 16], RelayRoute>,
     reverse: &mut HashMap<[u8; 16], [u8; 16]>,
+    tentatives: &mut HashMap<[u8; 16], TentativeOffer>,
+    incoming: &mut HashMap<[u8; 16], IncomingOffer>,
     states: &mut RouteTable,
     event: Event,
     now_ms: u64,
@@ -75,6 +112,12 @@ fn cleanup_route(
         }
         let _ = states.apply(parent, event, now_ms);
     }
+    // Every selector that resolved to this branch goes with it, including the
+    // child selectors registered when offers came back and the tentative
+    // selectors this relay handed upstream.
+    reverse.retain(|_, mapped| *mapped != parent);
+    tentatives.retain(|_, offer| offer.parent_label != parent);
+    incoming.retain(|_, slot| slot.parent_label != parent);
 }
 
 /// Reclaim every branch whose deadline has passed.
@@ -88,6 +131,8 @@ fn reclaim_expired(
     now_ms: u64,
     routes: &mut HashMap<[u8; 16], RelayRoute>,
     reverse: &mut HashMap<[u8; 16], [u8; 16]>,
+    tentatives: &mut HashMap<[u8; 16], TentativeOffer>,
+    incoming: &mut HashMap<[u8; 16], IncomingOffer>,
     states: &mut RouteTable,
 ) -> usize {
     let expired: Vec<[u8; 16]> = routes
@@ -101,7 +146,16 @@ fn reclaim_expired(
         .collect();
     let count = expired.len();
     for label in expired {
-        cleanup_route(label, routes, reverse, states, Event::Timeout, now_ms);
+        cleanup_route(
+            label,
+            routes,
+            reverse,
+            tentatives,
+            incoming,
+            states,
+            Event::Timeout,
+            now_ms,
+        );
     }
     // A state entry can outlive its route map entry, so sweep the table too.
     states.expire(now_ms);
@@ -187,14 +241,22 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut states = RouteTable::default();
     let mut routes: HashMap<[u8; 16], RelayRoute> = HashMap::new();
     let mut reverse: HashMap<[u8; 16], [u8; 16]> = HashMap::new();
+    // Selector handed upstream for one returned offer -> which child it came
+    // from. This is what lets a COMMIT name one chain out of several.
+    let mut tentatives: HashMap<[u8; 16], TentativeOffer> = HashMap::new();
+    // Label a child may answer on -> which branch and child it belongs to.
+    let mut incoming: HashMap<[u8; 16], IncomingOffer> = HashMap::new();
     let mut drops = RemoteInputDrops::new();
     let eligibility = R1Suite;
     let mut admission = IngressAdmission::new();
     let clock = Clock::start();
     let deadline = clock.now_ms().saturating_add(timeout_ms);
     let mut cleanup_started: Option<Instant> = None;
-    let mut observed_close = false;
+    // Any terminal control: CLOSE for a completed route, CANCEL or ABORT for
+    // one released because the initiator selected a different chain.
+    let mut observed_terminal = false;
     let mut transport_failed: Option<u32> = None;
+    let mut cancelled_subtrees = 0_u64;
 
     // Events that arrive together share a local timestamp, so they are drained
     // as a batch, ordered by E1 section 2 precedence, and then consumed one at
@@ -203,7 +265,14 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut ordered: VecDeque<LinkEvent> = VecDeque::new();
     while clock.now_ms() < deadline {
         // Expiry runs before every event, not only when the channel is idle.
-        reclaim_expired(clock.now_ms(), &mut routes, &mut reverse, &mut states);
+        reclaim_expired(
+            clock.now_ms(),
+            &mut routes,
+            &mut reverse,
+            &mut tentatives,
+            &mut incoming,
+            &mut states,
+        );
         let next = match ordered.pop_front() {
             Some(event) => Ok(event),
             None => event_receiver.recv_timeout(Duration::from_millis(100)),
@@ -313,6 +382,21 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 discovery_field: child_discovery_nonce.to_vec(),
                             }),
                         })?;
+                        // Reserve the first labels this child may answer on.
+                        // The child derives the same values from the nonce it
+                        // just received, so an offer arriving under one of them
+                        // resolves to this branch and this child.
+                        for index in 0..OFFER_LABEL_WINDOW {
+                            let label = offer_label(&child_discovery_nonce, index)?;
+                            incoming.insert(
+                                label,
+                                IncomingOffer {
+                                    parent_label: discover.branch_token,
+                                    child_index: link_index,
+                                    index,
+                                },
+                            );
+                        }
                         children.push(RelayChild {
                             link_index,
                             child_label,
@@ -325,6 +409,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                             discover.branch_token,
                             &mut routes,
                             &mut reverse,
+                            &mut tentatives,
+                            &mut incoming,
                             &mut states,
                             Event::CancelAccepted,
                             clock.now_ms(),
@@ -337,6 +423,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                             parent_label: discover.branch_token,
                             children,
                             committed_child: None,
+                            committed_selector: None,
+                            offers_forwarded: 0,
                             incoming_reply_public: discover.reply_public_key,
                             depth,
                             parent_discovery_nonce,
@@ -345,12 +433,34 @@ fn run() -> Result<(), Box<dyn Error>> {
                     );
                 }
                 Message::Control(control) => {
-                    let Some(route) = routes.get(&control.local_label).cloned() else {
+                    // Control from upstream names either a tentative selector
+                    // handed out with a returned offer, or, before any offer
+                    // came back, the branch token itself (a CANCEL of a branch
+                    // that never produced a candidate).
+                    let selected = tentatives.get(&control.local_label).cloned();
+                    let parent_label = match &selected {
+                        Some(offer) => offer.parent_label,
+                        None if routes.contains_key(&control.local_label) => control.local_label,
+                        None => continue,
+                    };
+                    let Some(route) = routes.get(&parent_label).cloned() else {
                         continue;
                     };
                     if control.generation != route.generation {
                         continue;
                     }
+                    // Once committed, control follows the committed chain; a
+                    // selector for a losing sibling is no longer routable.
+                    let onward = selected.clone().or_else(|| {
+                        route.committed_child.and_then(|index| {
+                            route.committed_selector.and_then(|selector| {
+                                tentatives.get(&selector).cloned().map(|mut offer| {
+                                    offer.child_index = index;
+                                    offer
+                                })
+                            })
+                        })
+                    });
                     match control.message_type {
                         MessageType::Commit => {
                             // event-lifecycle-profile-e1.md:142 — an exact
@@ -363,26 +473,75 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 drops.record("relay", ERROR_STATE_VIOLATION, "commit_transition");
                                 continue;
                             }
-                            if let Some(child) = route
-                                .committed_child
-                                .and_then(|index| route.children.get(index))
-                            {
-                                downstream[child.link_index]
-                                    .1
-                                    .send(forward_control(control, child.child_label))?;
+                            let Some(offer) = selected else {
+                                // A COMMIT addressed to the branch rather than
+                                // to one returned offer does not say which
+                                // child was chosen, so it cannot be forwarded.
+                                drops.record("relay", ERROR_STATE_VIOLATION, "commit_unselective");
+                                continue;
+                            };
+                            let Some(child) = route.children.get(offer.child_index) else {
+                                drops.record("relay", ERROR_STATE_VIOLATION, "commit_child_gone");
+                                continue;
+                            };
+                            let child_link = child.link_index;
+                            let chosen = offer.child_index;
+                            if let Some(entry) = routes.get_mut(&parent_label) {
+                                entry.committed_child = Some(chosen);
+                                entry.committed_selector = Some(control.local_label);
+                            }
+                            downstream[child_link]
+                                .1
+                                .send(forward_control(control, offer.child_selector))?;
+                            // The initiator has chosen, so every other subtree
+                            // this branch opened is now off route and must be
+                            // released rather than left to its own expiry.
+                            let losers: Vec<TentativeOffer> = tentatives
+                                .values()
+                                .filter(|other| {
+                                    other.parent_label == parent_label
+                                        && other.child_index != chosen
+                                })
+                                .cloned()
+                                .collect();
+                            for loser in losers {
+                                if let Some(child) = route.children.get(loser.child_index) {
+                                    downstream[child.link_index].1.send(Envelope {
+                                        suite_id: SUITE_R1,
+                                        message: Message::Control(Control {
+                                            message_type: MessageType::Cancel,
+                                            local_label: loser.child_selector,
+                                            generation: route.generation,
+                                            expiry_class: 1,
+                                            protected_body: vec![0_u8],
+                                        }),
+                                    })?;
+                                }
+                                tentatives.retain(|_, offer| {
+                                    offer.parent_label != parent_label
+                                        || offer.child_index != loser.child_index
+                                });
+                                reverse.remove(&loser.child_selector);
+                                incoming.retain(|_, slot| {
+                                    slot.parent_label != parent_label
+                                        || slot.child_index != loser.child_index
+                                });
+                                cancelled_subtrees += 1;
                             }
                         }
                         MessageType::RendezvousOpen => {
                             if states.get(&route.parent_label).map(|state| state.phase)
                                 == Some(Phase::Ready)
                             {
-                                if let Some(child) = route
-                                    .committed_child
-                                    .and_then(|index| route.children.get(index))
-                                {
+                                if let Some((child, selector)) = onward.as_ref().and_then(|offer| {
+                                    route
+                                        .children
+                                        .get(offer.child_index)
+                                        .map(|child| (child, offer.child_selector))
+                                }) {
                                     downstream[child.link_index]
                                         .1
-                                        .send(forward_control(control, child.child_label))?;
+                                        .send(forward_control(control, selector))?;
                                 }
                             }
                         }
@@ -395,27 +554,40 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     Event::DataAccepted,
                                     clock.now_ms(),
                                 )?;
-                                if let Some(child) = route
-                                    .committed_child
-                                    .and_then(|index| route.children.get(index))
-                                {
+                                if let Some((child, selector)) = onward.as_ref().and_then(|offer| {
+                                    route
+                                        .children
+                                        .get(offer.child_index)
+                                        .map(|child| (child, offer.child_selector))
+                                }) {
                                     downstream[child.link_index]
                                         .1
-                                        .send(forward_control(control, child.child_label))?;
+                                        .send(forward_control(control, selector))?;
                                 }
                             }
                         }
                         MessageType::Close | MessageType::Cancel | MessageType::Abort => {
-                            if let Some(child) = route
-                                .committed_child
-                                .and_then(|index| route.children.get(index))
-                            {
-                                downstream[child.link_index]
-                                    .1
-                                    .send(forward_control(control.clone(), child.child_label))?;
+                            // A cancellation before selection has no committed
+                            // child, so it releases every subtree this branch
+                            // opened rather than only one.
+                            let targets: Vec<([u8; 16], usize)> = match &onward {
+                                Some(offer) => vec![(offer.child_selector, offer.child_index)],
+                                None => route
+                                    .children
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(index, child)| (child.child_label, index))
+                                    .collect(),
+                            };
+                            for (selector, index) in targets {
+                                if let Some(child) = route.children.get(index) {
+                                    downstream[child.link_index]
+                                        .1
+                                        .send(forward_control(control.clone(), selector))?;
+                                }
                             }
                             cleanup_started = Some(Instant::now());
-                            observed_close = true;
+                            observed_terminal = true;
                             let event = if control.message_type == MessageType::Close {
                                 Event::CloseAccepted
                             } else {
@@ -425,6 +597,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 route.parent_label,
                                 &mut routes,
                                 &mut reverse,
+                                &mut tentatives,
+                                &mut incoming,
                                 &mut states,
                                 event,
                                 clock.now_ms(),
@@ -439,10 +613,14 @@ fn run() -> Result<(), Box<dyn Error>> {
                 peer_id, envelope, ..
             } if downstream.iter().any(|(id, _)| *id == peer_id) => match envelope.message {
                 Message::Candidate(candidate) => {
-                    let Some(parent_label) = reverse.get(&candidate.candidate_token).copied()
-                    else {
+                    let candidate_token = candidate.candidate_token;
+                    // The child answers on a label derived from the discovery
+                    // nonce this relay gave it, so the label names the branch
+                    // and the child even though the child chose which one.
+                    let Some(slot) = incoming.get(&candidate_token).copied() else {
                         continue;
                     };
+                    let parent_label = slot.parent_label;
                     let Some(route) = routes.get(&parent_label).cloned() else {
                         continue;
                     };
@@ -451,6 +629,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                             parent_label,
                             &mut routes,
                             &mut reverse,
+                            &mut tentatives,
+                            &mut incoming,
                             &mut states,
                             Event::CancelAccepted,
                             clock.now_ms(),
@@ -459,14 +639,20 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                     // The candidate arrived on one specific child, so it must
                     // be unwrapped with that child's blinding factor and nonce.
-                    let Some(child_index) = route
-                        .children
-                        .iter()
-                        .position(|child| child.child_label == candidate.candidate_token)
-                    else {
+                    let child_index = slot.child_index;
+                    if route.children.get(child_index).is_none() {
                         drops.record("relay", ERROR_STATE_VIOLATION, "candidate_unknown_child");
                         continue;
-                    };
+                    }
+                    // After selection the branch follows one child; an offer
+                    // returning through a losing sibling is off route.
+                    if route
+                        .committed_child
+                        .is_some_and(|chosen| chosen != child_index)
+                    {
+                        drops.record("relay", ERROR_STATE_VIOLATION, "candidate_after_commit");
+                        continue;
+                    }
                     let child = &route.children[child_index];
                     // The candidate blob is remote input; a wrap failure
                     // drops the candidate rather than terminating the relay.
@@ -483,10 +669,6 @@ fn run() -> Result<(), Box<dyn Error>> {
                         drops.record("relay", ERROR_MALFORMED, "candidate_blob_wrap");
                         continue;
                     };
-                    // Control traffic for this route now follows that child.
-                    if let Some(entry) = routes.get_mut(&parent_label) {
-                        entry.committed_child.get_or_insert(child_index);
-                    }
                     if states
                         .apply(parent_label, Event::CandidateAccepted, clock.now_ms())
                         .is_err()
@@ -494,10 +676,51 @@ fn run() -> Result<(), Box<dyn Error>> {
                         drops.record("relay", ERROR_STATE_VIOLATION, "candidate_transition");
                         continue;
                     }
+                    // Each returned offer travels upstream under its own
+                    // tentative selector, so a later COMMIT names one chain
+                    // rather than just the branch. The child accepts control
+                    // on the token it used, which is its own selector when the
+                    // child is a relay and its branch token when it is a
+                    // gateway.
+                    let Ok(tentative) =
+                        offer_label(&route.parent_discovery_nonce, route.offers_forwarded)
+                    else {
+                        drops.record("relay", ERROR_RESOURCE_EXHAUSTED, "offer_response_limit");
+                        continue;
+                    };
+                    if let Some(entry) = routes.get_mut(&parent_label) {
+                        entry.offers_forwarded = entry.offers_forwarded.saturating_add(1);
+                    }
+                    tentatives.insert(
+                        tentative,
+                        TentativeOffer {
+                            parent_label,
+                            child_index,
+                            child_selector: candidate_token,
+                        },
+                    );
+                    // Downstream control for this chain arrives under the
+                    // child's label, so it resolves to this branch too. Slide
+                    // the child's window on by one so a later offer still has
+                    // a reserved label.
+                    reverse.insert(candidate_token, parent_label);
+                    if let Some(child) = route.children.get(child_index) {
+                        let next = slot.index.saturating_add(OFFER_LABEL_WINDOW);
+                        if let Ok(label) = offer_label(&child.child_discovery_nonce, next) {
+                            incoming.insert(
+                                label,
+                                IncomingOffer {
+                                    parent_label,
+                                    child_index,
+                                    index: next,
+                                },
+                            );
+                        }
+                    }
                     upstream.send(Envelope {
                         suite_id: SUITE_R1,
                         message: Message::Candidate(Candidate {
-                            candidate_token: parent_label,
+                            candidate_token: tentative,
                             expiry_class: candidate.expiry_class,
                             layer_count: candidate.layer_count.saturating_add(1),
                             candidate_blob: wrapped,
@@ -514,6 +737,10 @@ fn run() -> Result<(), Box<dyn Error>> {
                     if control.generation != route.generation {
                         continue;
                     }
+                    // Upstream, this route is known by the selector the
+                    // initiator committed to; before a COMMIT the branch token
+                    // is all either side has.
+                    let upstream_label = route.committed_selector.unwrap_or(parent_label);
                     match control.message_type {
                         MessageType::Ready => {
                             if states
@@ -523,7 +750,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 drops.record("relay", ERROR_STATE_VIOLATION, "ready_transition");
                                 continue;
                             }
-                            upstream.send(forward_control(control, parent_label))?;
+                            upstream.send(forward_control(control, upstream_label))?;
                         }
                         MessageType::RendezvousResult => {
                             if states
@@ -537,24 +764,26 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 );
                                 continue;
                             }
-                            upstream.send(forward_control(control, parent_label))?;
+                            upstream.send(forward_control(control, upstream_label))?;
                         }
                         MessageType::Data => {
                             if states.get(&parent_label).map(|state| state.phase)
                                 == Some(Phase::Open)
                             {
                                 states.apply(parent_label, Event::DataAccepted, clock.now_ms())?;
-                                upstream.send(forward_control(control, parent_label))?;
+                                upstream.send(forward_control(control, upstream_label))?;
                             }
                         }
                         MessageType::Close | MessageType::Cancel | MessageType::Abort => {
-                            upstream.send(forward_control(control.clone(), parent_label))?;
+                            upstream.send(forward_control(control.clone(), upstream_label))?;
                             cleanup_started = Some(Instant::now());
-                            observed_close = true;
+                            observed_terminal = true;
                             cleanup_route(
                                 parent_label,
                                 &mut routes,
                                 &mut reverse,
+                                &mut tentatives,
+                                &mut incoming,
                                 &mut states,
                                 Event::CloseAccepted,
                                 clock.now_ms(),
@@ -598,7 +827,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
             _ => {}
         }
-        if observed_close && routes.is_empty() {
+        if observed_terminal && routes.is_empty() {
             // Drain in-flight T1 state instead of sleeping a fixed interval.
             let mut handles: Vec<&node_runtime::LinkHandle> = vec![&upstream];
             handles.extend(downstream.iter().map(|(_, link)| link));
@@ -613,6 +842,8 @@ fn run() -> Result<(), Box<dyn Error>> {
             label,
             &mut routes,
             &mut reverse,
+            &mut tentatives,
+            &mut incoming,
             &mut states,
             Event::Timeout,
             clock.now_ms(),
@@ -643,6 +874,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             ("live_routes", states.live_routes().to_string()),
             ("route_map", routes.len().to_string()),
             ("token_bucket_drops", admission.rejected().to_string()),
+            ("cancelled_subtrees", cancelled_subtrees.to_string()),
             ("id", node_id.to_string()),
         ],
     );
@@ -651,7 +883,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         // exit reports the outcome without stranding remote state.
         return Err(format!("T1 retry budget exhausted for peer {peer_id}").into());
     }
-    if !observed_close {
+    if !observed_terminal {
         return Err(format!("relay {node_id} timed out before cleanup").into());
     }
     Ok(())
@@ -667,6 +899,97 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_offer_on_a_branch_gets_its_own_selector() -> Result<(), Box<dyn Error>> {
+        // Two children answer the same branch. Each offer must reach the
+        // initiator under a distinct label, or a COMMIT names the branch
+        // without naming which child answered and the relay has to guess.
+        let parent = [0x51; 16];
+        let nonces = [[0x61_u8; 32], [0x62_u8; 32]];
+        let mut incoming: HashMap<[u8; 16], IncomingOffer> = HashMap::new();
+        for (child_index, nonce) in nonces.iter().enumerate() {
+            for index in 0..OFFER_LABEL_WINDOW {
+                incoming.insert(
+                    offer_label(nonce, index)?,
+                    IncomingOffer {
+                        parent_label: parent,
+                        child_index,
+                        index,
+                    },
+                );
+            }
+        }
+
+        // Each child answers on the first label reserved for it, and the relay
+        // resolves that label back to the branch and the child.
+        for (child_index, nonce) in nonces.iter().enumerate() {
+            let answered = offer_label(nonce, 0)?;
+            let slot = incoming
+                .get(&answered)
+                .ok_or("a child's reserved label must resolve")?;
+            assert_eq!(slot.parent_label, parent);
+            assert_eq!(slot.child_index, child_index);
+        }
+
+        // The labels are distinct across children and across offers, and no
+        // two share a prefix the way a counter or an XOR of the branch token
+        // would.
+        let mut all: Vec<[u8; 16]> = incoming.keys().copied().collect();
+        all.sort_unstable();
+        let total = all.len();
+        all.dedup();
+        assert_eq!(all.len(), total, "every reserved label is distinct");
+        assert_eq!(total, 2 * usize::from(OFFER_LABEL_WINDOW));
+        Ok(())
+    }
+
+    #[test]
+    fn a_commit_names_one_chain_and_releases_the_siblings() -> Result<(), Box<dyn Error>> {
+        // The initiator can select a candidate other than the first to arrive.
+        // The selector it commits to must resolve to that child, and the other
+        // subtrees must be released rather than left running to their own
+        // expiry.
+        let parent = [0x71; 16];
+        let mut tentatives: HashMap<[u8; 16], TentativeOffer> = HashMap::new();
+        let first_arrival = [0x81; 16];
+        let chosen = [0x82; 16];
+        tentatives.insert(
+            first_arrival,
+            TentativeOffer {
+                parent_label: parent,
+                child_index: 0,
+                child_selector: [0x91; 16],
+            },
+        );
+        tentatives.insert(
+            chosen,
+            TentativeOffer {
+                parent_label: parent,
+                child_index: 1,
+                child_selector: [0x92; 16],
+            },
+        );
+
+        // COMMIT arrives on the second offer's selector, not the first's.
+        let selected = tentatives
+            .get(&chosen)
+            .cloned()
+            .ok_or("the committed selector must resolve")?;
+        assert_eq!(selected.child_index, 1, "the later arrival was chosen");
+        assert_eq!(selected.child_selector, [0x92; 16]);
+
+        let losers: Vec<TentativeOffer> = tentatives
+            .values()
+            .filter(|other| {
+                other.parent_label == parent && other.child_index != selected.child_index
+            })
+            .cloned()
+            .collect();
+        assert_eq!(losers.len(), 1, "exactly one subtree is off route");
+        assert_eq!(losers[0].child_index, 0);
+        Ok(())
+    }
 
     #[test]
     fn forward_control_rewrites_the_label_and_nothing_else() {
@@ -717,6 +1040,8 @@ mod tests {
         let child = [0x02; 16];
         let mut routes = HashMap::new();
         let mut reverse = HashMap::new();
+        let mut tentatives = HashMap::new();
+        let mut incoming = HashMap::new();
         routes.insert(
             parent,
             RelayRoute {
@@ -728,6 +1053,8 @@ mod tests {
                     child_discovery_nonce: [0; 32],
                 }],
                 committed_child: None,
+                committed_selector: None,
+                offers_forwarded: 0,
                 incoming_reply_public: [0; 32],
                 depth: 1,
                 parent_discovery_nonce: [0; 32],
@@ -741,6 +1068,8 @@ mod tests {
             parent,
             &mut routes,
             &mut reverse,
+            &mut tentatives,
+            &mut incoming,
             &mut states,
             Event::CloseAccepted,
             0,
@@ -758,6 +1087,8 @@ mod tests {
         let parent = [0x11; 16];
         let mut routes = HashMap::new();
         let mut reverse = HashMap::new();
+        let mut tentatives = HashMap::new();
+        let mut incoming = HashMap::new();
         let children: Vec<RelayChild> = (0..3)
             .map(|index| RelayChild {
                 link_index: index,
@@ -775,6 +1106,8 @@ mod tests {
                 parent_label: parent,
                 children,
                 committed_child: Some(1),
+                committed_selector: None,
+                offers_forwarded: 0,
                 incoming_reply_public: [0; 32],
                 depth: 1,
                 parent_discovery_nonce: [0; 32],
@@ -787,6 +1120,8 @@ mod tests {
             parent,
             &mut routes,
             &mut reverse,
+            &mut tentatives,
+            &mut incoming,
             &mut states,
             Event::CancelAccepted,
             0,
@@ -805,6 +1140,8 @@ mod tests {
         let live = [0x22; 16];
         let mut routes = HashMap::new();
         let mut reverse = HashMap::new();
+        let mut tentatives = HashMap::new();
+        let mut incoming = HashMap::new();
         let mut states = RouteTable::default();
 
         for (label, child, deadline) in [(lapsed, [0x31_u8; 16], 100_u64), (live, [0x32; 16], 900)]
@@ -822,6 +1159,8 @@ mod tests {
                         child_discovery_nonce: [0; 32],
                     }],
                     committed_child: None,
+                    committed_selector: None,
+                    offers_forwarded: 0,
                     incoming_reply_public: [0; 32],
                     depth: 1,
                     parent_discovery_nonce: [0; 32],
@@ -831,7 +1170,14 @@ mod tests {
         }
 
         assert_eq!(
-            reclaim_expired(500, &mut routes, &mut reverse, &mut states),
+            reclaim_expired(
+                500,
+                &mut routes,
+                &mut reverse,
+                &mut tentatives,
+                &mut incoming,
+                &mut states,
+            ),
             1
         );
         assert!(!routes.contains_key(&lapsed), "the lapsed branch is gone");
@@ -845,7 +1191,14 @@ mod tests {
         // A second sweep at the same instant is a no-op, so running it every
         // iteration costs nothing.
         assert_eq!(
-            reclaim_expired(500, &mut routes, &mut reverse, &mut states),
+            reclaim_expired(
+                500,
+                &mut routes,
+                &mut reverse,
+                &mut tentatives,
+                &mut incoming,
+                &mut states,
+            ),
             0
         );
         Ok(())
@@ -855,12 +1208,18 @@ mod tests {
     fn cleanup_route_is_idempotent_for_unknown_labels() {
         let mut routes: HashMap<[u8; 16], RelayRoute> = HashMap::new();
         let mut reverse: HashMap<[u8; 16], [u8; 16]> = HashMap::new();
+        let mut tentatives: HashMap<[u8; 16], TentativeOffer> = HashMap::new();
+        let mut incoming: HashMap<[u8; 16], IncomingOffer> = HashMap::new();
+        // Label a child may answer on -> which branch and child it belongs to.
+        let mut incoming: HashMap<[u8; 16], IncomingOffer> = HashMap::new();
         let mut states = RouteTable::default();
 
         cleanup_route(
             [0xff; 16],
             &mut routes,
             &mut reverse,
+            &mut tentatives,
+            &mut incoming,
             &mut states,
             Event::CloseAccepted,
             0,

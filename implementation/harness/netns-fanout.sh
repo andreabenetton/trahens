@@ -12,15 +12,12 @@
 #                            |
 #                            +-- relay-c --- gateway-2
 #
-# Known gap, which this harness exists to demonstrate: the initiator selects
-# one candidate and drops the other, but nothing cancels the off-route subtree,
-# so the unselected gateway runs to its own expiry. COMMIT is addressed with
-# the initiator's branch token, which identifies the branch but not which child
-# of a fanned-out relay was chosen, and the relay cannot infer it - the first
-# candidate it forwarded is not necessarily the one selected. The candidate
-# chain already carries first_forward_label for exactly this purpose and no
-# binary reads it. Closing that is a protocol-completion task, so this harness
-# asserts what does hold and is deliberately not wired into CI.
+# Every returned offer travels under its own parent-facing label, derived from
+# the discovery nonce the parent replaced for that child, so a COMMIT names one
+# chain rather than just the branch. The relay activates the named child and
+# cancels its siblings, and this harness asserts that: two candidates compete,
+# one is selected, the off-route subtree is released, and the gateway in it
+# observes the cancellation instead of running to its own expiry.
 set -euo pipefail
 
 LOSS=0
@@ -236,7 +233,26 @@ selected = sum(1 for line in events if '"candidate_selected"' in line)
 cancelled = sum(1 for line in events if '"branch_cancelled"' in line)
 assert held >= 2, f'expected competing candidates, saw {held}'
 assert selected == 1, f'expected exactly one selection, saw {selected}'
+
+# The relay that fanned out must have released the subtree the initiator did
+# not select, and the gateway in that subtree must have seen the cancellation
+# rather than run to its own expiry.
+relay_events = (root / 'relay-a.log').read_text().splitlines()
+subtrees = 0
+for line in relay_events:
+    if '"stopped"' in line:
+        subtrees += int(json.loads(line)['cancelled_subtrees'])
+assert subtrees >= 1, 'relay-a did not cancel the off-route subtree'
+
+cancelled_gateways = sum(
+    1
+    for path in root.glob('gateway-*.log')
+    if '"route_cancelled"' in path.read_text()
+)
+assert cancelled_gateways >= 1, 'no gateway observed its route being cancelled'
+
 print(f'fan-out: {held} candidates held, {selected} selected, {cancelled} initiator branches cancelled')
-print('every node reclaimed its state; off-route subtree cancellation is the known gap')
+print(f'off-route cancellation: {subtrees} subtree(s) released, {cancelled_gateways} gateway(s) stood down')
+print('every node reclaimed its state')
 PY
 exit "$STATUS"
