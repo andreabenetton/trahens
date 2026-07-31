@@ -235,6 +235,12 @@ impl RouteTable {
                 state.phase = Phase::Candidate;
                 Action::StoreCandidate
             }
+            // Section 4: a relay creates a tentative mapping for every
+            // CANDIDATE traversing it, and with fan-out several offers return
+            // through one branch. A further offer is another mapping, not an
+            // invalid transition, so it is stored idempotently and renews the
+            // offer deadline.
+            (Phase::Candidate, Event::CandidateAccepted) => Action::StoreCandidate,
             (Phase::Candidate, Event::CommitAccepted) => {
                 state.phase = Phase::PendingReady;
                 Action::ReserveRoute
@@ -486,6 +492,31 @@ mod tests {
             .ok_or(StateError::Missing)?;
         assert_eq!(table.expire(renewed), 1);
         assert_eq!(table.live_routes(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn a_branch_accepts_several_candidate_offers() -> Result<(), StateError> {
+        // With fan-out, more than one gateway answers through the same branch.
+        let label = [10_u8; 16];
+        let mut table = RouteTable::default();
+        table.begin(label, 1, 0, 1_000)?;
+        assert_eq!(
+            table.apply(label, Event::CandidateAccepted, 0)?,
+            Action::StoreCandidate
+        );
+        assert_eq!(
+            table.apply(label, Event::CandidateAccepted, 5)?,
+            Action::StoreCandidate,
+            "a second offer on the same branch is stored, not rejected"
+        );
+        let route = table.get(&label).ok_or(StateError::Missing)?;
+        assert_eq!(route.phase, Phase::Candidate);
+        assert_eq!(
+            route.expires_at_ms,
+            5 + Phase::Candidate.lifetime_ms(),
+            "the offer deadline is renewed"
+        );
         Ok(())
     }
 
