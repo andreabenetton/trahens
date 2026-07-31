@@ -49,6 +49,11 @@ pub struct LinkMetrics {
     /// Transmissions refused because their fragment set did not fit the
     /// per-peer or node-global cell budget.
     pub queue_cells_rejected: u64,
+    /// Lifecycle events the worker could not hand over within its budget.
+    /// Non-zero means a node acted on an incomplete view of its own link.
+    pub events_dropped: u64,
+    /// Telemetry events discarded best effort. Observability only.
+    pub telemetry_dropped: u64,
     pub reassembly: transport_t1::ReceiverMetrics,
     pub peak_queue_cells: usize,
     pub schedule: ScheduleMetrics,
@@ -358,6 +363,58 @@ fn with_ack_delay(frame: Frame, held_ms: u64) -> Frame {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Event delivery with two classes.
+///
+/// Decoded messages, transport failures, drain notices, and the final metrics
+/// drive what a node does, so losing one silently makes it act on a view of
+/// its link that never happened; best-effort try_send did exactly that
+/// whenever the channel filled. Security and telemetry events are reported
+/// rather than acted on, so they must never apply back pressure to the
+/// emission loop and stay lossy.
+struct EventSink {
+    events: SyncSender<LinkEvent>,
+    dropped: u64,
+    telemetry_dropped: u64,
+}
+
+impl EventSink {
+    fn new(events: SyncSender<LinkEvent>) -> Self {
+        Self {
+            events,
+            dropped: 0,
+            telemetry_dropped: 0,
+        }
+    }
+
+    /// Hand over an event that changes behaviour, waiting if the reader is
+    /// behind. The wait is bounded so a worker can never deadlock against a
+    /// main thread that is already inside shutdown and joining.
+    fn deliver(&mut self, mut event: LinkEvent) {
+        // One fixed-T2 epoch of patience, in millisecond steps. Bounded rather
+        // than blocking: SyncSender::send_timeout is still unstable, and an
+        // unbounded send would let a worker deadlock against a main thread
+        // that is already inside shutdown and joining.
+        for _ in 0..FIXED_T2_EPOCH_MS {
+            match self.events.try_send(event) {
+                Ok(()) => return,
+                Err(mpsc::TrySendError::Full(returned)) => {
+                    event = returned;
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(mpsc::TrySendError::Disconnected(_)) => break,
+            }
+        }
+        self.dropped = self.dropped.saturating_add(1);
+    }
+
+    /// Hand over an observability event, or discard it.
+    fn report(&mut self, event: LinkEvent) {
+        if self.events.try_send(event).is_err() {
+            self.telemetry_dropped = self.telemetry_dropped.saturating_add(1);
+        }
+    }
+}
+
 fn run_link(
     mut config: LinkConfig,
     socket: UdpSocket,
@@ -367,6 +424,7 @@ fn run_link(
     events: SyncSender<LinkEvent>,
     node_budget: NodeQueueBudget,
 ) {
+    let mut sink = EventSink::new(events);
     let origin = Instant::now();
     let mut schedule = FixedSchedule::new(origin);
     // Randomized but bounded to the low 32 bits: the start stays
@@ -403,7 +461,7 @@ fn run_link(
                     let encoded = match encode(&envelope) {
                         Ok(value) => value,
                         Err(_) => {
-                            let _ = events.try_send(LinkEvent::SecurityEvent {
+                            sink.report(LinkEvent::SecurityEvent {
                                 peer_id: config.peer_id,
                                 error_id: ERROR_INTERNAL,
                                 detail: "local_noncanonical_message",
@@ -412,7 +470,7 @@ fn run_link(
                         }
                     };
                     let Some(id) = next_transmission_id() else {
-                        let _ = events.try_send(LinkEvent::TransmissionFailed {
+                        sink.deliver(LinkEvent::TransmissionFailed {
                             peer_id: config.peer_id,
                         });
                         continue;
@@ -425,12 +483,12 @@ fn run_link(
                     if !node_budget.reserve(cells) {
                         metrics.queue_cells_rejected =
                             metrics.queue_cells_rejected.saturating_add(1);
-                        let _ = events.try_send(LinkEvent::SecurityEvent {
+                        sink.report(LinkEvent::SecurityEvent {
                             peer_id: config.peer_id,
                             error_id: ERROR_RESOURCE_EXHAUSTED,
                             detail: "node_queue_cells",
                         });
-                        let _ = events.try_send(LinkEvent::TransmissionFailed {
+                        sink.deliver(LinkEvent::TransmissionFailed {
                             peer_id: config.peer_id,
                         });
                         continue;
@@ -439,12 +497,12 @@ fn run_link(
                         node_budget.release(cells);
                         metrics.queue_cells_rejected =
                             metrics.queue_cells_rejected.saturating_add(1);
-                        let _ = events.try_send(LinkEvent::SecurityEvent {
+                        sink.report(LinkEvent::SecurityEvent {
                             peer_id: config.peer_id,
                             error_id: ERROR_RESOURCE_EXHAUSTED,
                             detail: "peer_queue_cells",
                         });
-                        let _ = events.try_send(LinkEvent::TransmissionFailed {
+                        sink.deliver(LinkEvent::TransmissionFailed {
                             peer_id: config.peer_id,
                         });
                         continue;
@@ -452,7 +510,7 @@ fn run_link(
                     if sender.enqueue(envelope.suite_id, id, &encoded).is_err() {
                         peer_budget.release(reservation);
                         node_budget.release(cells);
-                        let _ = events.try_send(LinkEvent::TransmissionFailed {
+                        sink.deliver(LinkEvent::TransmissionFailed {
                             peer_id: config.peer_id,
                         });
                     } else {
@@ -539,7 +597,7 @@ fn run_link(
                                             // recovery round; count it and
                                             // report the resource limit.
                                             metrics.ack_drops = metrics.ack_drops.saturating_add(1);
-                                            let _ = events.try_send(LinkEvent::SecurityEvent {
+                                            sink.report(LinkEvent::SecurityEvent {
                                                 peer_id: config.peer_id,
                                                 error_id: ERROR_RESOURCE_EXHAUSTED,
                                                 detail: "ack_queue_full",
@@ -551,27 +609,25 @@ fn run_link(
                                                     metrics.logical_messages_received = metrics
                                                         .logical_messages_received
                                                         .saturating_add(1);
-                                                    let _ = events.try_send(LinkEvent::Message {
+                                                    sink.deliver(LinkEvent::Message {
                                                         peer_id: config.peer_id,
                                                         envelope,
                                                         received_at_ms: elapsed_ms(origin),
                                                     });
                                                 }
                                                 Ok(_) => {
-                                                    let _ =
-                                                        events.try_send(LinkEvent::SecurityEvent {
-                                                            peer_id: config.peer_id,
-                                                            error_id: ERROR_UNSUPPORTED_SUITE,
-                                                            detail: "m2_suite_mismatch",
-                                                        });
+                                                    sink.report(LinkEvent::SecurityEvent {
+                                                        peer_id: config.peer_id,
+                                                        error_id: ERROR_UNSUPPORTED_SUITE,
+                                                        detail: "m2_suite_mismatch",
+                                                    });
                                                 }
                                                 Err(_) => {
-                                                    let _ =
-                                                        events.try_send(LinkEvent::SecurityEvent {
-                                                            peer_id: config.peer_id,
-                                                            error_id: ERROR_MALFORMED,
-                                                            detail: "m2_decode",
-                                                        });
+                                                    sink.report(LinkEvent::SecurityEvent {
+                                                        peer_id: config.peer_id,
+                                                        error_id: ERROR_MALFORMED,
+                                                        detail: "m2_decode",
+                                                    });
                                                 }
                                             }
                                         }
@@ -599,7 +655,7 @@ fn run_link(
                 }
                 Err(error) if error.kind() == ErrorKind::WouldBlock => break,
                 Err(_) => {
-                    let _ = events.try_send(LinkEvent::SecurityEvent {
+                    sink.report(LinkEvent::SecurityEvent {
                         peer_id: config.peer_id,
                         error_id: ERROR_INTERNAL,
                         detail: "udp_receive_failure",
@@ -620,7 +676,7 @@ fn run_link(
                     peer_budget.release(reservation);
                 }
                 metrics.transmission_failures = metrics.transmission_failures.saturating_add(1);
-                let _ = events.try_send(LinkEvent::TransmissionFailed {
+                sink.deliver(LinkEvent::TransmissionFailed {
                     peer_id: config.peer_id,
                 });
             }
@@ -686,7 +742,7 @@ fn run_link(
                     if socket.send(&record).is_ok() {
                         metrics.sent_cells = metrics.sent_cells.saturating_add(1);
                     } else {
-                        let _ = events.try_send(LinkEvent::SecurityEvent {
+                        sink.report(LinkEvent::SecurityEvent {
                             peer_id: config.peer_id,
                             error_id: ERROR_INTERNAL,
                             detail: "udp_send_failure",
@@ -699,12 +755,12 @@ fn run_link(
                     // instead; the peer observes a transport failure and
                     // reclaims state through the normal path.
                     let Some(next_sequence) = sequence.checked_add(1) else {
-                        let _ = events.try_send(LinkEvent::SecurityEvent {
+                        sink.report(LinkEvent::SecurityEvent {
                             peer_id: config.peer_id,
                             error_id: ERROR_RESOURCE_EXHAUSTED,
                             detail: "sequence_horizon",
                         });
-                        let _ = events.try_send(LinkEvent::TransmissionFailed {
+                        sink.deliver(LinkEvent::TransmissionFailed {
                             peer_id: config.peer_id,
                         });
                         running = false;
@@ -722,7 +778,7 @@ fn run_link(
                     }
                 }
                 Err(_) => {
-                    let _ = events.try_send(LinkEvent::SecurityEvent {
+                    sink.report(LinkEvent::SecurityEvent {
                         peer_id: config.peer_id,
                         error_id: ERROR_INTERNAL,
                         detail: "cell_encode_failure",
@@ -739,7 +795,7 @@ fn run_link(
 
         if draining && sender.pending_count() == 0 && ack_queue.is_empty() {
             draining = false;
-            let _ = events.try_send(LinkEvent::Drained {
+            sink.deliver(LinkEvent::Drained {
                 peer_id: config.peer_id,
             });
         }
@@ -753,10 +809,12 @@ fn run_link(
     }
     metrics.schedule = schedule.metrics();
     metrics.reassembly = receiver.metrics();
+    metrics.events_dropped = sink.dropped;
+    metrics.telemetry_dropped = sink.telemetry_dropped;
     zeroize(&mut send_key);
     zeroize(&mut receive_key);
     zeroize(&mut config.base_key);
-    let _ = events.send(LinkEvent::Stopped {
+    sink.deliver(LinkEvent::Stopped {
         peer_id: config.peer_id,
         metrics,
     });
@@ -1035,7 +1093,7 @@ pub fn write_link_metrics(
             output.push_str(",\n");
         }
         output.push_str(&format!(
-            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"queue_cells_rejected\":{},\"duplicate_fragments\":{},\"capacity_drops\":{},\"metadata_failures\":{},\"peak_reassembly_messages\":{},\"peak_reassembly_bytes\":{},\"chaff_to_real_cell_ratio\":{:.4},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{},\"late_slots\":{},\"missed_slots\":{},\"worst_lateness_ms\":{},\"fixed_trace_valid\":{}}}",
+            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"queue_cells_rejected\":{},\"events_dropped\":{},\"telemetry_dropped\":{},\"duplicate_fragments\":{},\"capacity_drops\":{},\"metadata_failures\":{},\"peak_reassembly_messages\":{},\"peak_reassembly_bytes\":{},\"chaff_to_real_cell_ratio\":{:.4},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{},\"late_slots\":{},\"missed_slots\":{},\"worst_lateness_ms\":{},\"fixed_trace_valid\":{}}}",
             metrics.sent_cells,
             metrics.received_cells,
             metrics.malformed_cells,
@@ -1046,6 +1104,8 @@ pub fn write_link_metrics(
             metrics.ack_drops,
             metrics.ack_coalesced,
             metrics.queue_cells_rejected,
+            metrics.events_dropped,
+            metrics.telemetry_dropped,
             metrics.reassembly.duplicate_fragments,
             metrics.reassembly.capacity_drops,
             metrics.reassembly.metadata_failures,
