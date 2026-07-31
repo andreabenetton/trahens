@@ -77,20 +77,21 @@ for ((i=0; i<NODES-1; i++)); do
     ip netns exec "$ns" tc qdisc add dev "$dev" root netem \
       loss "${LOSS}%" delay "$DELAY" "$JITTER" duplicate "${DUPLICATE}%" reorder "${REORDER}%"
   done
-  ip netns exec "${NAMES[$i]}" tcpdump -i "$left" -U -w "$OUTPUT/link-${i}.pcap" udp >/dev/null 2>&1 &
+  ip netns exec "${NAMES[$i]}" tcpdump -i "$left" -U -w "$OUTPUT/link-${i}.pcap" udp \
+    >/dev/null 2>"$OUTPUT/link-${i}.tcpdump" &
   PIDS+=("$!")
 done
 
-# tcpdump is asynchronous: it must have written its 24-byte pcap global header
-# before any node starts, or a fast exchange completes uncaptured and the
-# 1,052-byte record assertion sees an empty capture. Wait for readiness rather
-# than relying on a downstream delay to cover the race.
-capture_ready_deadline=$(( SECONDS + 10 ))
+# tcpdump is asynchronous and writes its pcap global header when it opens the
+# output file, before it attaches to the interface, so file size is not a
+# readiness signal. Wait for the "listening on" line it prints once the capture
+# is live; otherwise a fast exchange completes uncaptured and the 1,052-byte
+# record assertion fails with an empty capture.
+capture_ready_deadline=$(( SECONDS + 15 ))
 for ((i=0; i<NODES-1; i++)); do
-  while [[ ! -s "$OUTPUT/link-${i}.pcap" ]] || \
-        (( $(stat -c %s "$OUTPUT/link-${i}.pcap") < 24 )); do
+  until grep -q "listening on" "$OUTPUT/link-${i}.tcpdump" 2>/dev/null; do
     if (( SECONDS >= capture_ready_deadline )); then
-      echo "capture on link ${i} did not start within 10s" >&2
+      echo "capture on link ${i} did not start within 15s" >&2
       exit 2
     fi
     sleep 0.05
@@ -156,8 +157,13 @@ for ((i=NODE_START; i<${#PIDS[@]}; i++)); do
   if ! wait "${PIDS[$i]}"; then STATUS=1; fi
 done
 
+# Let tcpdump drain its ring buffer before teardown, then wait for each
+# capture to exit so its file is closed and flushed. Killing immediately loses
+# whatever is still queued: tcpdump reports it as "0 packets captured" against
+# a non-zero "received by filter", and the run fails on an empty capture.
+sleep 0.5
 for pid in "${PIDS[@]:0:NODES-1}"; do kill "$pid" 2>/dev/null || true; done
-sleep 0.1
+for pid in "${PIDS[@]:0:NODES-1}"; do wait "$pid" 2>/dev/null || true; done
 python3 "$ROOT/tools/check_pcap_cells.py" "$OUTPUT"/*.pcap
 python3 "$ROOT/tools/summarize_p1_run.py" --directory "$OUTPUT" --output "$OUTPUT/run-metrics.json"
 python3 - "$OUTPUT" <<'PY'
