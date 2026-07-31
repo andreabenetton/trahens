@@ -4,6 +4,9 @@ set -euo pipefail
 
 RELAYS=2
 LOSS=0
+# Gilbert-Elliott "p,r": p is the good-to-bad transition probability and r
+# the bad-to-good one, so a small r produces long outage runs.
+BURST_LOSS=""
 DELAY=5ms
 JITTER=1ms
 DUPLICATE=0
@@ -20,6 +23,7 @@ while (($#)); do
   case "$1" in
     --relays) RELAYS="$2"; shift 2 ;;
     --loss) LOSS="$2"; shift 2 ;;
+    --burst-loss) BURST_LOSS="$2"; shift 2 ;;
     --delay) DELAY="$2"; shift 2 ;;
     --jitter) JITTER="$2"; shift 2 ;;
     --duplicate) DUPLICATE="$2"; shift 2 ;;
@@ -43,6 +47,58 @@ done
 for binary in trahens-endpoint trahens-relay trahens-rendezvous; do
   [[ -x "${BIN_DIR}/${binary}" ]] || { echo "missing binary: ${BIN_DIR}/${binary}" >&2; exit 2; }
 done
+
+SIGNING_SEED=$(printf '11%.0s' {1..32})
+CAPABILITY=$(printf '22%.0s' {1..32})
+
+# Scenario wiring. Negative arms must still reclaim all remote state, which is
+# what the P1 gate requires of a rejected redemption.
+GATEWAY_TTL_MS=5000
+ENDPOINT_CAPABILITY="$CAPABILITY"
+ENDPOINT_EXTRA=()
+EXPECT_ENDPOINT_FAILURE=0
+BLACKHOLE_AFTER_MS=0
+EXPECT_RETRY_EXHAUSTION=0
+case "$SCENARIO" in
+  ok) ;;
+  replay)
+    # The endpoint presents the same capability twice. The replay never
+    # reaches the gateway: the relay only forwards RENDEZVOUS_OPEN while the
+    # route is in PENDING_READY, and redemption has already advanced it, so
+    # the second presentation is dropped in-path. The endpoint therefore times
+    # out rather than receiving a rejection, which still satisfies the gate:
+    # the replay is refused and every node reclaims its state.
+    ENDPOINT_EXTRA=(--redeem-twice 1)
+    EXPECT_ENDPOINT_FAILURE=1 ;;
+  wrong-capability)
+    # A capability the gateway never registered: the token hash misses.
+    ENDPOINT_CAPABILITY=$(printf '33%.0s' {1..32})
+    EXPECT_ENDPOINT_FAILURE=1 ;;
+  expired-capability)
+    # The registration lapses before the route reaches redemption.
+    GATEWAY_TTL_MS=1
+    EXPECT_ENDPOINT_FAILURE=1 ;;
+  no-candidate)
+    # Every ring is too shallow to reach the gateway, so the schedule is
+    # exhausted and discovery terminates with NO_CANDIDATE. Each ring's branch
+    # is cancelled, and every node must still finish with no live routes.
+    ENDPOINT_EXTRA=(--rings "1:300,1:300")
+    EXPECT_ENDPOINT_FAILURE=1 ;;
+  burst-loss)
+    # Gilbert-Elliott bursts long enough that a sender runs out its whole T1
+    # retry budget. The gate requires that to terminate cleanly, so the
+    # assertions below additionally demand that some node actually reported
+    # exhaustion rather than the run merely failing some other way.
+    BURST_LOSS="20,20"
+    EXPECT_ENDPOINT_FAILURE=1
+    EXPECT_RETRY_EXHAUSTION=1 ;;
+  transport-failure)
+    # The far link blackholes after setup begins, so a sender exhausts its T1
+    # retry budget. The gate requires that path to reclaim all remote state.
+    BLACKHOLE_AFTER_MS=120
+    EXPECT_ENDPOINT_FAILURE=1 ;;
+  *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;;
+esac
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUTPUT=$(mkdir -p "$OUTPUT" && cd "$OUTPUT" && pwd)
@@ -78,8 +134,14 @@ for ((i=0; i<NODES-1; i++)); do
   ip -n "${NAMES[$((i+1))]}" link set "$right" mtu "$MTU" up
   for side in "${NAMES[$i]}:$left" "${NAMES[$((i+1))]}:$right"; do
     ns=${side%%:*}; dev=${side#*:}
-    ip netns exec "$ns" tc qdisc add dev "$dev" root netem \
-      loss "${LOSS}%" delay "$DELAY" "$JITTER" duplicate "${DUPLICATE}%" reorder "${REORDER}%"
+    if [[ -n "$BURST_LOSS" ]]; then
+      ip netns exec "$ns" tc qdisc add dev "$dev" root netem \
+        loss gemodel "${BURST_LOSS%,*}%" "${BURST_LOSS#*,}%" \
+        delay "$DELAY" "$JITTER" duplicate "${DUPLICATE}%" reorder "${REORDER}%"
+    else
+      ip netns exec "$ns" tc qdisc add dev "$dev" root netem \
+        loss "${LOSS}%" delay "$DELAY" "$JITTER" duplicate "${DUPLICATE}%" reorder "${REORDER}%"
+    fi
   done
   ip netns exec "${NAMES[$i]}" tcpdump -i "$left" -U -w "$OUTPUT/link-${i}.pcap" udp \
     >/dev/null 2>"$OUTPUT/link-${i}.tcpdump" &
@@ -103,8 +165,6 @@ for ((i=0; i<NODES-1; i++)); do
 done
 
 key_for() { printf '%064x' "$(( $1 + 1 ))"; }
-SIGNING_SEED=$(printf '11%.0s' {1..32})
-CAPABILITY=$(printf '22%.0s' {1..32})
 GATEWAY_PUBLIC=$(python3 - "$SIGNING_SEED" <<'PY'
 import sys
 from cryptography.hazmat.primitives import serialization
@@ -117,45 +177,6 @@ PY
 PORT=4242
 EPOCH=1
 
-# Scenario wiring. Negative arms must still reclaim all remote state, which is
-# what the P1 gate requires of a rejected redemption.
-GATEWAY_TTL_MS=5000
-ENDPOINT_CAPABILITY="$CAPABILITY"
-ENDPOINT_EXTRA=()
-EXPECT_ENDPOINT_FAILURE=0
-BLACKHOLE_AFTER_MS=0
-case "$SCENARIO" in
-  ok) ;;
-  replay)
-    # The endpoint presents the same capability twice. The replay never
-    # reaches the gateway: the relay only forwards RENDEZVOUS_OPEN while the
-    # route is in PENDING_READY, and redemption has already advanced it, so
-    # the second presentation is dropped in-path. The endpoint therefore times
-    # out rather than receiving a rejection, which still satisfies the gate:
-    # the replay is refused and every node reclaims its state.
-    ENDPOINT_EXTRA=(--redeem-twice 1)
-    EXPECT_ENDPOINT_FAILURE=1 ;;
-  wrong-capability)
-    # A capability the gateway never registered: the token hash misses.
-    ENDPOINT_CAPABILITY=$(printf '33%.0s' {1..32})
-    EXPECT_ENDPOINT_FAILURE=1 ;;
-  expired-capability)
-    # The registration lapses before the route reaches redemption.
-    GATEWAY_TTL_MS=1
-    EXPECT_ENDPOINT_FAILURE=1 ;;
-  no-candidate)
-    # Every ring is too shallow to reach the gateway, so the schedule is
-    # exhausted and discovery terminates with NO_CANDIDATE. Each ring's branch
-    # is cancelled, and every node must still finish with no live routes.
-    ENDPOINT_EXTRA=(--rings "1:300,1:300")
-    EXPECT_ENDPOINT_FAILURE=1 ;;
-  transport-failure)
-    # The far link blackholes after setup begins, so a sender exhausts its T1
-    # retry budget. The gate requires that path to reclaim all remote state.
-    BLACKHOLE_AFTER_MS=120
-    EXPECT_ENDPOINT_FAILURE=1 ;;
-  *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;;
-esac
 
 run_node() {
   local ns=$1 name=$2 offset=$3
@@ -232,6 +253,15 @@ for path in files:
 report=json.loads((root/'run-metrics.json').read_text())
 assert report['all_remote_state_reclaimed']
 PY
+if (( EXPECT_RETRY_EXHAUSTION )); then
+  if ! grep -lq "retry budget exhausted" "$OUTPUT"/*.err 2>/dev/null; then
+    echo "scenario ${SCENARIO}: no node reached T1 retry exhaustion" >&2
+    exit 1
+  fi
+  # Exhaustion must be reported once per transmission and leave nothing behind;
+  # the live_routes assertion above already covers the state side.
+  echo "scenario ${SCENARIO}: retry exhaustion reached cleanly"
+fi
 if (( EXPECT_ENDPOINT_FAILURE )); then
   if (( STATUS == 0 )); then
     echo "scenario ${SCENARIO}: expected the redemption to be rejected" >&2

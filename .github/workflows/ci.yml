@@ -118,6 +118,12 @@ jobs:
           sudo -E implementation/harness/netns-p1.sh \
             --relays 2 --loss 0 --delay 2ms --jitter 0ms --scenario transport-failure \
             --timeout-ms 20000 --output "$GITHUB_WORKSPACE/build/p1-transport-failure"
+      # Gate line: configured burst loss reaches retry exhaustion cleanly.
+      - name: Burst loss reaches retry exhaustion cleanly
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 2 --scenario burst-loss --delay 8ms --jitter 2ms \
+            --timeout-ms 30000 --output "$GITHUB_WORKSPACE/build/p1-burst-loss"
       - name: Twelve-relay establishment and cleanup
         run: |
           sudo -E implementation/harness/netns-p1.sh \
