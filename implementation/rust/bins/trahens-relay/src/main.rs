@@ -10,7 +10,7 @@ use node_runtime::{
 };
 use protocol_registry::{
     ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION,
-    ERROR_TIMEOUT, LIMIT_MAX_CANDIDATE_LAYERS, SUITE_R1,
+    ERROR_TIMEOUT, LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_MAX_FANOUT_CLASS, SUITE_R1,
 };
 use rendezvous_r1::suite::{EligibilitySuite, R1Suite};
 use state_machine::{Event, IngressAdmission, Phase, RouteTable};
@@ -20,22 +20,35 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
 use trahens_crypto::{blind_public, initialize, random_nonzero_16, random_scalar, zeroize};
 
+/// One forwarded child of a branch. Core v1.5 section 5 requires every child
+/// to receive independently replaced context, so each carries its own label,
+/// blinding factor, and discovery nonce.
 #[derive(Clone)]
-struct RelayRoute {
-    parent_label: [u8; 16],
+struct RelayChild {
+    link_index: usize,
     child_label: [u8; 16],
-    incoming_reply_public: [u8; 32],
     blinding_factor: [u8; 32],
-    depth: u8,
-    parent_discovery_nonce: [u8; 32],
     child_discovery_nonce: [u8; 32],
-    generation: u32,
 }
 
-impl Drop for RelayRoute {
+impl Drop for RelayChild {
     fn drop(&mut self) {
         zeroize(&mut self.blinding_factor);
     }
+}
+
+#[derive(Clone)]
+struct RelayRoute {
+    parent_label: [u8; 16],
+    children: Vec<RelayChild>,
+    /// Index of the child whose CANDIDATE was forwarded upstream. Control
+    /// traffic follows that child; until one exists there is nothing to
+    /// forward control to.
+    committed_child: Option<usize>,
+    incoming_reply_public: [u8; 32],
+    depth: u8,
+    parent_discovery_nonce: [u8; 32],
+    generation: u32,
 }
 
 fn forward_control(message: Control, label: [u8; 16]) -> Envelope {
@@ -56,7 +69,9 @@ fn cleanup_route(
     event: Event,
 ) {
     if let Some(route) = routes.remove(&parent) {
-        reverse.remove(&route.child_label);
+        for child in &route.children {
+            reverse.remove(&child.child_label);
+        }
         let _ = states.apply(parent, event, unix_time_ms());
     }
 }
@@ -81,7 +96,6 @@ fn run() -> Result<(), Box<dyn Error>> {
     let args = CliArgs::parse()?;
     let node_id = args.u32("id")?;
     let upstream_id = args.u32("upstream-id")?;
-    let downstream_id = args.u32("downstream-id")?;
     let epoch = args.u32("epoch")?;
     let timeout_ms = args.u64_or("timeout-ms", 30_000)?;
     let metrics_path = args.optional("metrics", "relay-metrics.json").to_owned();
@@ -98,17 +112,40 @@ fn run() -> Result<(), Box<dyn Error>> {
         },
         event_sender.clone(),
     )?;
-    let downstream = spawn_link(
-        LinkConfig {
-            local_id: node_id,
-            peer_id: downstream_id,
-            bind: args.socket("downstream-bind")?,
-            peer: args.socket("downstream-peer")?,
-            base_key: parse_hex::<32>(args.required("downstream-key")?)?,
-            epoch,
-        },
-        event_sender,
-    )?;
+    // Children are numbered: --downstream-id / -bind / -peer / -key describe
+    // child 0, and --downstream-id-N and friends describe child N. Core v1.5
+    // section 5 requires every forwarded child to get independently replaced
+    // context, so each child has its own link, label, and blinding factor.
+    let mut downstream: Vec<(u32, node_runtime::LinkHandle)> = Vec::new();
+    for child in 0..LIMIT_MAX_FANOUT_CLASS {
+        let suffix = if child == 0 {
+            String::new()
+        } else {
+            format!("-{child}")
+        };
+        if !args.flag(&format!("downstream-id{suffix}")) {
+            continue;
+        }
+        let peer_id = args.u32(&format!("downstream-id{suffix}"))?;
+        downstream.push((
+            peer_id,
+            spawn_link(
+                LinkConfig {
+                    local_id: node_id,
+                    peer_id,
+                    bind: args.socket(&format!("downstream-bind{suffix}"))?,
+                    peer: args.socket(&format!("downstream-peer{suffix}"))?,
+                    base_key: parse_hex::<32>(args.required(&format!("downstream-key{suffix}"))?)?,
+                    epoch,
+                },
+                event_sender.clone(),
+            )?,
+        ));
+    }
+    drop(event_sender);
+    if downstream.is_empty() {
+        return Err("a relay needs at least one downstream child".into());
+    }
 
     let mut states = RouteTable::default();
     let mut routes: HashMap<[u8; 16], RelayRoute> = HashMap::new();
@@ -198,29 +235,12 @@ fn run() -> Result<(), Box<dyn Error>> {
                         drops.record("relay", ERROR_RESOURCE_EXHAUSTED, "ingress_token_bucket");
                         continue;
                     }
-                    let factor = random_scalar()?;
-                    // The reply public key is remote input: an invalid point
-                    // must drop the DISCOVER, not terminate the relay.
-                    let Ok(child_public) = blind_public(&discover.reply_public_key, &factor) else {
-                        drops.record("relay", ERROR_MALFORMED, "discover_reply_public_key");
-                        continue;
-                    };
-                    let child_label = random_nonzero_16()?;
+                    let fanout = usize::from(discover.fanout_class)
+                        .clamp(1, downstream.len().min(LIMIT_MAX_FANOUT_CLASS));
                     let Ok(parent_discovery_nonce) =
                         <[u8; 32]>::try_from(discover.discovery_field.as_slice())
                     else {
                         drops.record("relay", ERROR_MALFORMED, "discover_nonce_length");
-                        continue;
-                    };
-                    // eligibility-suite-interface-v1.md: lifecycle code must
-                    // depend on the suite interface, not a concrete scheme.
-                    let Ok(child_field) = eligibility.transform(&discover.discovery_field) else {
-                        drops.record("relay", ERROR_MALFORMED, "discovery_field_transform");
-                        continue;
-                    };
-                    let Ok(child_discovery_nonce) = <[u8; 32]>::try_from(child_field.as_slice())
-                    else {
-                        drops.record("relay", ERROR_INTERNAL, "discovery_field_width");
                         continue;
                     };
                     let depth = discover.options.saturating_add(1);
@@ -235,30 +255,74 @@ fn run() -> Result<(), Box<dyn Error>> {
                         drops.record("relay", ERROR_RESOURCE_EXHAUSTED, "route_table_limit");
                         continue;
                     }
-                    let route = RelayRoute {
-                        parent_label: discover.branch_token,
-                        child_label,
-                        incoming_reply_public: discover.reply_public_key,
-                        blinding_factor: factor,
-                        depth,
-                        parent_discovery_nonce,
-                        child_discovery_nonce,
-                        generation: 0,
-                    };
-                    reverse.insert(child_label, discover.branch_token);
-                    routes.insert(discover.branch_token, route);
-                    downstream.send(Envelope {
-                        suite_id: SUITE_R1,
-                        message: Message::Discover(Discover {
-                            branch_token: child_label,
-                            hop_remaining: discover.hop_remaining.saturating_sub(1),
-                            fanout_class: discover.fanout_class,
-                            expiry_class: discover.expiry_class,
-                            options: depth,
-                            reply_public_key: child_public,
-                            discovery_field: child_discovery_nonce.to_vec(),
-                        }),
-                    })?;
+
+                    let mut children = Vec::with_capacity(fanout);
+                    for link_index in 0..fanout {
+                        let factor = random_scalar()?;
+                        // The reply public key is remote input: an invalid
+                        // point drops the DISCOVER rather than killing us.
+                        let Ok(child_public) = blind_public(&discover.reply_public_key, &factor)
+                        else {
+                            drops.record("relay", ERROR_MALFORMED, "discover_reply_public_key");
+                            break;
+                        };
+                        let child_label = random_nonzero_16()?;
+                        // eligibility-suite-interface-v1.md: lifecycle code
+                        // depends on the suite interface, not a concrete
+                        // scheme, and each child gets its own fresh field.
+                        let Ok(child_field) = eligibility.transform(&discover.discovery_field)
+                        else {
+                            drops.record("relay", ERROR_MALFORMED, "discovery_field_transform");
+                            break;
+                        };
+                        let Ok(child_discovery_nonce) =
+                            <[u8; 32]>::try_from(child_field.as_slice())
+                        else {
+                            drops.record("relay", ERROR_INTERNAL, "discovery_field_width");
+                            break;
+                        };
+                        reverse.insert(child_label, discover.branch_token);
+                        downstream[link_index].1.send(Envelope {
+                            suite_id: SUITE_R1,
+                            message: Message::Discover(Discover {
+                                branch_token: child_label,
+                                hop_remaining: discover.hop_remaining.saturating_sub(1),
+                                fanout_class: discover.fanout_class,
+                                expiry_class: discover.expiry_class,
+                                options: depth,
+                                reply_public_key: child_public,
+                                discovery_field: child_discovery_nonce.to_vec(),
+                            }),
+                        })?;
+                        children.push(RelayChild {
+                            link_index,
+                            child_label,
+                            blinding_factor: factor,
+                            child_discovery_nonce,
+                        });
+                    }
+                    if children.is_empty() {
+                        cleanup_route(
+                            discover.branch_token,
+                            &mut routes,
+                            &mut reverse,
+                            &mut states,
+                            Event::CancelAccepted,
+                        );
+                        continue;
+                    }
+                    routes.insert(
+                        discover.branch_token,
+                        RelayRoute {
+                            parent_label: discover.branch_token,
+                            children,
+                            committed_child: None,
+                            incoming_reply_public: discover.reply_public_key,
+                            depth,
+                            parent_discovery_nonce,
+                            generation: 0,
+                        },
+                    );
                 }
                 Message::Control(control) => {
                     let Some(route) = routes.get(&control.local_label).cloned() else {
@@ -279,13 +343,27 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 drops.record("relay", ERROR_STATE_VIOLATION, "commit_transition");
                                 continue;
                             }
-                            downstream.send(forward_control(control, route.child_label))?;
+                            if let Some(child) = route
+                                .committed_child
+                                .and_then(|index| route.children.get(index))
+                            {
+                                downstream[child.link_index]
+                                    .1
+                                    .send(forward_control(control, child.child_label))?;
+                            }
                         }
                         MessageType::RendezvousOpen => {
                             if states.get(&route.parent_label).map(|state| state.phase)
                                 == Some(Phase::Ready)
                             {
-                                downstream.send(forward_control(control, route.child_label))?;
+                                if let Some(child) = route
+                                    .committed_child
+                                    .and_then(|index| route.children.get(index))
+                                {
+                                    downstream[child.link_index]
+                                        .1
+                                        .send(forward_control(control, child.child_label))?;
+                                }
                             }
                         }
                         MessageType::Data => {
@@ -297,11 +375,25 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     Event::DataAccepted,
                                     unix_time_ms(),
                                 )?;
-                                downstream.send(forward_control(control, route.child_label))?;
+                                if let Some(child) = route
+                                    .committed_child
+                                    .and_then(|index| route.children.get(index))
+                                {
+                                    downstream[child.link_index]
+                                        .1
+                                        .send(forward_control(control, child.child_label))?;
+                                }
                             }
                         }
                         MessageType::Close | MessageType::Cancel | MessageType::Abort => {
-                            downstream.send(forward_control(control.clone(), route.child_label))?;
+                            if let Some(child) = route
+                                .committed_child
+                                .and_then(|index| route.children.get(index))
+                            {
+                                downstream[child.link_index]
+                                    .1
+                                    .send(forward_control(control.clone(), child.child_label))?;
+                            }
                             cleanup_started = Some(Instant::now());
                             observed_close = true;
                             let event = if control.message_type == MessageType::Close {
@@ -324,7 +416,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             },
             LinkEvent::Message {
                 peer_id, envelope, ..
-            } if peer_id == downstream_id => match envelope.message {
+            } if downstream.iter().any(|(id, _)| *id == peer_id) => match envelope.message {
                 Message::Candidate(candidate) => {
                     let Some(parent_label) = reverse.get(&candidate.candidate_token).copied()
                     else {
@@ -343,21 +435,36 @@ fn run() -> Result<(), Box<dyn Error>> {
                         );
                         continue;
                     }
+                    // The candidate arrived on one specific child, so it must
+                    // be unwrapped with that child's blinding factor and nonce.
+                    let Some(child_index) = route
+                        .children
+                        .iter()
+                        .position(|child| child.child_label == candidate.candidate_token)
+                    else {
+                        drops.record("relay", ERROR_STATE_VIOLATION, "candidate_unknown_child");
+                        continue;
+                    };
+                    let child = &route.children[child_index];
                     // The candidate blob is remote input; a wrap failure
                     // drops the candidate rather than terminating the relay.
                     let Ok(wrapped) = wrap_candidate(
                         &route.incoming_reply_public,
                         route.depth,
-                        route.blinding_factor,
-                        route.child_label,
+                        child.blinding_factor,
+                        child.child_label,
                         route.parent_label,
                         route.parent_discovery_nonce,
-                        route.child_discovery_nonce,
+                        child.child_discovery_nonce,
                         candidate.candidate_blob,
                     ) else {
                         drops.record("relay", ERROR_MALFORMED, "candidate_blob_wrap");
                         continue;
                     };
+                    // Control traffic for this route now follows that child.
+                    if let Some(entry) = routes.get_mut(&parent_label) {
+                        entry.committed_child.get_or_insert(child_index);
+                    }
                     if states
                         .apply(parent_label, Event::CandidateAccepted, unix_time_ms())
                         .is_err()
@@ -470,7 +577,9 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         if observed_close && routes.is_empty() {
             // Drain in-flight T1 state instead of sleeping a fixed interval.
-            drain_links(&[&upstream, &downstream], &event_receiver);
+            let mut handles: Vec<&node_runtime::LinkHandle> = vec![&upstream];
+            handles.extend(downstream.iter().map(|(_, link)| link));
+            drain_links(&handles, &event_receiver);
             break;
         }
     }
@@ -485,9 +594,12 @@ fn run() -> Result<(), Box<dyn Error>> {
             Event::Timeout,
         );
     }
+    let link_count = downstream.len() + 1;
     upstream.shutdown()?;
-    downstream.shutdown()?;
-    let metrics = collect_stopped(&event_receiver, 2);
+    for (_, link) in downstream {
+        link.shutdown()?;
+    }
+    let metrics = collect_stopped(&event_receiver, link_count);
     let cleanup_ms = cleanup_started
         .map(|value| value.elapsed().as_millis().try_into().unwrap_or(u64::MAX))
         .unwrap_or(0);
@@ -585,12 +697,16 @@ mod tests {
             parent,
             RelayRoute {
                 parent_label: parent,
-                child_label: child,
+                children: vec![RelayChild {
+                    link_index: 0,
+                    child_label: child,
+                    blinding_factor: [7; 32],
+                    child_discovery_nonce: [0; 32],
+                }],
+                committed_child: None,
                 incoming_reply_public: [0; 32],
-                blinding_factor: [7; 32],
                 depth: 1,
                 parent_discovery_nonce: [0; 32],
-                child_discovery_nonce: [0; 32],
                 generation: 1,
             },
         );
@@ -607,6 +723,51 @@ mod tests {
 
         assert!(routes.is_empty(), "parent mapping must be removed");
         assert!(reverse.is_empty(), "child reverse mapping must be removed");
+    }
+
+    #[test]
+    fn cleanup_releases_every_child_of_a_fanned_out_branch() {
+        // With fan-out the branch has several reverse mappings, and cancelling
+        // it must release all of them or a later candidate would resolve to a
+        // route that no longer exists.
+        let parent = [0x11; 16];
+        let mut routes = HashMap::new();
+        let mut reverse = HashMap::new();
+        let children: Vec<RelayChild> = (0..3)
+            .map(|index| RelayChild {
+                link_index: index,
+                child_label: [index as u8 + 1; 16],
+                blinding_factor: [7; 32],
+                child_discovery_nonce: [0; 32],
+            })
+            .collect();
+        for child in &children {
+            reverse.insert(child.child_label, parent);
+        }
+        routes.insert(
+            parent,
+            RelayRoute {
+                parent_label: parent,
+                children,
+                committed_child: Some(1),
+                incoming_reply_public: [0; 32],
+                depth: 1,
+                parent_discovery_nonce: [0; 32],
+                generation: 1,
+            },
+        );
+        let mut states = RouteTable::default();
+
+        cleanup_route(
+            parent,
+            &mut routes,
+            &mut reverse,
+            &mut states,
+            Event::CancelAccepted,
+        );
+
+        assert!(routes.is_empty());
+        assert!(reverse.is_empty(), "every child mapping is released");
     }
 
     #[test]
