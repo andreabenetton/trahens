@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![doc = "Minimal libsodium-backed primitives for the Trahens P1 prototype."]
 
+pub mod c1;
+
 use core::ffi::{c_int, c_uchar, c_ulonglong, c_void};
 use protocol_registry::{DOMAIN_C1_LABEL_PREFIX, DOMAIN_C1_REPLY_COMMIT, SUITE_C1_V2};
 use std::sync::OnceLock;
@@ -94,6 +96,11 @@ unsafe extern "C" {
         right: *const c_uchar,
     ) -> c_int;
     fn crypto_core_ristretto255_from_hash(output: *mut c_uchar, hash: *const c_uchar) -> c_int;
+    fn crypto_hash_sha512(
+        output: *mut c_uchar,
+        input: *const c_uchar,
+        length: c_ulonglong,
+    ) -> c_int;
     fn crypto_core_ristretto255_scalar_add(
         output: *mut c_uchar,
         left: *const c_uchar,
@@ -285,7 +292,7 @@ pub fn aead_open(
     Ok(output)
 }
 
-fn encode_fields(label: &[u8], fields: &[&[u8]]) -> Result<Vec<u8>, CryptoError> {
+pub(crate) fn encode_fields(label: &[u8], fields: &[&[u8]]) -> Result<Vec<u8>, CryptoError> {
     let mut total = DOMAIN_C1_LABEL_PREFIX.len() + 2 + label.len();
     for field in fields {
         if field.len() > u16::MAX as usize {
@@ -429,9 +436,34 @@ pub fn point_sub(left: &[u8; 32], right: &[u8; 32]) -> Result<[u8; 32], CryptoEr
     }
 }
 
-/// Hash an arbitrary label to a group element, per `crypto-profile-c1.md`.
-pub fn point_from_label(label: &[u8], data: &[u8]) -> Result<[u8; 32], CryptoError> {
-    let wide = wide_hash(label, data)?;
+/// SHA-512, used only for the wide inputs ristretto255 maps into the group.
+pub fn sha512(input: &[u8]) -> Result<[u8; 64], CryptoError> {
+    initialize()?;
+    let mut output = [0_u8; 64];
+    // SAFETY: the output buffer is exactly one SHA-512 digest.
+    let result = unsafe {
+        crypto_hash_sha512(
+            output.as_mut_ptr(),
+            input.as_ptr(),
+            input.len() as c_ulonglong,
+        )
+    };
+    if result == 0 {
+        Ok(output)
+    } else {
+        Err(CryptoError::Initialization)
+    }
+}
+
+/// Hash a label to a group element: `from_hash(SHA-512(dst || label))`.
+///
+/// Matches `ristretto.point_from_label` in the Python reference so both
+/// implementations derive identical elements.
+pub fn point_from_label(label: &[u8], domain: &[u8]) -> Result<[u8; 32], CryptoError> {
+    let mut input = Vec::with_capacity(domain.len() + label.len());
+    input.extend_from_slice(domain);
+    input.extend_from_slice(label);
+    let wide = sha512(&input)?;
     let mut output = [0_u8; 32];
     // SAFETY: the input is exactly the 64 bytes from_hash consumes.
     let result = unsafe { crypto_core_ristretto255_from_hash(output.as_mut_ptr(), wide.as_ptr()) };
@@ -442,13 +474,25 @@ pub fn point_from_label(label: &[u8], data: &[u8]) -> Result<[u8; 32], CryptoErr
     }
 }
 
-/// Hash an arbitrary label to a scalar, reduced into the group order.
-pub fn scalar_from_label(label: &[u8], data: &[u8]) -> Result<[u8; 32], CryptoError> {
-    let wide = wide_hash(label, data)?;
-    let mut output = [0_u8; 32];
-    // SAFETY: scalar_reduce consumes exactly 64 bytes and writes 32.
-    unsafe { crypto_core_ristretto255_scalar_reduce(output.as_mut_ptr(), wide.as_ptr()) };
-    Ok(output)
+/// Hash a label to a non-zero scalar.
+///
+/// Matches `ristretto.scalar_from_label`: SHA-512 over `dst || counter ||
+/// label`, reduced into the group order, retrying while the result is zero.
+pub fn scalar_from_label(label: &[u8], domain: &[u8]) -> Result<[u8; 32], CryptoError> {
+    for counter in 0_u8..=255 {
+        let mut input = Vec::with_capacity(domain.len() + 1 + label.len());
+        input.extend_from_slice(domain);
+        input.push(counter);
+        input.extend_from_slice(label);
+        let wide = sha512(&input)?;
+        let mut output = [0_u8; 32];
+        // SAFETY: scalar_reduce consumes exactly 64 bytes and writes 32.
+        unsafe { crypto_core_ristretto255_scalar_reduce(output.as_mut_ptr(), wide.as_ptr()) };
+        if output != [0_u8; 32] {
+            return Ok(output);
+        }
+    }
+    Err(CryptoError::InvalidEncoding)
 }
 
 /// Scalar addition modulo the group order.
@@ -465,24 +509,14 @@ pub fn scalar_sum(left: &[u8; 32], right: &[u8; 32]) -> Result<[u8; 32], CryptoE
 /// Deterministic keypair derived from a label, for domain-separated keys.
 pub fn keypair_from_label(
     label: &[u8],
-    data: &[u8],
+    domain: &[u8],
 ) -> Result<([u8; 32], SecretBytes<32>), CryptoError> {
-    let secret = scalar_from_label(label, data)?;
+    let secret = scalar_from_label(label, domain)?;
     if secret == [0_u8; 32] {
         return Err(CryptoError::InvalidEncoding);
     }
     let public = scalar_base(&secret)?;
     Ok((public, SecretBytes(secret)))
-}
-
-/// 64-byte domain-separated hash used to map labels into the group.
-fn wide_hash(label: &[u8], data: &[u8]) -> Result<[u8; 64], CryptoError> {
-    let first = sha256(&encode_fields(label, &[data, b"0"])?)?;
-    let second = sha256(&encode_fields(label, &[data, b"1"])?)?;
-    let mut wide = [0_u8; 64];
-    wide[..32].copy_from_slice(&first);
-    wide[32..].copy_from_slice(&second);
-    Ok(wide)
 }
 
 pub fn scalar_product(left: &[u8; 32], right: &[u8; 32]) -> Result<[u8; 32], CryptoError> {
@@ -756,6 +790,7 @@ pub fn verify(public: &[u8; 32], message: &[u8], signature: &[u8; 64]) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use protocol_registry::{DOMAIN_C1_ELEMENT, DOMAIN_C1_SCALAR, DOMAIN_C1_URE_R0};
 
     #[test]
     fn reply_round_trip_and_cross_recipient_rejection() -> Result<(), CryptoError> {
@@ -845,17 +880,18 @@ mod tests {
         assert_eq!(point_add(&a, &b)?, point_add(&b, &a)?);
 
         // Hash-to-group is deterministic, domain separated, and valid.
-        let first = point_from_label(b"trahens-test", b"input")?;
-        assert_eq!(first, point_from_label(b"trahens-test", b"input")?);
-        assert_ne!(first, point_from_label(b"trahens-other", b"input")?);
-        assert_ne!(first, point_from_label(b"trahens-test", b"other")?);
+        let first = point_from_label(b"input", DOMAIN_C1_ELEMENT)?;
+        assert_eq!(first, point_from_label(b"input", DOMAIN_C1_ELEMENT)?);
+        assert_ne!(first, point_from_label(b"input", DOMAIN_C1_SCALAR)?);
+        assert_ne!(first, point_from_label(b"other", DOMAIN_C1_ELEMENT)?);
         require_point(&first)?;
 
         // Hash-to-scalar shares those properties and yields a usable key.
-        let scalar = scalar_from_label(b"trahens-test", b"input")?;
-        assert_eq!(scalar, scalar_from_label(b"trahens-test", b"input")?);
-        assert_ne!(scalar, scalar_from_label(b"trahens-test", b"other")?);
-        let (public, secret) = keypair_from_label(b"trahens-test", b"input")?;
+        let scalar = scalar_from_label(b"input", DOMAIN_C1_SCALAR)?;
+        assert_eq!(scalar, scalar_from_label(b"input", DOMAIN_C1_SCALAR)?);
+        assert_ne!(scalar, scalar_from_label(b"input", DOMAIN_C1_URE_R0)?);
+        assert_ne!(scalar, scalar_from_label(b"other", DOMAIN_C1_SCALAR)?);
+        let (public, secret) = keypair_from_label(b"input", DOMAIN_C1_SCALAR)?;
         assert_eq!(scalar_base(&secret.0)?, public);
 
         // Scalar addition is commutative and matches repeated base scaling:
