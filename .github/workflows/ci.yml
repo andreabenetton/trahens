@@ -79,6 +79,16 @@ jobs:
           sudo -E implementation/harness/netns-p1.sh \
             --relays 2 --loss 5 --delay 8ms --jitter 2ms \
             --timeout-ms 60000 --output "$GITHUB_WORKSPACE/build/p1-loss-5"
+      # The CANDIDATE blob grows by roughly one relay layer per hop and only
+      # exceeds the 992-byte fragment payload from about four relays, so the
+      # 2-relay arm above recovers single-fragment messages only. This arm is
+      # the one that exercises selective-ACK recovery of a partial fragment
+      # set on the wire.
+      - name: Five-relay multi-fragment recovery with 5 percent loss
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 5 --loss 5 --delay 8ms --jitter 2ms \
+            --timeout-ms 90000 --output "$GITHUB_WORKSPACE/build/p1-multifragment"
       - name: Twelve-relay establishment and cleanup
         run: |
           sudo -E implementation/harness/netns-p1.sh \
