@@ -83,6 +83,23 @@ unsafe extern "C" {
         left: *const c_uchar,
         right: *const c_uchar,
     );
+    fn crypto_core_ristretto255_add(
+        output: *mut c_uchar,
+        left: *const c_uchar,
+        right: *const c_uchar,
+    ) -> c_int;
+    fn crypto_core_ristretto255_sub(
+        output: *mut c_uchar,
+        left: *const c_uchar,
+        right: *const c_uchar,
+    ) -> c_int;
+    fn crypto_core_ristretto255_from_hash(output: *mut c_uchar, hash: *const c_uchar) -> c_int;
+    fn crypto_core_ristretto255_scalar_add(
+        output: *mut c_uchar,
+        left: *const c_uchar,
+        right: *const c_uchar,
+    );
+    fn crypto_core_ristretto255_scalar_reduce(output: *mut c_uchar, wide: *const c_uchar);
     fn crypto_scalarmult_ristretto255_base(output: *mut c_uchar, scalar: *const c_uchar) -> c_int;
     fn crypto_scalarmult_ristretto255(
         output: *mut c_uchar,
@@ -378,6 +395,94 @@ pub fn scalar_mult(scalar: &[u8; 32], point: &[u8; 32]) -> Result<[u8; 32], Cryp
     } else {
         Err(CryptoError::InvalidEncoding)
     }
+}
+
+/// Group addition on ristretto255.
+pub fn point_add(left: &[u8; 32], right: &[u8; 32]) -> Result<[u8; 32], CryptoError> {
+    initialize()?;
+    valid_point(left)?;
+    valid_point(right)?;
+    let mut output = [0_u8; 32];
+    // SAFETY: every buffer is exactly one 32-byte ristretto255 element.
+    let result =
+        unsafe { crypto_core_ristretto255_add(output.as_mut_ptr(), left.as_ptr(), right.as_ptr()) };
+    if result == 0 {
+        Ok(output)
+    } else {
+        Err(CryptoError::InvalidEncoding)
+    }
+}
+
+/// Group subtraction on ristretto255.
+pub fn point_sub(left: &[u8; 32], right: &[u8; 32]) -> Result<[u8; 32], CryptoError> {
+    initialize()?;
+    valid_point(left)?;
+    valid_point(right)?;
+    let mut output = [0_u8; 32];
+    // SAFETY: every buffer is exactly one 32-byte ristretto255 element.
+    let result =
+        unsafe { crypto_core_ristretto255_sub(output.as_mut_ptr(), left.as_ptr(), right.as_ptr()) };
+    if result == 0 {
+        Ok(output)
+    } else {
+        Err(CryptoError::InvalidEncoding)
+    }
+}
+
+/// Hash an arbitrary label to a group element, per `crypto-profile-c1.md`.
+pub fn point_from_label(label: &[u8], data: &[u8]) -> Result<[u8; 32], CryptoError> {
+    let wide = wide_hash(label, data)?;
+    let mut output = [0_u8; 32];
+    // SAFETY: the input is exactly the 64 bytes from_hash consumes.
+    let result = unsafe { crypto_core_ristretto255_from_hash(output.as_mut_ptr(), wide.as_ptr()) };
+    if result == 0 {
+        Ok(output)
+    } else {
+        Err(CryptoError::InvalidEncoding)
+    }
+}
+
+/// Hash an arbitrary label to a scalar, reduced into the group order.
+pub fn scalar_from_label(label: &[u8], data: &[u8]) -> Result<[u8; 32], CryptoError> {
+    let wide = wide_hash(label, data)?;
+    let mut output = [0_u8; 32];
+    // SAFETY: scalar_reduce consumes exactly 64 bytes and writes 32.
+    unsafe { crypto_core_ristretto255_scalar_reduce(output.as_mut_ptr(), wide.as_ptr()) };
+    Ok(output)
+}
+
+/// Scalar addition modulo the group order.
+pub fn scalar_sum(left: &[u8; 32], right: &[u8; 32]) -> Result<[u8; 32], CryptoError> {
+    initialize()?;
+    let mut output = [0_u8; 32];
+    // SAFETY: all scalar buffers are exactly 32 bytes.
+    unsafe {
+        crypto_core_ristretto255_scalar_add(output.as_mut_ptr(), left.as_ptr(), right.as_ptr());
+    }
+    Ok(output)
+}
+
+/// Deterministic keypair derived from a label, for domain-separated keys.
+pub fn keypair_from_label(
+    label: &[u8],
+    data: &[u8],
+) -> Result<([u8; 32], SecretBytes<32>), CryptoError> {
+    let secret = scalar_from_label(label, data)?;
+    if secret == [0_u8; 32] {
+        return Err(CryptoError::InvalidEncoding);
+    }
+    let public = scalar_base(&secret)?;
+    Ok((public, SecretBytes(secret)))
+}
+
+/// 64-byte domain-separated hash used to map labels into the group.
+fn wide_hash(label: &[u8], data: &[u8]) -> Result<[u8; 64], CryptoError> {
+    let first = sha256(&encode_fields(label, &[data, b"0"])?)?;
+    let second = sha256(&encode_fields(label, &[data, b"1"])?)?;
+    let mut wide = [0_u8; 64];
+    wide[..32].copy_from_slice(&first);
+    wide[32..].copy_from_slice(&second);
+    Ok(wide)
 }
 
 pub fn scalar_product(left: &[u8; 32], right: &[u8; 32]) -> Result<[u8; 32], CryptoError> {
@@ -723,6 +828,46 @@ mod tests {
         // And the blinded secret opens it back to the published plaintext.
         let opened = reply_open(&blinded_secret, &sealed, &aad, &info)?;
         assert_eq!(opened, get("reply_kem/opened")?, "opened plaintext");
+        Ok(())
+    }
+
+    #[test]
+    fn ristretto_helpers_satisfy_group_laws() -> Result<(), CryptoError> {
+        let a = scalar_base(&random_scalar()?)?;
+        let b = scalar_base(&random_scalar()?)?;
+
+        // Addition and subtraction are inverse.
+        let sum = point_add(&a, &b)?;
+        assert_eq!(point_sub(&sum, &b)?, a, "add then sub returns the operand");
+        assert_ne!(sum, a);
+
+        // Addition commutes.
+        assert_eq!(point_add(&a, &b)?, point_add(&b, &a)?);
+
+        // Hash-to-group is deterministic, domain separated, and valid.
+        let first = point_from_label(b"trahens-test", b"input")?;
+        assert_eq!(first, point_from_label(b"trahens-test", b"input")?);
+        assert_ne!(first, point_from_label(b"trahens-other", b"input")?);
+        assert_ne!(first, point_from_label(b"trahens-test", b"other")?);
+        require_point(&first)?;
+
+        // Hash-to-scalar shares those properties and yields a usable key.
+        let scalar = scalar_from_label(b"trahens-test", b"input")?;
+        assert_eq!(scalar, scalar_from_label(b"trahens-test", b"input")?);
+        assert_ne!(scalar, scalar_from_label(b"trahens-test", b"other")?);
+        let (public, secret) = keypair_from_label(b"trahens-test", b"input")?;
+        assert_eq!(scalar_base(&secret.0)?, public);
+
+        // Scalar addition is commutative and matches repeated base scaling:
+        // (x + y) * B == x*B + y*B.
+        let x = random_scalar()?;
+        let y = random_scalar()?;
+        assert_eq!(scalar_sum(&x, &y)?, scalar_sum(&y, &x)?);
+        assert_eq!(
+            scalar_base(&scalar_sum(&x, &y)?)?,
+            point_add(&scalar_base(&x)?, &scalar_base(&y)?)?,
+            "scalar addition is a group homomorphism"
+        );
         Ok(())
     }
 }
