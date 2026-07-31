@@ -171,8 +171,15 @@ pub fn encode_schedule_header(frame: &ScheduleFrame) -> Result<[u8; 32], Schedul
     {
         return Err(ScheduleError::Malformed);
     }
-    // Section 5: a peer must never be asked for more than it advertised.
-    if frame.requested_rate_class > frame.maximum_rate_class {
+    // Section 5: a peer must never be asked for more than it advertised, and
+    // "a transition cannot skip a class" - the request is one step from where
+    // the link currently is, so a rate change is always gradual.
+    if frame.requested_rate_class > frame.maximum_rate_class
+        || frame
+            .current_rate_class
+            .abs_diff(frame.requested_rate_class)
+            > 1
+    {
         return Err(ScheduleError::Malformed);
     }
 
@@ -230,6 +237,10 @@ pub fn decode_schedule_header(input: &[u8; 32]) -> Result<ScheduleFrame, Schedul
     .iter()
     .any(|class| usize::from(*class) >= RATE_MENU_CELLS_PER_EPOCH.len())
         || frame.requested_rate_class > frame.maximum_rate_class
+        || frame
+            .current_rate_class
+            .abs_diff(frame.requested_rate_class)
+            > 1
     {
         return Err(ScheduleError::Malformed);
     }
@@ -322,6 +333,53 @@ mod schedule_tests {
             decode_schedule_header(&encoded)?,
             accept,
             "ACCEPT round trip"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_transition_may_not_skip_a_rate_class() -> Result<(), ScheduleError> {
+        // transport-profile-t2.md:119 - "A transition cannot skip a class."
+        // Without this a peer could jump straight from class 0 to class 3 and
+        // multiply its emission rate eightfold in one epoch.
+        let base = ScheduleFrame {
+            suite: protocol_registry::SUITE_R1,
+            negotiation_id: [2_u8; 16],
+            effective_epoch: 7,
+            current_rate_class: 0,
+            requested_rate_class: 3,
+            maximum_rate_class: 3,
+            action: ScheduleAction::Offer,
+        };
+        assert_eq!(encode_schedule_header(&base), Err(ScheduleError::Malformed));
+
+        // One step up, and one step down, are both fine.
+        for requested in [0, 1] {
+            let header = encode_schedule_header(&ScheduleFrame {
+                requested_rate_class: requested,
+                ..base
+            })?;
+            assert_eq!(
+                decode_schedule_header(&header)?.requested_rate_class,
+                requested
+            );
+        }
+        let header = encode_schedule_header(&ScheduleFrame {
+            current_rate_class: 2,
+            requested_rate_class: 1,
+            ..base
+        })?;
+        assert_eq!(decode_schedule_header(&header)?.requested_rate_class, 1);
+
+        // A decoder refuses a skipping frame however it was produced.
+        let mut forged = encode_schedule_header(&ScheduleFrame {
+            requested_rate_class: 1,
+            ..base
+        })?;
+        forged[29] = 3;
+        assert_eq!(
+            decode_schedule_header(&forged),
+            Err(ScheduleError::Malformed)
         );
         Ok(())
     }
