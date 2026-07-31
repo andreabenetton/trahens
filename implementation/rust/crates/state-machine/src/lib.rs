@@ -3,8 +3,9 @@
 #![doc = "Typed event-driven route state machines for P1 nodes."]
 
 use protocol_registry::{
-    LIMIT_BRANCH_TTL_MS, LIMIT_MAX_ROUTES_GLOBAL, LIMIT_MAX_ROUTES_PER_PEER, LIMIT_OFFER_TTL_MS,
-    LIMIT_READY_HOLD_MS, LIMIT_ROUTE_TTL_MS,
+    LIMIT_BRANCH_TTL_MS, LIMIT_INGRESS_BUCKET_CAPACITY, LIMIT_INGRESS_BUCKET_REFILL_AMOUNT,
+    LIMIT_INGRESS_BUCKET_REFILL_INTERVAL_MS, LIMIT_MAX_ROUTES_GLOBAL, LIMIT_MAX_ROUTES_PER_PEER,
+    LIMIT_OFFER_TTL_MS, LIMIT_READY_HOLD_MS, LIMIT_ROUTE_TTL_MS,
 };
 use std::collections::HashMap;
 
@@ -76,6 +77,70 @@ impl std::fmt::Display for StateError {
 }
 
 impl std::error::Error for StateError {}
+
+/// Per-ingress-peer token bucket for fresh-branch admission (E1 section 10,
+/// ADR 0013).
+///
+/// Capacity `b`, refill interval `r`, refill amount `a` all come from the
+/// registry. One admitted fresh branch consumes one token. Buckets are scoped
+/// to `(link epoch, ingress peer, receiving node)`; a node instance owns one
+/// table, and the epoch and peer form the key.
+#[derive(Debug, Clone, Copy)]
+struct Bucket {
+    tokens: u32,
+    last_refill_ms: u64,
+}
+
+#[derive(Debug, Default)]
+pub struct IngressAdmission {
+    buckets: HashMap<(u32, u32), Bucket>,
+    rejected: u64,
+}
+
+impl IngressAdmission {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Try to admit one fresh branch from `peer` on `epoch`.
+    ///
+    /// Returns false when the bucket is empty, which the caller must treat as
+    /// a drop before any cryptographic work or branch allocation.
+    pub fn admit(&mut self, epoch: u32, peer: u32, now_ms: u64) -> bool {
+        let bucket = self.buckets.entry((epoch, peer)).or_insert(Bucket {
+            tokens: LIMIT_INGRESS_BUCKET_CAPACITY as u32,
+            last_refill_ms: now_ms,
+        });
+        let interval = LIMIT_INGRESS_BUCKET_REFILL_INTERVAL_MS as u64;
+        if interval > 0 {
+            let elapsed = now_ms.saturating_sub(bucket.last_refill_ms);
+            let periods = elapsed / interval;
+            if periods > 0 {
+                let refill = periods.saturating_mul(LIMIT_INGRESS_BUCKET_REFILL_AMOUNT as u64);
+                bucket.tokens = u32::try_from(
+                    u64::from(bucket.tokens)
+                        .saturating_add(refill)
+                        .min(LIMIT_INGRESS_BUCKET_CAPACITY as u64),
+                )
+                .unwrap_or(LIMIT_INGRESS_BUCKET_CAPACITY as u32);
+                bucket.last_refill_ms = bucket.last_refill_ms.saturating_add(periods * interval);
+            }
+        }
+        if bucket.tokens == 0 {
+            self.rejected = self.rejected.saturating_add(1);
+            return false;
+        }
+        bucket.tokens -= 1;
+        true
+    }
+
+    /// Fresh branches refused for want of a token.
+    #[must_use]
+    pub fn rejected(&self) -> u64 {
+        self.rejected
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct RouteState {
@@ -233,6 +298,42 @@ mod tests {
         );
         assert_eq!(table.live_routes(), 0);
         Ok(())
+    }
+
+    #[test]
+    fn ingress_bucket_admits_a_burst_then_refills_over_time() {
+        // E1 section 10: capacity b, refill interval r, refill amount a; one
+        // admitted fresh branch consumes one token.
+        let mut admission = IngressAdmission::new();
+        let capacity = LIMIT_INGRESS_BUCKET_CAPACITY as u32;
+
+        // A burst up to capacity is admitted.
+        for _ in 0..capacity {
+            assert!(admission.admit(1, 7, 0));
+        }
+        // The next fresh branch is refused, and counted.
+        assert!(!admission.admit(1, 7, 0));
+        assert_eq!(admission.rejected(), 1);
+
+        // A different peer has its own bucket.
+        assert!(admission.admit(1, 8, 0));
+        // So does the same peer on a different link epoch.
+        assert!(admission.admit(2, 7, 0));
+
+        // One refill interval restores exactly the refill amount.
+        let interval = LIMIT_INGRESS_BUCKET_REFILL_INTERVAL_MS as u64;
+        for _ in 0..LIMIT_INGRESS_BUCKET_REFILL_AMOUNT {
+            assert!(admission.admit(1, 7, interval));
+        }
+        assert!(!admission.admit(1, 7, interval), "refill is bounded by a");
+
+        // Refill never exceeds capacity however long the peer is idle.
+        let mut idle = IngressAdmission::new();
+        assert!(idle.admit(1, 9, 0));
+        for _ in 0..capacity {
+            assert!(idle.admit(1, 9, interval * 1_000));
+        }
+        assert!(!idle.admit(1, 9, interval * 1_000), "capped at capacity");
     }
 
     #[test]

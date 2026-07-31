@@ -12,7 +12,7 @@ use protocol_registry::{
     ERROR_TIMEOUT, LIMIT_MAX_CANDIDATE_LAYERS, SUITE_R1,
 };
 use rendezvous_r1::suite::{EligibilitySuite, R1Suite};
-use state_machine::{Event, Phase, RouteTable};
+use state_machine::{Event, IngressAdmission, Phase, RouteTable};
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::mpsc::RecvTimeoutError;
@@ -114,6 +114,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut reverse: HashMap<[u8; 16], [u8; 16]> = HashMap::new();
     let mut drops = RemoteInputDrops::new();
     let eligibility = R1Suite;
+    let mut admission = IngressAdmission::new();
     let deadline = unix_time_ms().saturating_add(timeout_ms);
     let mut cleanup_started: Option<Instant> = None;
     let mut observed_close = false;
@@ -166,6 +167,14 @@ fn run() -> Result<(), Box<dyn Error>> {
                             ERROR_RESOURCE_EXHAUSTED,
                             "discover_propagation_limit",
                         );
+                        continue;
+                    }
+                    // E1 section 10: the per-ingress-peer bucket is charged
+                    // before any cryptographic work or branch allocation, so a
+                    // fresh-branch flood costs the relay a table lookup rather
+                    // than a scalar multiplication.
+                    if !admission.admit(epoch, upstream_id, unix_time_ms()) {
+                        drops.record("relay", ERROR_RESOURCE_EXHAUSTED, "ingress_token_bucket");
                         continue;
                     }
                     let factor = random_scalar()?;
@@ -475,6 +484,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         &[
             ("live_routes", states.live_routes().to_string()),
             ("route_map", routes.len().to_string()),
+            ("token_bucket_drops", admission.rejected().to_string()),
             ("id", node_id.to_string()),
         ],
     );
