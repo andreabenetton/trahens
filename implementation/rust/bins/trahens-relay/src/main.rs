@@ -5,8 +5,7 @@ use codec_m2::{Candidate, Control, Discover, Envelope, Message, MessageType};
 use node_runtime::p1::wrap_candidate;
 use node_runtime::{
     drain_in_precedence_order, drain_links, event_channel, parse_hex, spawn_link, structured_event,
-    unix_time_ms, write_link_metrics, CliArgs, LinkConfig, LinkEvent, LinkMetrics,
-    RemoteInputDrops,
+    write_link_metrics, CliArgs, Clock, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
 };
 use protocol_registry::{
     ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION,
@@ -67,13 +66,45 @@ fn cleanup_route(
     reverse: &mut HashMap<[u8; 16], [u8; 16]>,
     states: &mut RouteTable,
     event: Event,
+    now_ms: u64,
 ) {
     if let Some(route) = routes.remove(&parent) {
         for child in &route.children {
             reverse.remove(&child.child_label);
         }
-        let _ = states.apply(parent, event, unix_time_ms());
+        let _ = states.apply(parent, event, now_ms);
     }
+}
+
+/// Reclaim every branch whose deadline has passed.
+///
+/// `event-lifecycle-profile-e1.md` section 9 requires expiry to be local and
+/// non-blocking, and section 2 ranks it above every message sharing the same
+/// timestamp. It therefore runs once per loop iteration, before any event is
+/// processed: driving it only from an idle channel lets continuous traffic
+/// keep expired state usable indefinitely.
+fn reclaim_expired(
+    now_ms: u64,
+    routes: &mut HashMap<[u8; 16], RelayRoute>,
+    reverse: &mut HashMap<[u8; 16], [u8; 16]>,
+    states: &mut RouteTable,
+) -> usize {
+    let expired: Vec<[u8; 16]> = routes
+        .keys()
+        .filter(|label| {
+            states
+                .get(label)
+                .is_none_or(|state| state.expires_at_ms <= now_ms)
+        })
+        .copied()
+        .collect();
+    let count = expired.len();
+    for label in expired {
+        cleanup_route(label, routes, reverse, states, Event::Timeout, now_ms);
+    }
+    // A state entry can outlive its route map entry, so sweep the table too.
+    states.expire(now_ms);
+    count
 }
 
 fn collect_stopped(
@@ -153,7 +184,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut drops = RemoteInputDrops::new();
     let eligibility = R1Suite;
     let mut admission = IngressAdmission::new();
-    let deadline = unix_time_ms().saturating_add(timeout_ms);
+    let clock = Clock::start();
+    let deadline = clock.now_ms().saturating_add(timeout_ms);
     let mut cleanup_started: Option<Instant> = None;
     let mut observed_close = false;
     let mut transport_failed: Option<u32> = None;
@@ -163,7 +195,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     // a time. Processing straight from the channel would let scheduling decide
     // whether a cancellation or a delayed candidate wins.
     let mut ordered: VecDeque<LinkEvent> = VecDeque::new();
-    while unix_time_ms() < deadline {
+    while clock.now_ms() < deadline {
+        // Expiry runs before every event, not only when the channel is idle.
+        reclaim_expired(clock.now_ms(), &mut routes, &mut reverse, &mut states);
         let next = match ordered.pop_front() {
             Some(event) => Ok(event),
             None => event_receiver.recv_timeout(Duration::from_millis(100)),
@@ -181,31 +215,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                     value
                 }
             }
-            Err(RecvTimeoutError::Timeout) => {
-                let now = unix_time_ms();
-                // The route table owns the deadline: it renews per state
-                // class on every valid transition (E1 section 8), whereas a
-                // copy captured at DISCOVER would expire a progressing route.
-                let expired: Vec<[u8; 16]> = routes
-                    .keys()
-                    .filter(|label| {
-                        states
-                            .get(label)
-                            .is_none_or(|state| state.expires_at_ms <= now)
-                    })
-                    .copied()
-                    .collect();
-                for label in expired {
-                    cleanup_route(
-                        label,
-                        &mut routes,
-                        &mut reverse,
-                        &mut states,
-                        Event::Timeout,
-                    );
-                }
-                continue;
-            }
+            // Expiry already ran at the top of the iteration; an idle channel
+            // just means there is nothing else to do this tick.
+            Err(RecvTimeoutError::Timeout) => continue,
             Err(RecvTimeoutError::Disconnected) => break,
         };
         match event {
@@ -231,7 +243,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     // before any cryptographic work or branch allocation, so a
                     // fresh-branch flood costs the relay a table lookup rather
                     // than a scalar multiplication.
-                    if !admission.admit(epoch, upstream_id, unix_time_ms()) {
+                    if !admission.admit(epoch, upstream_id, clock.now_ms()) {
                         drops.record("relay", ERROR_RESOURCE_EXHAUSTED, "ingress_token_bucket");
                         continue;
                     }
@@ -244,8 +256,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                         continue;
                     };
                     let depth = discover.options.saturating_add(1);
-                    let expires_at_ms =
-                        unix_time_ms().saturating_add(Phase::Discovering.lifetime_ms());
+                    let expires_at_ms = clock
+                        .now_ms()
+                        .saturating_add(Phase::Discovering.lifetime_ms());
                     // A peer exhausting the route table is admission
                     // pressure, not a relay fault: drop this DISCOVER.
                     if states
@@ -308,6 +321,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             &mut reverse,
                             &mut states,
                             Event::CancelAccepted,
+                            clock.now_ms(),
                         );
                         continue;
                     }
@@ -337,7 +351,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             // duplicate COMMIT MUST be discarded or processed
                             // idempotently, never treated as fatal.
                             if states
-                                .apply(route.parent_label, Event::CommitAccepted, unix_time_ms())
+                                .apply(route.parent_label, Event::CommitAccepted, clock.now_ms())
                                 .is_err()
                             {
                                 drops.record("relay", ERROR_STATE_VIOLATION, "commit_transition");
@@ -373,7 +387,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 states.apply(
                                     route.parent_label,
                                     Event::DataAccepted,
-                                    unix_time_ms(),
+                                    clock.now_ms(),
                                 )?;
                                 if let Some(child) = route
                                     .committed_child
@@ -407,6 +421,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 &mut reverse,
                                 &mut states,
                                 event,
+                                clock.now_ms(),
                             );
                         }
                         _ => {}
@@ -432,6 +447,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             &mut reverse,
                             &mut states,
                             Event::CancelAccepted,
+                            clock.now_ms(),
                         );
                         continue;
                     }
@@ -466,7 +482,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         entry.committed_child.get_or_insert(child_index);
                     }
                     if states
-                        .apply(parent_label, Event::CandidateAccepted, unix_time_ms())
+                        .apply(parent_label, Event::CandidateAccepted, clock.now_ms())
                         .is_err()
                     {
                         drops.record("relay", ERROR_STATE_VIOLATION, "candidate_transition");
@@ -495,7 +511,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     match control.message_type {
                         MessageType::Ready => {
                             if states
-                                .apply(parent_label, Event::ReadyAccepted, unix_time_ms())
+                                .apply(parent_label, Event::ReadyAccepted, clock.now_ms())
                                 .is_err()
                             {
                                 drops.record("relay", ERROR_STATE_VIOLATION, "ready_transition");
@@ -505,7 +521,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         }
                         MessageType::RendezvousResult => {
                             if states
-                                .apply(parent_label, Event::CapabilityAccepted, unix_time_ms())
+                                .apply(parent_label, Event::CapabilityAccepted, clock.now_ms())
                                 .is_err()
                             {
                                 drops.record(
@@ -521,7 +537,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             if states.get(&parent_label).map(|state| state.phase)
                                 == Some(Phase::Open)
                             {
-                                states.apply(parent_label, Event::DataAccepted, unix_time_ms())?;
+                                states.apply(parent_label, Event::DataAccepted, clock.now_ms())?;
                                 upstream.send(forward_control(control, parent_label))?;
                             }
                         }
@@ -535,6 +551,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 &mut reverse,
                                 &mut states,
                                 Event::CloseAccepted,
+                                clock.now_ms(),
                             );
                         }
                         _ => {}
@@ -592,6 +609,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             &mut reverse,
             &mut states,
             Event::Timeout,
+            clock.now_ms(),
         );
     }
     let link_count = downstream.len() + 1;
@@ -719,6 +737,7 @@ mod tests {
             &mut reverse,
             &mut states,
             Event::CloseAccepted,
+            0,
         );
 
         assert!(routes.is_empty(), "parent mapping must be removed");
@@ -764,10 +783,66 @@ mod tests {
             &mut reverse,
             &mut states,
             Event::CancelAccepted,
+            0,
         );
 
         assert!(routes.is_empty());
         assert!(reverse.is_empty(), "every child mapping is released");
+    }
+
+    #[test]
+    fn reclaim_expired_releases_lapsed_branches_and_spares_live_ones() -> Result<(), Box<dyn Error>>
+    {
+        // The relay now sweeps before every event rather than only when the
+        // channel falls idle, so this is the sweep a busy relay depends on.
+        let lapsed = [0x21; 16];
+        let live = [0x22; 16];
+        let mut routes = HashMap::new();
+        let mut reverse = HashMap::new();
+        let mut states = RouteTable::default();
+
+        for (label, child, deadline) in [(lapsed, [0x31_u8; 16], 100_u64), (live, [0x32; 16], 900)]
+        {
+            states.begin(label, 1, 0, deadline)?;
+            reverse.insert(child, label);
+            routes.insert(
+                label,
+                RelayRoute {
+                    parent_label: label,
+                    children: vec![RelayChild {
+                        link_index: 0,
+                        child_label: child,
+                        blinding_factor: [7; 32],
+                        child_discovery_nonce: [0; 32],
+                    }],
+                    committed_child: None,
+                    incoming_reply_public: [0; 32],
+                    depth: 1,
+                    parent_discovery_nonce: [0; 32],
+                    generation: 0,
+                },
+            );
+        }
+
+        assert_eq!(
+            reclaim_expired(500, &mut routes, &mut reverse, &mut states),
+            1
+        );
+        assert!(!routes.contains_key(&lapsed), "the lapsed branch is gone");
+        assert!(routes.contains_key(&live), "the live branch is untouched");
+        assert!(
+            !reverse.contains_key(&[0x31; 16]),
+            "its child mapping goes with it"
+        );
+        assert_eq!(states.live_routes(), 1);
+
+        // A second sweep at the same instant is a no-op, so running it every
+        // iteration costs nothing.
+        assert_eq!(
+            reclaim_expired(500, &mut routes, &mut reverse, &mut states),
+            0
+        );
+        Ok(())
     }
 
     #[test]
@@ -782,6 +857,7 @@ mod tests {
             &mut reverse,
             &mut states,
             Event::CloseAccepted,
+            0,
         );
 
         assert!(routes.is_empty());

@@ -7,7 +7,7 @@ use node_runtime::p1::{
 };
 use node_runtime::{
     drain_links, event_channel, parse_hex, spawn_link, structured_event, unix_time_ms,
-    write_link_metrics, CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
+    write_link_metrics, CliArgs, Clock, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
 };
 use protocol_registry::{
     ERROR_AUTHENTICATION_FAILED, ERROR_CAPABILITY_INVALID, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
@@ -68,6 +68,35 @@ fn send_control(
         protected,
     ))?;
     Ok(())
+}
+
+/// Reclaim every gateway route whose deadline has passed.
+///
+/// `event-lifecycle-profile-e1.md` section 9 requires expiry to be local and
+/// non-blocking, and section 2 ranks it above every message sharing the same
+/// timestamp, so it runs once per loop iteration rather than only when the
+/// event channel falls idle.
+fn reclaim_expired(
+    now_ms: u64,
+    routes: &mut HashMap<[u8; 16], GatewayRoute>,
+    states: &mut RouteTable,
+) -> usize {
+    let expired: Vec<[u8; 16]> = routes
+        .keys()
+        .filter(|label| {
+            states
+                .get(label)
+                .is_none_or(|state| state.expires_at_ms <= now_ms)
+        })
+        .copied()
+        .collect();
+    let count = expired.len();
+    for label in expired {
+        routes.remove(&label);
+        let _ = states.apply(label, Event::Timeout, now_ms);
+    }
+    states.expire(now_ms);
+    count
 }
 
 fn collect_stopped(
@@ -137,33 +166,22 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut states = RouteTable::default();
     let mut routes: HashMap<[u8; 16], GatewayRoute> = HashMap::new();
     let mut drops = RemoteInputDrops::new();
-    let deadline = unix_time_ms().saturating_add(timeout_ms);
+    let clock = Clock::start();
+    let deadline = clock.now_ms().saturating_add(timeout_ms);
     let mut observed_close = false;
     let mut transport_failed = false;
     let mut cleanup_started: Option<Instant> = None;
     let mut redemption_latency_ms = 0_u64;
 
-    while unix_time_ms() < deadline {
+    while clock.now_ms() < deadline {
+        // Expiry runs before every event, not only when the channel is idle.
+        // Registrations carry a wall-clock TTL because the client asserts its
+        // validity interval on the wire; route state is purely local.
+        registry.expire(unix_time_ms());
+        reclaim_expired(clock.now_ms(), &mut routes, &mut states);
         let event = match event_receiver.recv_timeout(Duration::from_millis(100)) {
             Ok(value) => value,
-            Err(RecvTimeoutError::Timeout) => {
-                let now = unix_time_ms();
-                registry.expire(now);
-                let expired: Vec<[u8; 16]> = routes
-                    .iter()
-                    .filter_map(|(label, _)| {
-                        states
-                            .get(label)
-                            .is_none_or(|state| state.expires_at_ms <= now)
-                            .then_some(*label)
-                    })
-                    .collect();
-                for label in expired {
-                    routes.remove(&label);
-                    let _ = states.apply(label, Event::Timeout, unix_time_ms());
-                }
-                continue;
-            }
+            Err(RecvTimeoutError::Timeout) => continue,
             Err(RecvTimeoutError::Disconnected) => break,
         };
         match event {
@@ -187,8 +205,14 @@ fn run() -> Result<(), Box<dyn Error>> {
                     if route_secret == [0_u8; 32] || challenge == [0_u8; 32] {
                         return Err("gateway generated an invalid route secret".into());
                     }
+                    // The offer expiry crosses the wire and is compared by the
+                    // initiator, so it is wall clock. The route table's copy is
+                    // a local deadline and uses the monotonic clock.
                     let expires_at_ms =
                         unix_time_ms().saturating_add(Phase::Discovering.lifetime_ms());
+                    let state_expires_at_ms = clock
+                        .now_ms()
+                        .saturating_add(Phase::Discovering.lifetime_ms());
                     let blob = seal_gateway_offer(
                         &discover.reply_public_key,
                         gateway_id,
@@ -200,11 +224,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                         signing_public,
                         &signing_secret,
                     )?;
-                    states.begin(discover.branch_token, peer_id, 0, expires_at_ms)?;
+                    states.begin(discover.branch_token, peer_id, 0, state_expires_at_ms)?;
                     states.apply(
                         discover.branch_token,
                         Event::CandidateAccepted,
-                        unix_time_ms(),
+                        clock.now_ms(),
                     )?;
                     routes.insert(
                         discover.branch_token,
@@ -264,7 +288,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     continue;
                                 }
                                 if states
-                                    .apply(route.label, Event::CommitAccepted, unix_time_ms())
+                                    .apply(route.label, Event::CommitAccepted, clock.now_ms())
                                     .is_err()
                                 {
                                     drops.record(
@@ -286,7 +310,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     &P1Payload::Ready { proof: ready },
                                 )?;
                                 if states
-                                    .apply(route.label, Event::ReadyAccepted, unix_time_ms())
+                                    .apply(route.label, Event::ReadyAccepted, clock.now_ms())
                                     .is_err()
                                 {
                                     drops.record(
@@ -342,7 +366,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                             states.apply(
                                                 route.label,
                                                 Event::CapabilityAccepted,
-                                                unix_time_ms(),
+                                                clock.now_ms(),
                                             )?;
                                             0
                                         }
@@ -381,7 +405,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 {
                                     continue;
                                 }
-                                states.apply(route.label, Event::DataAccepted, unix_time_ms())?;
+                                states.apply(route.label, Event::DataAccepted, clock.now_ms())?;
                                 send_control(
                                     &link,
                                     route,
@@ -407,7 +431,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                     if let Some(event) = cleanup_event {
                         routes.remove(&route_label);
-                        states.apply(route_label, event, unix_time_ms())?;
+                        states.apply(route_label, event, clock.now_ms())?;
                     }
                 }
                 _ => {}
@@ -448,7 +472,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let remaining: Vec<[u8; 16]> = routes.keys().copied().collect();
     for label in remaining {
         routes.remove(&label);
-        let _ = states.apply(label, Event::Timeout, unix_time_ms());
+        let _ = states.apply(label, Event::Timeout, clock.now_ms());
     }
     link.shutdown()?;
     let metrics = collect_stopped(&event_receiver, peer_id);
@@ -497,6 +521,35 @@ mod tests {
     fn control_envelopes_carry_the_r1_suite() {
         let envelope = control(MessageType::RendezvousResult, [0x07; 16], 2, vec![1]);
         assert_eq!(envelope.suite_id, SUITE_R1);
+    }
+
+    #[test]
+    fn reclaim_expired_releases_lapsed_routes_and_spares_live_ones() -> Result<(), Box<dyn Error>> {
+        let lapsed = [0x41; 16];
+        let live = [0x42; 16];
+        let mut routes = HashMap::new();
+        let mut states = RouteTable::default();
+        for (label, deadline) in [(lapsed, 100_u64), (live, 900)] {
+            states.begin(label, 1, 0, deadline)?;
+            routes.insert(
+                label,
+                GatewayRoute {
+                    label,
+                    generation: 0,
+                    route_secret: SecretBytes([1; 32]),
+                    challenge: SecretBytes([2; 32]),
+                    pseudonym: [3; 16],
+                    failed_redemptions: 0,
+                },
+            );
+        }
+
+        assert_eq!(reclaim_expired(500, &mut routes, &mut states), 1);
+        assert!(!routes.contains_key(&lapsed));
+        assert!(routes.contains_key(&live));
+        assert_eq!(states.live_routes(), 1);
+        assert_eq!(reclaim_expired(500, &mut routes, &mut states), 0);
+        Ok(())
     }
 
     #[test]

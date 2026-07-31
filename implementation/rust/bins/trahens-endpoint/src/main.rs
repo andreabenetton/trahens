@@ -7,7 +7,7 @@ use node_runtime::p1::{
 };
 use node_runtime::{
     drain_links, event_channel, parse_hex, spawn_link, structured_event, unix_time_ms,
-    write_link_metrics, CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
+    write_link_metrics, CliArgs, Clock, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
 };
 use protocol_registry::{
     ERROR_AUTHENTICATION_FAILED, ERROR_INTERNAL, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
@@ -184,7 +184,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         .to_vec();
     let generation = 0_u32;
     let setup_started = Instant::now();
-    let absolute_deadline = unix_time_ms().saturating_add(timeout_ms);
+    let clock = Clock::start();
+    let absolute_deadline = clock.now_ms().saturating_add(timeout_ms);
     let mut state = RouteTable::default();
     let mut drops = RemoteInputDrops::new();
     // Ring 0 opens immediately; later rings open only if the window closes
@@ -204,6 +205,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                      contexts: &mut Vec<RingContext>,
                      state: &mut RouteTable|
      -> Result<u64, Box<dyn Error>> {
+        let now_ms = clock.now_ms();
         let ring = rings[index];
         let branch_token = random_nonzero_16()?;
         let discovery_nonce = random_bytes::<32>()?;
@@ -214,7 +216,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             branch_token,
             peer_id,
             generation,
-            unix_time_ms().saturating_add(LIMIT_ROUTE_TTL_MS as u64),
+            now_ms.saturating_add(LIMIT_ROUTE_TTL_MS as u64),
         )?;
         link.send(Envelope {
             suite_id: SUITE_R1,
@@ -242,7 +244,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 ("fanout_class", ring.fanout_class.to_string()),
             ],
         );
-        Ok(unix_time_ms().saturating_add(ring.window_ms))
+        Ok(now_ms.saturating_add(ring.window_ms))
     };
 
     let mut window_closes_ms = open_ring(0, &mut contexts, &mut state)?;
@@ -255,19 +257,21 @@ fn run() -> Result<(), Box<dyn Error>> {
     let redeem_twice = args.flag("redeem-twice");
     let mut redemptions = 0_u32;
 
-    while unix_time_ms() < absolute_deadline {
+    while clock.now_ms() < absolute_deadline {
+        // Expiry runs before every event, not only when the channel is idle:
+        // continuous candidate traffic must not keep a lapsed branch usable.
+        state.expire(clock.now_ms());
         // Wake no later than the pending window boundary, so a met threshold
         // is acted on immediately instead of waiting out a fixed tick.
         let wait = if selected_branch.is_some() {
             Duration::from_millis(100)
         } else {
-            Duration::from_millis(window_closes_ms.saturating_sub(unix_time_ms()).min(100))
+            Duration::from_millis(window_closes_ms.saturating_sub(clock.now_ms()).min(100))
         };
         let event = match event_receiver.recv_timeout(wait) {
             Ok(value) => value,
             Err(RecvTimeoutError::Timeout) => {
-                state.expire(unix_time_ms());
-                let now = unix_time_ms();
+                let now = clock.now_ms();
                 if selected_branch.is_some() || now < window_closes_ms {
                     continue;
                 }
@@ -275,8 +279,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                 // Section 3, window boundary: drop expired offers, select if
                 // anything remains, otherwise open the next ring, and on the
                 // final ring terminate with NO_CANDIDATE.
+                // The offer expiry was minted by the gateway and travels on
+                // the wire, so it is compared against wall clock.
                 let before = held.len();
-                held.retain(|candidate| candidate.opened.expires_at_ms > now);
+                let wall_now = unix_time_ms();
+                held.retain(|candidate| candidate.opened.expires_at_ms > wall_now);
                 candidates_dropped += (before - held.len()) as u64;
 
                 if let Some(index) = best_candidate(&held) {
@@ -311,7 +318,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         let _ = state.apply(
                             context.branch_token,
                             Event::CancelAccepted,
-                            unix_time_ms(),
+                            clock.now_ms(),
                         );
                         cancelled_branches += 1;
                         structured_event("endpoint", "branch_cancelled", &[]);
@@ -334,7 +341,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         MessageType::Commit,
                         &P1Payload::Commit { proof },
                     )?;
-                    state.apply(route.local_label, Event::CommitAccepted, unix_time_ms())?;
+                    state.apply(route.local_label, Event::CommitAccepted, clock.now_ms())?;
                     active = Some(route);
                     continue;
                 }
@@ -360,7 +367,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         }),
                     })?;
                     let _ =
-                        state.apply(context.branch_token, Event::CancelAccepted, unix_time_ms());
+                        state.apply(context.branch_token, Event::CancelAccepted, clock.now_ms());
                     cancelled_branches += 1;
                 }
                 structured_event(
@@ -425,7 +432,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         continue;
                     };
                     if state
-                        .apply(candidate_token, Event::CandidateAccepted, unix_time_ms())
+                        .apply(candidate_token, Event::CandidateAccepted, clock.now_ms())
                         .is_err()
                     {
                         drops.record("endpoint", ERROR_STATE_VIOLATION, "candidate_transition");
@@ -440,7 +447,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         ring: context.ring,
                         branch_token: candidate_token,
                         hop_count: layer_count,
-                        arrived_ms: unix_time_ms(),
+                        arrived_ms: clock.now_ms(),
                         opened,
                     });
                     structured_event(
@@ -457,7 +464,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     // boundary arrives, so a single-candidate path does not
                     // wait out a window it cannot improve on.
                     if held.len() >= candidate_threshold {
-                        window_closes_ms = unix_time_ms();
+                        window_closes_ms = clock.now_ms();
                     }
                 }
                 Message::Control(control_message) => {
@@ -496,7 +503,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 continue;
                             }
                             if state
-                                .apply(route.local_label, Event::ReadyAccepted, unix_time_ms())
+                                .apply(route.local_label, Event::ReadyAccepted, clock.now_ms())
                                 .is_err()
                             {
                                 drops.record("endpoint", ERROR_STATE_VIOLATION, "ready_transition");
@@ -565,7 +572,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 state.apply(
                                     route.local_label,
                                     Event::CloseAccepted,
-                                    unix_time_ms(),
+                                    clock.now_ms(),
                                 )?;
                                 success = true;
                                 break;
@@ -579,7 +586,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             state.apply(
                                 route.local_label,
                                 Event::CapabilityAccepted,
-                                unix_time_ms(),
+                                clock.now_ms(),
                             )?;
                             send_control(
                                 &link,
@@ -603,7 +610,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             if payload != message {
                                 return Err("echo payload mismatch".into());
                             }
-                            state.apply(route.local_label, Event::DataAccepted, unix_time_ms())?;
+                            state.apply(route.local_label, Event::DataAccepted, clock.now_ms())?;
                             send_control(
                                 &link,
                                 route,
@@ -611,7 +618,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 &P1Payload::Close { reason: 0 },
                             )?;
                             cleanup_started = Some(Instant::now());
-                            state.apply(route.local_label, Event::CloseAccepted, unix_time_ms())?;
+                            state.apply(route.local_label, Event::CloseAccepted, clock.now_ms())?;
                             success = true;
                             break;
                         }
@@ -653,7 +660,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
     if state.live_routes() != 0 {
         if let Some(label) = selected_branch {
-            let _ = state.apply(label, Event::Timeout, unix_time_ms());
+            let _ = state.apply(label, Event::Timeout, clock.now_ms());
         }
     }
     drop(active.take());

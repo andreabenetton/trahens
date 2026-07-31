@@ -542,6 +542,55 @@ mod tests {
     }
 
     #[test]
+    fn continuous_traffic_does_not_postpone_expiry() -> Result<(), StateError> {
+        // E1 section 2 ranks expiry above every message sharing its timestamp,
+        // and section 9 requires it to be local and non-blocking. A node that
+        // only expired while its event channel was idle would keep lapsed
+        // state usable for as long as a peer kept sending, so the loop runs
+        // expiry before each event. This models that order.
+        let label = [3_u8; 16];
+        let mut table = RouteTable::default();
+        table.begin(label, 1, 0, 1_000)?;
+        table.apply(label, Event::CandidateAccepted, 0)?;
+        table.apply(label, Event::CommitAccepted, 0)?;
+        table.apply(label, Event::ReadyAccepted, 0)?;
+
+        let deadline = table
+            .get(&label)
+            .map(|route| route.expires_at_ms)
+            .ok_or(StateError::Missing)?;
+
+        // A flood of valid events on other branches, each preceded by one
+        // expiry pass, exactly as the node loop now does. None of them belongs
+        // to `label`, so none of them may extend its deadline.
+        let mut now = 1_u64;
+        let mut other = [0_u8; 16];
+        while now < deadline {
+            table.expire(now);
+            other[0] = (now % 251) as u8;
+            other[1] = (now / 251) as u8;
+            if table.begin(other, 2, 0, now + 5).is_ok() {
+                table.apply(other, Event::CandidateAccepted, now).ok();
+            }
+            now += 1;
+        }
+
+        // The very first tick at or past the deadline reclaims the route, and
+        // the next control for it is refused rather than processed.
+        table.expire(deadline);
+        assert!(
+            table.get(&label).is_none(),
+            "the flood must not extend the deadline"
+        );
+        assert_eq!(
+            table.apply(label, Event::DataAccepted, deadline),
+            Err(StateError::Missing),
+            "a post-deadline control finds no state"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn invalid_transition_does_not_change_state() -> Result<(), StateError> {
         let label = [2_u8; 16];
         let mut table = RouteTable::default();

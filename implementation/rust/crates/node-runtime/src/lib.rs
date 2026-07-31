@@ -168,6 +168,45 @@ fn next_transmission_id() -> Option<[u8; 16]> {
     None
 }
 
+/// Monotonic local clock.
+///
+/// `event-lifecycle-profile-e1.md` section 1 models time as a monotonically
+/// increasing local clock, and every E1 deadline is expressed against it. Wall
+/// clock is unusable for that: a backward adjustment prolongs route state past
+/// its deadline, and a forward one expires a live route early. Reserve
+/// [`unix_time_ms`] for values two processes compare with each other.
+#[derive(Debug, Clone, Copy)]
+pub struct Clock {
+    origin: Instant,
+}
+
+impl Clock {
+    #[must_use]
+    pub fn start() -> Self {
+        Self {
+            origin: Instant::now(),
+        }
+    }
+
+    /// Milliseconds since this clock started. Never decreases.
+    #[must_use]
+    pub fn now_ms(&self) -> u64 {
+        elapsed_ms(self.origin)
+    }
+}
+
+impl Default for Clock {
+    fn default() -> Self {
+        Self::start()
+    }
+}
+
+/// Wall-clock milliseconds since the Unix epoch.
+///
+/// Only for values that cross a trust boundary and are compared by another
+/// process: the sealed gateway offer's expiry, the capability validity
+/// interval a client asserts, and the R1 registration TTLs. Local deadlines
+/// MUST use [`Clock`].
 pub fn unix_time_ms() -> u64 {
     let base = SystemTime::now()
         .duration_since(UNIX_EPOCH)
