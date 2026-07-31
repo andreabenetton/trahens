@@ -6,8 +6,8 @@ pub mod p1;
 
 use codec_m2::{decode, encode, Envelope};
 use protocol_registry::{
-    ERROR_INTERNAL, ERROR_MALFORMED, ERROR_UNSUPPORTED_SUITE, FIXED_T2_QUEUE_CELLS_PER_PEER,
-    LIMIT_T1_RTO_MS, SUITE_R1,
+    ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_UNSUPPORTED_SUITE,
+    FIXED_T2_QUEUE_CELLS_PER_PEER, LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS, SUITE_R1,
 };
 use scheduling_t2::{FixedSchedule, ScheduleMetrics, SlotClass};
 use std::collections::VecDeque;
@@ -39,6 +39,7 @@ pub struct LinkMetrics {
     pub logical_messages_sent: u64,
     pub logical_messages_received: u64,
     pub transmission_failures: u64,
+    pub ack_drops: u64,
     pub peak_queue_cells: usize,
     pub schedule: ScheduleMetrics,
 }
@@ -209,7 +210,11 @@ fn run_link(
 ) {
     let origin = Instant::now();
     let mut schedule = FixedSchedule::new(origin);
-    let mut sequence = u64::from_be_bytes(random_bytes::<8>().unwrap_or([0_u8; 8]));
+    // Randomized but bounded to the low 32 bits: the start stays
+    // unpredictable while leaving 2^64 - 2^32 sequence numbers of headroom, so
+    // the wrap guard below is unreachable in any real run. An unbounded random
+    // start could sit near u64::MAX and fail the link within a few cells.
+    let mut sequence = u64::from(u32::from_be_bytes(random_bytes::<4>().unwrap_or([0_u8; 4])));
     let mut replay = ReplayWindow::new(config.epoch);
     let mut sender = Sender::new();
     let mut receiver = Receiver::new();
@@ -285,8 +290,19 @@ fn run_link(
                                     .accept(frame, elapsed_ms(origin))
                                 {
                                     Ok(Some(result)) => {
-                                        if ack_queue.len() < FIXED_T2_QUEUE_CELLS_PER_PEER {
+                                        if ack_queue.len() < LIMIT_T1_MAX_PENDING_ACKS {
                                             ack_queue.push_back(result.ack);
+                                        } else {
+                                            // Dropping an ACK silently forces
+                                            // the peer into an avoidable
+                                            // recovery round; count it and
+                                            // report the resource limit.
+                                            metrics.ack_drops = metrics.ack_drops.saturating_add(1);
+                                            let _ = events.try_send(LinkEvent::SecurityEvent {
+                                                peer_id: config.peer_id,
+                                                error_id: ERROR_RESOURCE_EXHAUSTED,
+                                                detail: "ack_queue_full",
+                                            });
                                         }
                                         if let Some((suite, message)) = result.complete {
                                             match decode(&message) {
@@ -397,7 +413,25 @@ fn run_link(
                             detail: "udp_send_failure",
                         });
                     }
-                    sequence = sequence.wrapping_add(1);
+                    // wire-cell-w2.md section 3 forbids key and nonce reuse.
+                    // The nonce is (epoch, sequence), so a wrap would silently
+                    // repeat a triple and break the replay window's saturating
+                    // comparisons. Fail the link cleanly at the horizon
+                    // instead; the peer observes a transport failure and
+                    // reclaims state through the normal path.
+                    let Some(next_sequence) = sequence.checked_add(1) else {
+                        let _ = events.try_send(LinkEvent::SecurityEvent {
+                            peer_id: config.peer_id,
+                            error_id: ERROR_RESOURCE_EXHAUSTED,
+                            detail: "sequence_horizon",
+                        });
+                        let _ = events.try_send(LinkEvent::TransmissionFailed {
+                            peer_id: config.peer_id,
+                        });
+                        running = false;
+                        continue;
+                    };
+                    sequence = next_sequence;
                     schedule.advance(class);
                 }
                 Err(_) => {
@@ -590,7 +624,7 @@ pub fn write_link_metrics(
             output.push_str(",\n");
         }
         output.push_str(&format!(
-            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{}}}",
+            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{}}}",
             metrics.sent_cells,
             metrics.received_cells,
             metrics.malformed_cells,
@@ -598,6 +632,7 @@ pub fn write_link_metrics(
             metrics.logical_messages_sent,
             metrics.logical_messages_received,
             metrics.transmission_failures,
+            metrics.ack_drops,
             metrics.peak_queue_cells,
             metrics.schedule.slots,
             metrics.schedule.ack_cells,
