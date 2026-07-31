@@ -106,9 +106,15 @@ fn run() -> Result<(), Box<dyn Error>> {
     let signing_seed = SecretBytes(parse_hex::<32>(args.required("signing-seed")?)?);
     let (signing_public, signing_secret) = signing_keypair(&signing_seed.0)?;
     let capability = SecretBytes(parse_hex::<32>(args.required("capability")?)?);
+    // rendezvous-capability-r1.md section 3: the gateway registers its
+    // short-lived pseudonym together with the capability, and advertises that
+    // same pseudonym in every candidate. It is a property of the
+    // registration, not of an individual route.
+    let gateway_pseudonym = random_nonzero_16()?;
     let mut registry = Registry::default();
     registry.register(
         gateway_id,
+        gateway_pseudonym,
         &capability,
         endpoint_handle,
         unix_time_ms(),
@@ -173,7 +179,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         .map_err(|_| "invalid R1 discovery nonce")?;
                     let route_secret = random_bytes::<32>()?;
                     let challenge = random_bytes::<32>()?;
-                    let pseudonym = random_nonzero_16()?;
+                    let pseudonym = gateway_pseudonym;
                     if route_secret == [0_u8; 32] || challenge == [0_u8; 32] {
                         return Err("gateway generated an invalid route secret".into());
                     }
@@ -280,23 +286,45 @@ fn run() -> Result<(), Box<dyn Error>> {
                             (
                                 MessageType::RendezvousOpen,
                                 P1Payload::RendezvousOpen {
-                                    gateway_pseudonym,
                                     capability,
+                                    client_nonce,
+                                    expiration_ms,
+                                    endpoint_handshake,
                                 },
                             ) => {
                                 let started = Instant::now();
                                 let phase = states.get(&route.label).map(|state| state.phase);
                                 let mut status = ERROR_STATE_VIOLATION;
-                                if phase == Some(Phase::Ready)
-                                    && gateway_pseudonym == route.pseudonym
-                                {
+                                let now = unix_time_ms();
+                                // section 5: verify the half-open validity
+                                // interval the client asserts before touching
+                                // the registration.
+                                let interval_valid =
+                                    expiration_ms > now && client_nonce != [0_u8; 16];
+                                if phase == Some(Phase::Ready) && interval_valid {
                                     let presented = SecretBytes(capability);
-                                    status = match registry.redeem(
+                                    status = match registry.redeem_for_pseudonym(
                                         gateway_id,
+                                        &route.pseudonym,
                                         &presented,
-                                        unix_time_ms(),
+                                        now,
                                     )? {
-                                        Some(_handle) => {
+                                        Some(handle) => {
+                                            // The handshake the client supplied
+                                            // is the local rendezvous policy
+                                            // input; the handle is what the
+                                            // gateway hands to it.
+                                            structured_event(
+                                                "rendezvous",
+                                                "capability_redeemed",
+                                                &[
+                                                    (
+                                                        "handshake_bytes",
+                                                        endpoint_handshake.len().to_string(),
+                                                    ),
+                                                    ("handle_bytes", handle.len().to_string()),
+                                                ],
+                                            );
                                             states.apply(route.label, Event::CapabilityAccepted)?;
                                             0
                                         }

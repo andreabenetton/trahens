@@ -4,7 +4,11 @@
 
 pub mod suite;
 
-use protocol_registry::{BYTES_R1_CAPABILITY, DOMAIN_R1_CAPABILITY, LIMIT_MAX_ROUTES_GLOBAL};
+use protocol_registry::{
+    BYTES_R1_CAPABILITY, DOMAIN_R1_CAPABILITY, LIMIT_ENDPOINT_HANDLE_TTL_MS,
+    LIMIT_MAX_REGISTRATIONS_PER_ENDPOINT, LIMIT_MAX_REGISTRATIONS_PER_GATEWAY,
+    LIMIT_MAX_ROUTES_GLOBAL,
+};
 use std::collections::HashMap;
 use trahens_crypto::{sha256, CryptoError, SecretBytes};
 
@@ -38,6 +42,11 @@ impl std::error::Error for RendezvousError {}
 #[derive(Debug)]
 pub struct Registration {
     pub gateway_id: u32,
+    /// The short-lived pseudonym this gateway advertised for the route
+    /// (`rendezvous-capability-r1.md` section 3). Redemption must present the
+    /// same pseudonym, so a capability is bound to the advertisement it
+    /// arrived with rather than to the gateway identity alone.
+    pub gateway_pseudonym: [u8; 16],
     pub endpoint_handle: Vec<u8>,
     pub created_at_ms: u64,
     pub expires_at_ms: u64,
@@ -89,15 +98,37 @@ impl Registry {
     pub fn register(
         &mut self,
         gateway_id: u32,
+        gateway_pseudonym: [u8; 16],
         token: &SecretBytes<32>,
         endpoint_handle: Vec<u8>,
         now_ms: u64,
         ttl_ms: u64,
     ) -> Result<(), RendezvousError> {
-        if ttl_ms == 0 || endpoint_handle.is_empty() {
+        if ttl_ms == 0 || endpoint_handle.is_empty() || gateway_pseudonym == [0_u8; 16] {
             return Err(RendezvousError::Invalid);
         }
+        if ttl_ms > LIMIT_ENDPOINT_HANDLE_TTL_MS as u64 {
+            return Err(RendezvousError::Invalid);
+        }
+        // section 7: bound registrations globally, per gateway, and per
+        // endpoint handle.
         if self.records.len() >= LIMIT_MAX_ROUTES_GLOBAL {
+            return Err(RendezvousError::Exhausted);
+        }
+        let per_gateway = self
+            .records
+            .values()
+            .filter(|record| record.gateway_id == gateway_id)
+            .count();
+        if per_gateway >= LIMIT_MAX_REGISTRATIONS_PER_GATEWAY {
+            return Err(RendezvousError::Exhausted);
+        }
+        let per_endpoint = self
+            .records
+            .values()
+            .filter(|record| record.endpoint_handle == endpoint_handle)
+            .count();
+        if per_endpoint >= LIMIT_MAX_REGISTRATIONS_PER_ENDPOINT {
             return Err(RendezvousError::Exhausted);
         }
         let digest = token_hash(&token.0)?;
@@ -109,6 +140,7 @@ impl Registry {
             key,
             Registration {
                 gateway_id,
+                gateway_pseudonym,
                 endpoint_handle,
                 created_at_ms: now_ms,
                 expires_at_ms: now_ms.saturating_add(ttl_ms),
@@ -135,6 +167,33 @@ impl Registry {
         }
     }
 
+    /// Redeem, additionally requiring the advertised pseudonym to match.
+    ///
+    /// A mismatch consumes the record exactly as any other failed redemption
+    /// does, so replay, wrong gateway, wrong pseudonym, and expiry are one
+    /// generic failure from the caller's perspective.
+    pub fn redeem_for_pseudonym(
+        &mut self,
+        gateway_id: u32,
+        gateway_pseudonym: &[u8; 16],
+        token: &SecretBytes<32>,
+        now_ms: u64,
+    ) -> Result<Option<Vec<u8>>, RendezvousError> {
+        let digest = token_hash(&token.0)?;
+        let key = (gateway_id, digest);
+        let Some(record) = self.records.remove(&key) else {
+            return Ok(None);
+        };
+        if record.gateway_pseudonym == *gateway_pseudonym
+            && record.created_at_ms <= now_ms
+            && now_ms < record.expires_at_ms
+        {
+            Ok(Some(record.endpoint_handle))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn expire(&mut self, now_ms: u64) -> usize {
         let before = self.records.len();
         self.records
@@ -152,18 +211,20 @@ mod tests {
     use super::*;
     use protocol_registry::SUITE_R1;
 
+    const PSEUDONYM: [u8; 16] = [0x5a; 16];
+
     #[test]
     fn one_time_wrong_gateway_and_expiry() -> Result<(), RendezvousError> {
         let mut registry = Registry::default();
         let token = SecretBytes([1_u8; 32]);
-        registry.register(7, &token, b"endpoint".to_vec(), 10, 5)?;
+        registry.register(7, [9_u8; 16], &token, b"endpoint".to_vec(), 10, 5)?;
         assert_eq!(registry.redeem(8, &token, 11)?, None);
         assert_eq!(registry.live_records(), 1);
         assert_eq!(registry.redeem(7, &token, 11)?, Some(b"endpoint".to_vec()));
         assert_eq!(registry.redeem(7, &token, 11)?, None);
 
         let expired = SecretBytes([2_u8; 32]);
-        registry.register(7, &expired, b"endpoint".to_vec(), 20, 2)?;
+        registry.register(7, [9_u8; 16], &expired, b"endpoint".to_vec(), 20, 2)?;
         assert_eq!(registry.redeem(7, &expired, 22)?, None);
         Ok(())
     }
@@ -220,6 +281,7 @@ mod tests {
         let mut registry = Registry::default();
         registry.register(
             gateway_id,
+            PSEUDONYM,
             &token,
             handle.clone(),
             created,
@@ -256,7 +318,14 @@ mod tests {
 
         // An expired capability yields nothing and leaves no live record.
         let mut registry = Registry::default();
-        registry.register(gateway_id, &token, handle, created, expires - created)?;
+        registry.register(
+            gateway_id,
+            PSEUDONYM,
+            &token,
+            handle,
+            created,
+            expires - created,
+        )?;
         assert_eq!(registry.redeem(gateway_id, &token, expires)?, None);
         assert_eq!(
             registry.live_records(),
@@ -266,6 +335,24 @@ mod tests {
 
         // An all-zero token is never a valid capability.
         assert_eq!(token_hash(&[0_u8; 32]), Err(RendezvousError::Invalid));
+
+        // A wrong advertised pseudonym fails exactly like any other bad
+        // redemption, and still consumes the record.
+        let mut registry = Registry::default();
+        registry.register(
+            gateway_id,
+            PSEUDONYM,
+            &token,
+            b"handle".to_vec(),
+            created,
+            expires - created,
+        )?;
+        assert_eq!(
+            registry.redeem_for_pseudonym(gateway_id, &[0xff; 16], &token, created + 1)?,
+            None,
+            "wrong pseudonym is rejected"
+        );
+        assert_eq!(registry.live_records(), 0, "and the record is consumed");
         Ok(())
     }
 }

@@ -11,7 +11,7 @@ use node_runtime::{
 };
 use protocol_registry::{
     ERROR_AUTHENTICATION_FAILED, ERROR_INTERNAL, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
-    LIMIT_ROUTE_TTL_MS, SUITE_R1,
+    LIMIT_CAPABILITY_TTL_MS, LIMIT_ROUTE_TTL_MS, SUITE_R1,
 };
 use state_machine::{Event, RouteTable};
 use std::error::Error;
@@ -119,6 +119,10 @@ fn run() -> Result<(), Box<dyn Error>> {
     if discovery_nonce == [0_u8; 32] {
         return Err("random discovery nonce was zero".into());
     }
+    let endpoint_handshake = args
+        .optional("endpoint-handle", "p1-endpoint")
+        .as_bytes()
+        .to_vec();
     let generation = 0_u32;
     let setup_started = Instant::now();
     let absolute_deadline = unix_time_ms().saturating_add(timeout_ms);
@@ -262,8 +266,13 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 route,
                                 MessageType::RendezvousOpen,
                                 &P1Payload::RendezvousOpen {
-                                    gateway_pseudonym: route.pseudonym,
                                     capability: capability.0,
+                                    // Fresh per redemption: binds this
+                                    // presentation to this attempt.
+                                    client_nonce: random_nonzero_16()?,
+                                    expiration_ms: unix_time_ms()
+                                        .saturating_add(LIMIT_CAPABILITY_TTL_MS as u64),
+                                    endpoint_handshake: endpoint_handshake.clone(),
                                 },
                             )?;
                         }

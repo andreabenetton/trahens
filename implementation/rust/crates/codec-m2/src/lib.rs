@@ -419,9 +419,13 @@ pub enum P1Payload {
     Ready {
         proof: [u8; 32],
     },
+    /// `rendezvous-capability-r1.md` section 5:
+    /// `(tau, client_nonce, expiration, endpoint_handshake)`.
     RendezvousOpen {
-        gateway_pseudonym: [u8; 16],
         capability: [u8; 32],
+        client_nonce: [u8; 16],
+        expiration_ms: u64,
+        endpoint_handshake: Vec<u8>,
     },
     RendezvousResult {
         status: u16,
@@ -502,15 +506,25 @@ pub fn encode_p1(payload: &P1Payload) -> Result<Vec<u8>, CodecError> {
             output.extend_from_slice(proof);
         }
         P1Payload::RendezvousOpen {
-            gateway_pseudonym,
             capability,
+            client_nonce,
+            expiration_ms,
+            endpoint_handshake,
         } => {
-            if !nonzero(gateway_pseudonym) || !nonzero(capability) {
+            if !nonzero(capability)
+                || !nonzero(client_nonce)
+                || *expiration_ms == 0
+                || endpoint_handshake.is_empty()
+                || endpoint_handshake.len() > u16::MAX as usize
+            {
                 return Err(CodecError::Malformed);
             }
             output.push(P1_PAYLOAD_RENDEZVOUS_OPEN);
-            output.extend_from_slice(gateway_pseudonym);
             output.extend_from_slice(capability);
+            output.extend_from_slice(client_nonce);
+            output.extend_from_slice(&expiration_ms.to_be_bytes());
+            output.extend_from_slice(&(endpoint_handshake.len() as u16).to_be_bytes());
+            output.extend_from_slice(endpoint_handshake);
         }
         P1Payload::RendezvousResult { status } => {
             output.push(P1_PAYLOAD_RENDEZVOUS_RESULT);
@@ -604,14 +618,30 @@ pub fn decode_p1(input: &[u8]) -> Result<P1Payload, CodecError> {
             proof: take_array::<32>(input, &mut cursor)?,
         },
         P1_PAYLOAD_RENDEZVOUS_OPEN => {
-            let gateway_pseudonym = take_array::<16>(input, &mut cursor)?;
             let capability = take_array::<32>(input, &mut cursor)?;
-            if !nonzero(&gateway_pseudonym) || !nonzero(&capability) {
+            let client_nonce = take_array::<16>(input, &mut cursor)?;
+            let expiration_ms = u64::from_be_bytes(take_array::<8>(input, &mut cursor)?);
+            let handshake_len = u16::from_be_bytes(take_array::<2>(input, &mut cursor)?) as usize;
+            let end = cursor
+                .checked_add(handshake_len)
+                .ok_or(CodecError::Malformed)?;
+            let endpoint_handshake = input
+                .get(cursor..end)
+                .ok_or(CodecError::Malformed)?
+                .to_vec();
+            cursor = end;
+            if !nonzero(&capability)
+                || !nonzero(&client_nonce)
+                || expiration_ms == 0
+                || endpoint_handshake.is_empty()
+            {
                 return Err(CodecError::Malformed);
             }
             P1Payload::RendezvousOpen {
-                gateway_pseudonym,
                 capability,
+                client_nonce,
+                expiration_ms,
+                endpoint_handshake,
             }
         }
         P1_PAYLOAD_RENDEZVOUS_RESULT => P1Payload::RendezvousResult {
