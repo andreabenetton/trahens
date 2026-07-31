@@ -715,6 +715,54 @@ pub fn chaff_to_real_ratio(metrics: &LinkMetrics) -> f64 {
     metrics.schedule.chaff_cells as f64 / real as f64
 }
 
+/// Deterministic precedence for events sharing a local timestamp.
+///
+/// `event-lifecycle-profile-e1.md` section 2 fixes the order as: state expiry,
+/// cancellation and abort, route control, candidate, discover, window closure,
+/// local generation. State expiry is driven by each node's timer branch rather
+/// than by a link event, so rank 0 is reserved for it and link events occupy
+/// the remaining ranks in the same relative order.
+#[must_use]
+pub fn event_precedence(event: &LinkEvent) -> u8 {
+    match event {
+        // A transport failure reclaims state, so it ranks with expiry.
+        LinkEvent::TransmissionFailed { .. } => 1,
+        LinkEvent::Message { envelope, .. } => match &envelope.message {
+            codec_m2::Message::Control(control) => match control.message_type {
+                codec_m2::MessageType::Cancel
+                | codec_m2::MessageType::Abort
+                | codec_m2::MessageType::Close => 2,
+                _ => 3,
+            },
+            codec_m2::Message::Candidate(_) => 4,
+            codec_m2::Message::Discover(_) => 5,
+            codec_m2::Message::Chaff => 7,
+        },
+        LinkEvent::SecurityEvent { .. } => 6,
+        LinkEvent::Stopped { .. } | LinkEvent::Drained { .. } => 7,
+    }
+}
+
+/// Collect every immediately available event and order it by precedence.
+///
+/// Events that arrive together carry the same local timestamp, so processing
+/// them in arrival order would make the outcome depend on channel scheduling.
+/// The sort is stable, so equal-precedence events keep arrival order.
+pub fn drain_in_precedence_order(
+    events: &ChannelReceiver<LinkEvent>,
+    first: LinkEvent,
+) -> Vec<LinkEvent> {
+    let mut batch = vec![first];
+    while let Ok(event) = events.try_recv() {
+        batch.push(event);
+        if batch.len() >= FIXED_T2_QUEUE_CELLS_PER_PEER {
+            break;
+        }
+    }
+    batch.sort_by_key(event_precedence);
+    batch
+}
+
 pub fn structured_event(node: &str, event: &str, fields: &[(&str, String)]) {
     let mut line = format!("{{\"node\":\"{node}\",\"event\":\"{event}\"");
     for (key, value) in fields {
@@ -848,6 +896,79 @@ pub fn write_link_metrics(
 mod tests {
     use super::*;
     use protocol_registry::{ERROR_AUTHENTICATION_FAILED, ERROR_MALFORMED};
+
+    #[test]
+    fn equal_time_events_follow_the_specified_precedence() {
+        // E1 section 2: cancellation outranks route control, which outranks
+        // candidate, which outranks discover.
+        let control = |message_type| LinkEvent::Message {
+            peer_id: 1,
+            envelope: Envelope {
+                suite_id: SUITE_R1,
+                message: codec_m2::Message::Control(codec_m2::Control {
+                    message_type,
+                    local_label: [1_u8; 16],
+                    generation: 0,
+                    expiry_class: 1,
+                    protected_body: vec![1],
+                }),
+            },
+            received_at_ms: 0,
+        };
+        assert!(
+            event_precedence(&control(codec_m2::MessageType::Cancel))
+                < event_precedence(&control(codec_m2::MessageType::Commit)),
+            "cancellation can overtake a delayed route-control message"
+        );
+        assert!(
+            event_precedence(&LinkEvent::TransmissionFailed { peer_id: 1 })
+                < event_precedence(&control(codec_m2::MessageType::Cancel)),
+            "state reclamation ranks first"
+        );
+
+        let candidate = LinkEvent::Message {
+            peer_id: 1,
+            envelope: Envelope {
+                suite_id: SUITE_R1,
+                message: codec_m2::Message::Candidate(codec_m2::Candidate {
+                    candidate_token: [2_u8; 16],
+                    expiry_class: 1,
+                    layer_count: 1,
+                    candidate_blob: vec![7],
+                }),
+            },
+            received_at_ms: 0,
+        };
+        let discover = LinkEvent::Message {
+            peer_id: 1,
+            envelope: Envelope {
+                suite_id: SUITE_R1,
+                message: codec_m2::Message::Discover(codec_m2::Discover {
+                    branch_token: [3_u8; 16],
+                    hop_remaining: 4,
+                    fanout_class: 1,
+                    expiry_class: 1,
+                    options: 0,
+                    reply_public_key: [4_u8; 32],
+                    discovery_field: vec![5_u8; 32],
+                }),
+            },
+            received_at_ms: 0,
+        };
+        assert!(
+            event_precedence(&control(codec_m2::MessageType::Commit))
+                < event_precedence(&candidate)
+        );
+        assert!(event_precedence(&candidate) < event_precedence(&discover));
+
+        // A batch arriving together is reordered, and the sort is stable.
+        let (sender, receiver) = event_channel();
+        sender.try_send(candidate).ok();
+        sender.try_send(control(codec_m2::MessageType::Cancel)).ok();
+        let ordered = drain_in_precedence_order(&receiver, discover);
+        let ranks: Vec<u8> = ordered.iter().map(event_precedence).collect();
+        assert_eq!(ranks, vec![2, 4, 5], "cancel, candidate, discover");
+    }
 
     #[test]
     fn ack_delay_reports_the_measured_hold_bounded_by_the_registry() {

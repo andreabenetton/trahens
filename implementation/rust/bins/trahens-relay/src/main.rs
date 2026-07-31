@@ -4,8 +4,9 @@
 use codec_m2::{Candidate, Control, Discover, Envelope, Message, MessageType};
 use node_runtime::p1::wrap_candidate;
 use node_runtime::{
-    drain_links, event_channel, parse_hex, spawn_link, structured_event, unix_time_ms,
-    write_link_metrics, CliArgs, LinkConfig, LinkEvent, LinkMetrics, RemoteInputDrops,
+    drain_in_precedence_order, drain_links, event_channel, parse_hex, spawn_link, structured_event,
+    unix_time_ms, write_link_metrics, CliArgs, LinkConfig, LinkEvent, LinkMetrics,
+    RemoteInputDrops,
 };
 use protocol_registry::{
     ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION,
@@ -13,7 +14,7 @@ use protocol_registry::{
 };
 use rendezvous_r1::suite::{EligibilitySuite, R1Suite};
 use state_machine::{Event, IngressAdmission, Phase, RouteTable};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
@@ -120,9 +121,29 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut observed_close = false;
     let mut transport_failed: Option<u32> = None;
 
+    // Events that arrive together share a local timestamp, so they are drained
+    // as a batch, ordered by E1 section 2 precedence, and then consumed one at
+    // a time. Processing straight from the channel would let scheduling decide
+    // whether a cancellation or a delayed candidate wins.
+    let mut ordered: VecDeque<LinkEvent> = VecDeque::new();
     while unix_time_ms() < deadline {
-        let event = match event_receiver.recv_timeout(Duration::from_millis(100)) {
-            Ok(value) => value,
+        let next = match ordered.pop_front() {
+            Some(event) => Ok(event),
+            None => event_receiver.recv_timeout(Duration::from_millis(100)),
+        };
+        let event = match next {
+            Ok(value) => {
+                if ordered.is_empty() {
+                    let batch = drain_in_precedence_order(&event_receiver, value);
+                    ordered.extend(batch);
+                    match ordered.pop_front() {
+                        Some(first) => first,
+                        None => continue,
+                    }
+                } else {
+                    value
+                }
+            }
             Err(RecvTimeoutError::Timeout) => {
                 let now = unix_time_ms();
                 // The route table owns the deadline: it renews per state
