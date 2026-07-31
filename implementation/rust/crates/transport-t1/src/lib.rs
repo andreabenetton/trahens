@@ -228,14 +228,51 @@ pub fn decode_frame(input: &[u8; BYTES_CELL_BODY]) -> Result<Frame, TransportErr
     }
 }
 
+/// Where one fragment of a transmission stands.
+///
+/// Making this explicit is what keeps a recovery round tied to a real
+/// retransmission. With only a "last sent at" timestamp, a fragment queued for
+/// retry but not yet released by the schedule still looked overdue on the next
+/// poll, so a congested link could consume the whole retry budget without
+/// putting a single cell on the wire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FragmentState {
+    /// Queued for its first emission and waiting on a slot.
+    NeverSent,
+    /// On the wire; the retransmission timer runs from `sent_at_ms`.
+    InFlight {
+        sent_at_ms: u64,
+    },
+    /// Waiting in the retry queue. No timer runs: it restarts on emission.
+    RetryQueued,
+    Acknowledged,
+}
+
 #[derive(Debug, Clone)]
 struct Outbound {
     suite: [u8; 2],
     fragments: Vec<Vec<u8>>,
     acknowledged: u32,
-    sent_at_ms: Vec<Option<u64>>,
+    states: Vec<FragmentState>,
     send_count: Vec<u8>,
     recovery_rounds: u8,
+}
+
+/// Outcome of one [`Sender::poll_timeouts`] pass.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TimeoutReport {
+    /// Fragments moved into the retry queue by this pass.
+    pub queued: usize,
+    /// Transmissions that have spent their whole retry budget. Each is the
+    /// caller's to abandon; the rest of the link is unaffected.
+    pub exhausted: Vec<[u8; 16]>,
+}
+
+impl TimeoutReport {
+    #[must_use]
+    pub fn is_quiet(&self) -> bool {
+        self.queued == 0 && self.exhausted.is_empty()
+    }
 }
 
 /// RFC 6298-style RTO estimator, per `transport-profile-t1.md` section 10.
@@ -351,7 +388,7 @@ impl Sender {
             transmission_id,
             Outbound {
                 suite,
-                sent_at_ms: vec![None; fragments.len()],
+                states: vec![FragmentState::NeverSent; fragments.len()],
                 send_count: vec![0; fragments.len()],
                 fragments,
                 acknowledged: 0,
@@ -367,7 +404,9 @@ impl Sender {
         if position >= outbound.fragments.len() || outbound.acknowledged & (1_u32 << index) != 0 {
             return None;
         }
-        outbound.sent_at_ms[position] = Some(now_ms);
+        // The timer starts here, on the actual emission, not when the fragment
+        // entered a queue it may sit in for several slots.
+        outbound.states[position] = FragmentState::InFlight { sent_at_ms: now_ms };
         outbound.send_count[position] = outbound.send_count[position].saturating_add(1);
         Some(Frame::Data {
             suite: outbound.suite,
@@ -428,12 +467,15 @@ impl Sender {
         let newly = bitmap & !outbound.acknowledged;
         let mut samples = Vec::new();
         for index in 0..outbound.fragments.len() {
-            if newly & (1_u32 << index) == 0 || outbound.send_count[index] != 1 {
+            if newly & (1_u32 << index) == 0 {
                 continue;
             }
-            if let Some(sent) = outbound.sent_at_ms[index] {
-                samples.push(now_ms.saturating_sub(sent));
+            if outbound.send_count[index] == 1 {
+                if let FragmentState::InFlight { sent_at_ms } = outbound.states[index] {
+                    samples.push(now_ms.saturating_sub(sent_at_ms));
+                }
             }
+            outbound.states[index] = FragmentState::Acknowledged;
         }
         outbound.acknowledged |= bitmap;
         let complete = outbound.acknowledged == mask;
@@ -453,41 +495,67 @@ impl Sender {
         self.rto.current_ms()
     }
 
-    pub fn poll_timeouts(&mut self, now_ms: u64) -> Result<usize, TransportError> {
-        let mut queued = 0;
+    /// Open one recovery round for every transmission whose timer has expired.
+    ///
+    /// A transmission is due only when a fragment is still `InFlight` past the
+    /// RTO. Fragments already sitting in the retry queue are not due — their
+    /// timer restarts when they are actually emitted — so polling faster than
+    /// the schedule can drain cannot consume extra rounds.
+    ///
+    /// Retry exhaustion is reported per transmission rather than raised as one
+    /// link-wide error: one stalled message must not tear down every unrelated
+    /// transmission sharing the link.
+    pub fn poll_timeouts(&mut self, now_ms: u64) -> TimeoutReport {
+        let mut report = TimeoutReport::default();
         let mut expired = false;
         let rto_ms = self.rto.current_ms();
         for (id, outbound) in &mut self.pending {
-            let due = outbound.sent_at_ms.iter().enumerate().any(|(index, sent)| {
+            let due = outbound.states.iter().enumerate().any(|(index, state)| {
                 outbound.acknowledged & (1_u32 << index) == 0
-                    && sent.is_some_and(|time| now_ms.saturating_sub(time) >= rto_ms)
+                    && matches!(state, FragmentState::InFlight { sent_at_ms }
+                        if now_ms.saturating_sub(*sent_at_ms) >= rto_ms)
             });
             if !due {
                 continue;
             }
             if usize::from(outbound.recovery_rounds) >= LIMIT_MAX_T1_RETRIES {
-                return Err(TransportError::RetryExhausted);
+                report.exhausted.push(*id);
+                continue;
             }
             outbound.recovery_rounds = outbound.recovery_rounds.saturating_add(1);
             expired = true;
+            // Selective recovery retransmits exactly the fragments the peer has
+            // not acknowledged. A fragment never sent stays in the new queue,
+            // and one already queued for retry is left alone.
             for index in 0..outbound.fragments.len() {
-                if outbound.acknowledged & (1_u32 << index) == 0 {
-                    self.retry_queue.push_back((*id, index as u16));
-                    // A recovery round spans one full RTO period. Restart the
-                    // fragment clock at queue time: the worker polls roughly
-                    // every millisecond while the schedule releases the queued
-                    // retry only at the next slot, and without this restart
-                    // the whole budget burned between two slots.
-                    outbound.sent_at_ms[index] = Some(now_ms);
-                    queued += 1;
+                if outbound.acknowledged & (1_u32 << index) != 0
+                    || !matches!(outbound.states[index], FragmentState::InFlight { .. })
+                {
+                    continue;
                 }
+                outbound.states[index] = FragmentState::RetryQueued;
+                self.retry_queue.push_back((*id, index as u16));
+                report.queued += 1;
             }
         }
         if expired {
             // section 10: on timeout the sender doubles the current RTO.
             self.rto.on_timeout();
         }
-        Ok(queued)
+        report
+    }
+
+    /// Abandon one transmission, leaving every other one on the link intact.
+    ///
+    /// Returns false when the identifier is unknown, so a double abandon is
+    /// visible rather than silent.
+    pub fn abort(&mut self, transmission_id: [u8; 16]) -> bool {
+        if self.pending.remove(&transmission_id).is_none() {
+            return false;
+        }
+        self.new_queue.retain(|(id, _)| *id != transmission_id);
+        self.retry_queue.retain(|(id, _)| *id != transmission_id);
+        true
     }
 
     pub fn pending_count(&self) -> usize {
@@ -779,7 +847,7 @@ mod tests {
         };
         sender.on_ack(id, fragment_count, bitmap, LIMIT_T1_RTO_MS as u64)?;
         let deadline = sender.rto_ms();
-        sender.poll_timeouts(deadline)?;
+        assert_eq!(sender.poll_timeouts(deadline).queued, 1);
         let retry = sender
             .next_retry(deadline)
             .ok_or(TransportError::Malformed)?;
@@ -822,7 +890,7 @@ mod tests {
         assert_eq!(first.complete, Some((SUITE_R1, message)));
 
         // The ACK never reaches the sender; it retransmits after one RTO.
-        sender.poll_timeouts(LIMIT_T1_RTO_MS as u64)?;
+        sender.poll_timeouts(LIMIT_T1_RTO_MS as u64);
         let retry = sender
             .next_retry(LIMIT_T1_RTO_MS as u64)
             .ok_or(TransportError::Malformed)?;
@@ -867,7 +935,11 @@ mod tests {
         // millisecond for far more ticks than the retry budget holds rounds.
         let rto = LIMIT_T1_RTO_MS as u64;
         for tick in 0..(3 * LIMIT_MAX_T1_RETRIES as u64) {
-            sender.poll_timeouts(rto + tick)?;
+            let report = sender.poll_timeouts(rto + tick);
+            assert!(
+                report.exhausted.is_empty(),
+                "a queued retry is not overdue, so no round is charged for it"
+            );
         }
 
         // One retry was queued and, once emitted and acknowledged, the
@@ -893,17 +965,90 @@ mod tests {
         let mut now = 0_u64;
         for _ in 1..=LIMIT_MAX_T1_RETRIES {
             now += sender.rto_ms();
-            sender.poll_timeouts(now)?;
+            sender.poll_timeouts(now);
             let _retry = sender.next_retry(now).ok_or(TransportError::Malformed)?;
         }
         now += sender.rto_ms();
-        assert_eq!(
-            sender.poll_timeouts(now),
-            Err(TransportError::RetryExhausted)
-        );
-        assert_eq!(sender.abort_all(), 1);
+        assert_eq!(sender.poll_timeouts(now).exhausted, vec![id]);
+        assert!(sender.abort(id));
+        assert!(!sender.abort(id), "a second abandon is visible");
         assert_eq!(sender.pending_count(), 0);
         assert_eq!(sender.queue_depth(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn a_saturated_queue_charges_one_round_per_retransmission() -> Result<(), TransportError> {
+        // The link is full: every sender slot holds a multi-fragment message
+        // and the schedule releases far fewer cells per poll than are queued.
+        // A recovery round must correspond to a fragment that actually went
+        // back on the wire, otherwise a congested link exhausts the budget
+        // without retransmitting anything.
+        let mut sender = Sender::new();
+        let message = vec![3_u8; BYTES_CELL_PAYLOAD * 3];
+        let mut ids = Vec::new();
+        for index in 0..LIMIT_MAX_SENDER_TRANSMISSIONS_PER_PEER {
+            let mut id = [0_u8; 16];
+            id[0] = (index % 251) as u8;
+            id[1] = (index / 251) as u8 + 1;
+            sender.enqueue(SUITE_R1, id, &message)?;
+            ids.push(id);
+        }
+
+        // Emit every first send, then let all of them time out.
+        let mut emitted = 0;
+        while sender.next_new(0).is_some() {
+            emitted += 1;
+        }
+        assert_eq!(emitted, ids.len() * 3, "three fragments per transmission");
+
+        let rto = sender.rto_ms();
+        let first = sender.poll_timeouts(rto);
+        assert!(first.exhausted.is_empty());
+        assert_eq!(first.queued, emitted, "every unacknowledged fragment");
+
+        // Polling again before the schedule has drained anything charges no
+        // further rounds: the queued fragments are not in flight.
+        for tick in 1..(4 * LIMIT_MAX_T1_RETRIES as u64) {
+            let report = sender.poll_timeouts(rto + tick * rto);
+            assert!(report.is_quiet(), "no round without a retransmission");
+        }
+        assert_eq!(sender.queue_depth(), emitted);
+        Ok(())
+    }
+
+    #[test]
+    fn one_exhausted_transmission_does_not_abandon_the_others() -> Result<(), TransportError> {
+        // Before this held, retry exhaustion called abort_all and killed every
+        // unrelated transmission sharing the link.
+        let stalled = [1_u8; 16];
+        let healthy = [2_u8; 16];
+        let mut sender = Sender::new();
+        sender.enqueue(SUITE_R1, stalled, b"never-acknowledged")?;
+        sender.enqueue(SUITE_R1, healthy, b"making-progress")?;
+        let _ = sender.next_new(0).ok_or(TransportError::Malformed)?;
+        let _ = sender.next_new(0).ok_or(TransportError::Malformed)?;
+
+        // Only the stalled transmission keeps timing out; the healthy one is
+        // acknowledged on its first send and leaves the table cleanly.
+        assert!(sender.on_ack(healthy, 1, 0b1, 1)?);
+
+        let mut now = 0_u64;
+        for _ in 0..LIMIT_MAX_T1_RETRIES {
+            now += sender.rto_ms();
+            sender.poll_timeouts(now);
+            let _ = sender.next_retry(now).ok_or(TransportError::Malformed)?;
+        }
+        now += sender.rto_ms();
+        let report = sender.poll_timeouts(now);
+        assert_eq!(report.exhausted, vec![stalled]);
+
+        // A third transmission enqueued after the failure is unaffected.
+        let fresh = [3_u8; 16];
+        sender.abort(stalled);
+        sender.enqueue(SUITE_R1, fresh, b"unaffected")?;
+        assert_eq!(sender.pending_count(), 1);
+        assert!(sender.next_new(now).is_some());
         Ok(())
     }
 
@@ -967,7 +1112,7 @@ mod tests {
         let _first = sender.next_new(0).ok_or(TransportError::Malformed)?;
         let baseline = sender.rto_ms();
 
-        sender.poll_timeouts(baseline)?;
+        sender.poll_timeouts(baseline);
         let _retry = sender
             .next_retry(baseline)
             .ok_or(TransportError::Malformed)?;

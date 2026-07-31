@@ -493,13 +493,16 @@ fn run_link(
         }
 
         let now_ms = elapsed_ms(origin);
-        if sender.poll_timeouts(now_ms).is_err() {
-            let failed = sender.abort_all();
-            metrics.transmission_failures =
-                metrics.transmission_failures.saturating_add(failed as u64);
-            let _ = events.try_send(LinkEvent::TransmissionFailed {
-                peer_id: config.peer_id,
-            });
+        // Retry exhaustion is scoped to the transmission that ran out of
+        // budget. Tearing down every transmission on the link would let one
+        // stalled message fail unrelated routes that were making progress.
+        for transmission_id in sender.poll_timeouts(now_ms).exhausted {
+            if sender.abort(transmission_id) {
+                metrics.transmission_failures = metrics.transmission_failures.saturating_add(1);
+                let _ = events.try_send(LinkEvent::TransmissionFailed {
+                    peer_id: config.peer_id,
+                });
+            }
         }
         receiver.expire(now_ms);
         metrics.peak_queue_cells = metrics
