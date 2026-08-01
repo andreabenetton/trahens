@@ -37,24 +37,40 @@ These are recorded rather than claimed as passing.
    negotiates on every link and reports it as `schedule_cells` and
    `rate_class_changes`.
 
-   It is off by default and never in CI, because the P1 fixed-trace claim is a
-   claim about a constant cadence and a link that renegotiates its rate is
-   outside it. On the default path every link still reports zero SCHEDULE
-   cells, zero rate changes, and a valid fixed trace. Weighted DRR remains
-   library-only: the fixed profile has one DATA class to serve.
+   It is off by default, and it does not run in the mandatory jobs: the P1
+   fixed-trace claim is a claim about a constant cadence, so an adaptive run
+   must never be cited as evidence for it. That is a statement about which
+   *job* may claim what, not a reason to keep adaptation out of CI — an earlier
+   version of this document conflated the two. Adaptation has its own job with
+   adaptation-specific assertions and no fixed-trace claim, and the harness
+   refuses to assert the fixed trace when the adaptive profile is selected, so
+   neither job can silently make the other's claim.
+
+   On the mandatory path every link still reports zero SCHEDULE cells, zero
+   rate changes, and a valid fixed trace, and those are now asserted rather
+   than merely reported. Weighted DRR remains library-only: the fixed profile
+   has one DATA class to serve.
 2. **C1 is library-only by decision, and the boundary is now enforced.** The
    URE capsule, endpoint identity, and eligibility provider exist so the
    published C1 vectors can be checked from Rust and so the suite interface has
    a second provider.
 
-   C1 is not a configuration of the P1 path that has been left switched off; it
-   could not be switched on. Three independent grounds each settle it: the
-   provider declares itself not network enabled (ADR 0038 decision 1), its
-   suite identifier is not selectable for production, and its discovery field
-   is a 128-byte URE capsule where P1 carries a 32-byte nonce end to end —
-   offer labels are derived from that nonce and the candidate chain compares it
-   layer by layer, so C1 on the P1 wire would be a different protocol rather
-   than a differently configured one.
+   C1 cannot be switched on in this profile, and it is worth being exact about
+   why, because an earlier version of this document was not. M2 is not the
+   obstacle: `discovery_field` is length-prefixed and `message-codec-m2.md`
+   already fixes R1 at 32 bytes, C1 v2 at 128, and symbolic C2 at 640, so the
+   envelope can carry a capsule today.
+
+   The obstacle is that the P1 semantics above M2 bind one 32-byte R1 nonce to
+   three jobs at once: the eligibility field, the binding of each link in the
+   returned candidate chain, and the key the per-offer labels are derived from.
+   That value is **not** carried end to end — this document previously said it
+   was, which contradicts ADR 0039. Each hop replaces it independently, which
+   is the U1 property; what every hop shares is that the value is 32 bytes and
+   all three jobs assume it.
+
+   Separating a suite-independent routing nonce from the suite-specific
+   eligibility field is therefore a profile revision, not a flag.
 
    What has changed is that a node now checks its provider at startup instead
    of relying on the one call site being written correctly, so wiring a

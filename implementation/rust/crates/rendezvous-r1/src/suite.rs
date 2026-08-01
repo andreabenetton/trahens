@@ -148,11 +148,20 @@ impl EligibilitySuite for C1Suite {
 ///
 /// C1 is refused on three independent grounds, any one of which is decisive:
 /// it declares itself not network enabled (ADR 0038 decision 1), its suite
-/// identifier is not selectable for production, and its discovery field is a
-/// 128-byte URE capsule where the P1 chain carries a 32-byte nonce end to end.
-/// The last is structural: offer labels are derived from a 32-byte nonce and
-/// the candidate chain compares 32-byte nonces at every layer, so C1 on the
-/// P1 wire would be a different protocol, not a configuration of this one.
+/// identifier is not selectable for production, and the P1 semantics above M2
+/// are bound to a 32-byte R1 nonce.
+///
+/// The last is not about encoding. `message-codec-m2.md` already gives
+/// `discovery_field` a length prefix and already fixes R1 at 32 bytes, C1 v2
+/// at 128, and symbolic C2 at 640, so M2 can carry a capsule today. The
+/// obstacle is that one 32-byte value currently does three jobs at once: it is
+/// the eligibility field, it binds each link of the returned candidate chain,
+/// and it is the key the per-offer labels are derived from. It is not carried
+/// end to end — each hop replaces it independently, which is the U1 property —
+/// but every hop's value is 32 bytes and all three jobs assume that.
+///
+/// Separating the routing nonce from the eligibility field is what makes any
+/// suite selectable, and that is a profile revision rather than a flag.
 pub fn require_network_provider<S: EligibilitySuite + ?Sized>(
     suite: &S,
 ) -> Result<(), EligibilityFailure> {
