@@ -1,0 +1,86 @@
+name: Apply v1.6 source comment corrections
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Correct stale active-profile comments
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("implementation/rust/bins/trahens-relay/src/main.rs")
+          text = path.read_text(encoding="utf-8")
+
+          for old, new in (
+              ("Core v1.5 section 5", "Core v1.6"),
+              ("discovery nonces", "routing nonces"),
+              ("discovery nonce", "routing nonce"),
+              ("messages-v1.5.md", "messages-v1.6.md"),
+          ):
+              if old not in text:
+                  raise SystemExit(f"expected stale comment text is absent: {old!r}")
+              text = text.replace(old, new)
+
+          old_children = (
+              "// child 0, and --downstream-id-N and friends describe child N. Core v1.5\n"
+              "    // section 5 requires every forwarded child to get independently replaced\n"
+              "    // context, so each child has its own link, label, and blinding factor."
+          ).replace("Core v1.5", "Core v1.6")
+          new_children = (
+              "// child 0, and --downstream-id-N and friends describe child N. Core v1.6\n"
+              "    // requires independently replaced routing context for every forwarded child,\n"
+              "    // so each child has its own link, label, routing nonce, and reply-key\n"
+              "    // blinding factor."
+          )
+          if old_children not in text:
+              raise SystemExit("expected downstream-child comment block is absent")
+          text = text.replace(old_children, new_children)
+
+          old_admission = (
+              "// Checked rather than assumed: a research-only provider on the wire would\n"
+              "    // otherwise be a silent misconfiguration, with the run still looking\n"
+              "    // healthy. See ADR 0038 for why C1 is not one of the options."
+          )
+          new_admission = (
+              "// Admission is enforced before expensive cryptographic work or route-state\n"
+              "    // allocation. The eligibility provider was already checked above: R1 is\n"
+              "    // mandatory, while C1 is permitted only through the explicit experimental\n"
+              "    // profile."
+          )
+          if old_admission not in text:
+              raise SystemExit("expected obsolete C1/ADR 0038 comment block is absent")
+          text = text.replace(old_admission, new_admission)
+
+          for value in (
+              "Core v1.5 section 5",
+              "discovery nonce",
+              "messages-v1.5.md",
+              "ADR 0038 for why C1 is not one of the options",
+          ):
+              if value in text:
+                  raise SystemExit(f"stale active-profile comment remains: {value!r}")
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add implementation/rust/bins/trahens-relay/src/main.rs
+          git commit -m "Align relay comments with Core v1.6"
+          git push origin HEAD:main
