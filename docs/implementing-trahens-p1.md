@@ -40,12 +40,12 @@ the one mistake that will make everything else fail confusingly. Implement M2
 encode/decode and W2 fragmentation.
 
 Check against `spec/p1-conformance-vectors-v1.6.json` and the binary corpus
-`spec/p1-conformance-corpus-v1.6.bin` (3,133 bytes, format described
-below; 32 vectors at registry 1.5.2). Canonical encodings must round-trip; **noncanonical ones must
-be rejected**, and that half matters more. A decoder that accepts a
-noncanonical encoding is the classic source of cross-implementation
-divergence, and it will not show up in interoperability testing against a
-correct peer.
+`spec/p1-conformance-corpus-v1.6.bin` (3,133 bytes, format described below; 32
+vectors at registry 1.6.1). Canonical encodings must round-trip;
+**noncanonical ones must be rejected**, and that half matters more. A decoder
+that accepts a noncanonical encoding is the classic source of
+cross-implementation divergence, and it will not show up in interoperability
+testing against a correct peer.
 
 You can check this before writing any networking:
 
@@ -130,7 +130,8 @@ invariant, or a cryptographic subsystem failure is fatal.
 Read `docs/adr/0039-offer-label-derivation.md` before implementing a relay with
 more than one child. Each returned offer travels under a label derived from the
 child routing nonce, so a `COMMIT` names one chain rather than a branch. The
-nonce is key material as a result: confidential to its hop, never reused.
+nonce is key material as a result: confidential to its hop, never reused, and
+wiped when its branch ends.
 
 ## Corpus format
 
@@ -148,9 +149,28 @@ u16                        vector count, big endian
 ```
 
 Every integer is big endian, as everywhere else in this protocol, and the
-cursor must land exactly on the end of the file. `tools/generate_p1_conformance.py`
-is the generator and `implementation/rust/crates/conformance` the reference
-consumer; either settles an ambiguity.
+cursor must land exactly on the end of the file.
+`tools/generate_p1_conformance.py` is the generator and
+`implementation/rust/crates/conformance` the reference consumer; either
+settles an ambiguity.
+
+## Bootstrap boundary
+
+P1 assumes that an authenticated adjacent graph already exists. The current
+harness supplies every process with peer addresses, node identifiers, link
+epochs, and pre-shared 32-byte base keys. Your second P1 implementation may use
+the same static inputs; it is not expected to implement autonomous peer
+discovery or link authentication.
+
+Do not treat those command-line inputs as part of the P1 wire protocol. Peer
+discovery, admission, identity, authenticated key exchange, rekey, gateway
+advertisements, and directory-root discovery belong to the future non-normative
+B1 work in `spec/network-bootstrap-b1.md`.
+
+The planned B1.0 stage may eventually replace the repeated command-line inputs
+with a signed static manifest. A later B1.1 stage may replace pre-shared W2
+base keys with a reviewed authenticated key exchange. Neither changes the M2,
+W2, T1, T2, or P1 route-discovery semantics implemented here.
 
 ## Proving it works
 
