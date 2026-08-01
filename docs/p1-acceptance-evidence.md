@@ -3,7 +3,7 @@
 # P1 acceptance evidence
 
 - Status: Evidence map for the acceptance gate in `spec/p1-prototype-profile-v1.5.md`
-- Registry: 1.5.2
+- Registry: 1.6.0 (v1.5 retained; see the note on what that does and does not mean)
 
 The profile requires that a source-only revision report its gates as pending
 rather than passed. Every line below now names the CI job or harness arm that
@@ -50,32 +50,32 @@ These are recorded rather than claimed as passing.
    rate changes, and a valid fixed trace, and those are now asserted rather
    than merely reported. Weighted DRR remains library-only: the fixed profile
    has one DATA class to serve.
-2. **C1 is library-only by decision, and the boundary is now enforced.** The
-   URE capsule, endpoint identity, and eligibility provider exist so the
-   published C1 vectors can be checked from Rust and so the suite interface has
-   a second provider.
+2. **C1 is selectable, on the experimental profile only.** The v1.6
+   routing-nonce split removed the structural obstacle, and C1 is now wired end
+   to end: an initiator encrypts an eligibility marker to a recipient's key,
+   relays rerandomise the capsule without learning anything, and only the
+   recipient can tell a discovery is for it. Two CI arms cover it — one where
+   the gateway is the intended recipient and serves the route, one where it is
+   not and declines.
 
-   C1 cannot be switched on in this profile, and it is worth being exact about
-   why, because an earlier version of this document was not. M2 is not the
-   obstacle: `discovery_field` is length-prefixed and `message-codec-m2.md`
-   already fixes R1 at 32 bytes, C1 v2 at 128, and symbolic C2 at 640, so the
-   envelope can carry a capsule today.
+   It is not on the mandatory path and is not claimed to make endpoints
+   anonymous. `require_provider` gates on the profile as well as the suite, so
+   reaching C1 takes two explicit choices, and the retired C1 v1 and disabled
+   C2 k=2 suites stay refused on every profile.
 
-   The obstacle is that the P1 semantics above M2 bind one 32-byte R1 nonce to
-   three jobs at once: the eligibility field, the binding of each link in the
-   returned candidate chain, and the key the per-offer labels are derived from.
-   That value is **not** carried end to end — this document previously said it
-   was, which contradicts ADR 0039. Each hop replaces it independently, which
-   is the U1 property; what every hop shares is that the value is 32 bytes and
-   all three jobs assume it.
+## What retaining v1.5 does and does not mean
 
-   Separating a suite-independent routing nonce from the suite-specific
-   eligibility field is therefore a profile revision, not a flag.
+The binaries implement **v1.6 only**. `DISCOVER` gained a 32-byte routing
+nonce, so a v1.5 encoding does not decode here and a v1.5 peer will not
+interoperate.
 
-   What has changed is that a node now checks its provider at startup instead
-   of relying on the one call site being written correctly, so wiring a
-   research-only suite fails loudly rather than putting research crypto on the
-   wire while the run still looks healthy.
+v1.5's registry, vectors, corpus and markdown are retained, and
+`tools/check_repo.sh` regenerates and byte-compares both profiles, so neither
+can drift. That makes the frozen v1.5 profile **reproducible** — its artifacts
+still follow from their generators — and it does not make it **speakable** by
+this code. A dual-stack implementation is out of scope. Anyone checking a
+second implementation against v1.5 is checking it against those artifacts, not
+against these binaries.
 
 ## Closed since the first revision
 

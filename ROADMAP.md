@@ -4,7 +4,7 @@
 |---|---|---|---|
 | v1.4.1 | independent review remediation | cryptographic construction and evidence boundaries corrected | Complete |
 | v1.5 | P1 interoperable user-space prototype | Rust nodes, frozen registry/vectors, namespace faults, cleanup | Complete; every gate line executes in CI, see [`docs/p1-acceptance-evidence.md`](docs/p1-acceptance-evidence.md) |
-| v1.6 | external cryptographic and protocol review | reply key privacy, commitment, state machines, wire and resource model reviewed independently | Planned |
+| v1.6 | selectable experimental profiles, then external review | routing nonce split from the eligibility field, C1 and adaptive T2 selectable with their own CI gates; cryptographic and protocol review still to come | Profiles landed; review planned |
 | v1.7 | multi-host deployment | independently operated nodes interoperate across real networks | Planned |
 | v1.8 | captured-traffic evaluation | performance and traffic-analysis experiments use real packet traces | Planned |
 | v2.0 | reviewed stable protocol | wire protocol and security model survive implementation and independent review | Blocked on v1.6–v1.8 |
