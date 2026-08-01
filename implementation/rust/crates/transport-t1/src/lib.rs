@@ -9,6 +9,11 @@ use trahens_crypto::{random_bytes, CryptoError};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportError {
     Malformed,
+    /// The version byte names a revision this node does not implement.
+    UnsupportedVersion,
+    /// A profile byte names a transport, privacy, or lifecycle profile this
+    /// node does not implement.
+    UnsupportedProfile,
     UnsupportedSuite,
     ResourceLimit,
     RetryExhausted,
@@ -25,6 +30,8 @@ impl std::fmt::Display for TransportError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
             Self::Malformed => "malformed T1 frame",
+            Self::UnsupportedVersion => "unsupported protocol version",
+            Self::UnsupportedProfile => "unsupported profile",
             Self::UnsupportedSuite => "unsupported T1 suite",
             Self::ResourceLimit => "T1 resource limit exceeded",
             Self::RetryExhausted => "T1 retry budget exhausted",
@@ -159,12 +166,22 @@ pub fn encode_frame(frame: &Frame) -> Result<[u8; BYTES_CELL_BODY], TransportErr
 }
 
 pub fn decode_frame(input: &[u8; BYTES_CELL_BODY]) -> Result<Frame, TransportError> {
+    // The registry declares distinct identifiers for a version mismatch and a
+    // profile mismatch, so a node that reports both as "malformed" leaves an
+    // operator unable to tell a peer running the wrong revision from a peer
+    // sending rubbish. The distinction is local only: every one of these is
+    // dropped and counted identically, because Core section 8 requires
+    // externally uniform failure behaviour.
+    if input[1] != VERSION {
+        return Err(TransportError::UnsupportedVersion);
+    }
     if input[0] != TRANSPORT_PROFILE_T1
-        || input[1] != VERSION
         || input[2] != PRIVACY_PROFILE_U1
         || input[3] != LIFECYCLE_PROFILE_E1
-        || input[7] != 0
     {
+        return Err(TransportError::UnsupportedProfile);
+    }
+    if input[7] != 0 {
         return Err(TransportError::Malformed);
     }
     let suite = [input[4], input[5]];
@@ -1277,6 +1294,59 @@ mod tests {
             test_vectors::hex_array_at::<32>(&vectors, "chaff/encrypted_header_plaintext")
                 .map_err(|_| TransportError::Malformed)?;
         assert_eq!(header_of(&chaff)?, expected, "CHAFF header");
+        Ok(())
+    }
+
+    #[test]
+    fn a_decoder_names_why_it_refused_without_behaving_differently() -> Result<(), TransportError> {
+        // The registry declares distinct identifiers for a version mismatch, a
+        // profile mismatch, and a malformed frame. Reporting all three as
+        // "malformed" leaves an operator unable to tell a peer on the wrong
+        // revision from a peer sending rubbish.
+        //
+        // The distinction is local. Every case below is refused, and the
+        // caller drops and counts them identically, because Core section 8
+        // requires externally uniform failure behaviour.
+        let frame = Frame::Data {
+            suite: SUITE_R1,
+            transmission_id: [1; 16],
+            fragment_index: 0,
+            fragment_count: 1,
+            total_length: 3,
+            fragment: b"abc".to_vec(),
+        };
+        let good = encode_frame(&frame)?;
+        assert!(decode_frame(&good).is_ok());
+
+        let mut wrong_version = good;
+        wrong_version[1] = VERSION.wrapping_add(1);
+        assert_eq!(
+            decode_frame(&wrong_version),
+            Err(TransportError::UnsupportedVersion)
+        );
+
+        for byte in [0_usize, 2, 3] {
+            let mut wrong_profile = good;
+            wrong_profile[byte] = wrong_profile[byte].wrapping_add(1);
+            assert_eq!(
+                decode_frame(&wrong_profile),
+                Err(TransportError::UnsupportedProfile),
+                "byte {byte} names a profile"
+            );
+        }
+
+        let mut reserved = good;
+        reserved[7] = 1;
+        assert_eq!(decode_frame(&reserved), Err(TransportError::Malformed));
+
+        let mut wrong_suite = good;
+        wrong_suite[4] = 0x7f;
+        wrong_suite[5] = 0x02;
+        assert_eq!(
+            decode_frame(&wrong_suite),
+            Err(TransportError::UnsupportedSuite),
+            "the disabled audit suite is refused"
+        );
         Ok(())
     }
 

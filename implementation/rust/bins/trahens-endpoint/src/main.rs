@@ -11,8 +11,9 @@ use node_runtime::{
     RemoteInputDrops,
 };
 use protocol_registry::{
-    ERROR_AUTHENTICATION_FAILED, ERROR_CAPABILITY_INVALID, ERROR_INTERNAL, ERROR_STATE_VIOLATION,
-    ERROR_TIMEOUT, LIMIT_CAPABILITY_TTL_MS, LIMIT_ROUTE_TTL_MS, SUITE_R1,
+    ERROR_AUTHENTICATION_FAILED, ERROR_CANCELLED, ERROR_CAPABILITY_INVALID, ERROR_EXPIRED,
+    ERROR_INTERNAL, ERROR_STATE_VIOLATION, ERROR_TIMEOUT, LIMIT_CAPABILITY_TTL_MS,
+    LIMIT_ROUTE_TTL_MS, SUITE_R1,
 };
 use state_machine::{Event, RouteTable};
 use std::error::Error;
@@ -301,7 +302,14 @@ fn run() -> Result<(), Box<dyn Error>> {
                 let before = held.len();
                 let wall_now = unix_time_ms();
                 held.retain(|candidate| candidate.opened.expires_at_ms > wall_now);
-                candidates_dropped += (before - held.len()) as u64;
+                let lapsed = before - held.len();
+                candidates_dropped += lapsed as u64;
+                for _ in 0..lapsed {
+                    // An offer that outlived its own expiry is a distinct
+                    // outcome from one that lost the selection, and the
+                    // registry names it.
+                    drops.record("endpoint", ERROR_EXPIRED, "candidate_expired");
+                }
 
                 if let Some(index) = best_candidate(&held) {
                     let chosen = held.swap_remove(index);
@@ -338,7 +346,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             clock.now_ms(),
                         );
                         cancelled_branches += 1;
-                        structured_event("endpoint", "branch_cancelled", &[]);
+                        drops.record("endpoint", ERROR_CANCELLED, "branch_off_route");
                     }
                     candidates_dropped += held.len() as u64;
                     held.clear();

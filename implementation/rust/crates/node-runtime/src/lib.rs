@@ -6,8 +6,9 @@ pub mod p1;
 
 use codec_m2::{decode, encode, Envelope};
 use protocol_registry::{
-    BYTES_CELL_BODY, BYTES_CELL_PAYLOAD, ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED,
-    ERROR_UNSUPPORTED_SUITE, FIXED_T2_ACK_RESERVE_PER_EPOCH, FIXED_T2_CELLS_PER_EPOCH,
+    BYTES_CELL_BODY, BYTES_CELL_PAYLOAD, ERROR_INTERNAL, ERROR_MALFORMED, ERROR_REPLAY,
+    ERROR_RESOURCE_EXHAUSTED, ERROR_UNSUPPORTED_PROFILE, ERROR_UNSUPPORTED_SUITE,
+    ERROR_UNSUPPORTED_VERSION, FIXED_T2_ACK_RESERVE_PER_EPOCH, FIXED_T2_CELLS_PER_EPOCH,
     FIXED_T2_EPOCH_MS, FIXED_T2_QUEUE_CELLS_GLOBAL, FIXED_T2_QUEUE_CELLS_PER_PEER,
     FIXED_T2_RETRANSMIT_RESERVE_PER_EPOCH, LIMIT_MAX_T1_RETRIES, LIMIT_T1_ACK_DELAY_MAX_MS,
     LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS, SUITE_R1,
@@ -746,14 +747,41 @@ fn run_link(
                                     }
                                 },
                                 Ok(Frame::Chaff { .. }) => {}
-                                Err(_) => {
+                                Err(error) => {
+                                    // Every one of these is dropped and counted
+                                    // identically; only the local identifier
+                                    // differs, so an operator can tell a peer
+                                    // on the wrong revision from a peer sending
+                                    // rubbish.
                                     metrics.malformed_cells =
                                         metrics.malformed_cells.saturating_add(1);
+                                    let (error_id, detail) = match error {
+                                        transport_t1::TransportError::UnsupportedVersion => {
+                                            (ERROR_UNSUPPORTED_VERSION, "t1_version")
+                                        }
+                                        transport_t1::TransportError::UnsupportedProfile => {
+                                            (ERROR_UNSUPPORTED_PROFILE, "t1_profile")
+                                        }
+                                        transport_t1::TransportError::UnsupportedSuite => {
+                                            (ERROR_UNSUPPORTED_SUITE, "t1_suite")
+                                        }
+                                        _ => (ERROR_MALFORMED, "t1_frame"),
+                                    };
+                                    sink.report(LinkEvent::SecurityEvent {
+                                        peer_id: config.peer_id,
+                                        error_id,
+                                        detail,
+                                    });
                                 }
                             }
                         }
                         Err(wire_w2::WireError::Replay) => {
                             metrics.replay_rejections = metrics.replay_rejections.saturating_add(1);
+                            sink.report(LinkEvent::SecurityEvent {
+                                peer_id: config.peer_id,
+                                error_id: ERROR_REPLAY,
+                                detail: "w2_replay_window",
+                            });
                         }
                         Err(_) => {
                             metrics.malformed_cells = metrics.malformed_cells.saturating_add(1);

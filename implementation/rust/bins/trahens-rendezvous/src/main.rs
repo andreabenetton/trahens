@@ -12,9 +12,9 @@ use node_runtime::{
     RemoteInputDrops,
 };
 use protocol_registry::{
-    ERROR_AUTHENTICATION_FAILED, ERROR_CAPABILITY_INVALID, ERROR_INTERNAL, ERROR_MALFORMED,
-    ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION, ERROR_TIMEOUT, LIMIT_CAPABILITY_TTL_MS,
-    LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE, SUITE_R1,
+    ERROR_AUTHENTICATION_FAILED, ERROR_CANCELLED, ERROR_CAPABILITY_INVALID, ERROR_INTERNAL,
+    ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
+    LIMIT_CAPABILITY_TTL_MS, LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE, SUITE_R1,
 };
 use rendezvous_r1::Registry;
 use state_machine::{Event, Phase, RouteTable};
@@ -351,6 +351,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             MessageType::Cancel | MessageType::Abort
                         ) {
                             structured_event("rendezvous", "route_cancelled", &[]);
+                            drops.record("rendezvous", ERROR_CANCELLED, "route_stood_down");
                             cleanup_started = Some(Instant::now());
                             observed_terminal = true;
                             cleanup_event = Some(Event::CancelAccepted);
