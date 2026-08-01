@@ -18,23 +18,26 @@ use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
-use trahens_crypto::{blind_public, initialize, random_nonzero_16, random_scalar, zeroize};
+use trahens_crypto::{blind_public, initialize, random_nonzero_16, random_scalar, SecretBytes};
 
 /// One forwarded child of a branch. Core v1.5 section 5 requires every child
 /// to receive independently replaced context, so each carries its own label,
 /// blinding factor, and discovery nonce.
-#[derive(Clone)]
+///
+/// Both 32-byte fields are key material and neither may be copied casually.
+/// The blinding factor derives the child's reply key. The discovery nonce
+/// became a key when offer labels started being derived from it: anyone
+/// holding it can compute the labels a child will answer on, so it is what
+/// keeps successive labels unlinkable to an observer. It is confidential to
+/// this hop, travels only inside the adjacent authenticated link, and is
+/// never reused across children or branches. `SecretBytes` wipes both on
+/// drop, and because it is not `Clone` neither is this type, so the route
+/// table holds exactly one copy of each.
 struct RelayChild {
     link_index: usize,
     child_label: [u8; 16],
-    blinding_factor: [u8; 32],
-    child_discovery_nonce: [u8; 32],
-}
-
-impl Drop for RelayChild {
-    fn drop(&mut self) {
-        zeroize(&mut self.blinding_factor);
-    }
+    blinding_factor: SecretBytes<32>,
+    child_discovery_nonce: SecretBytes<32>,
 }
 
 /// One offer label this relay published to a child, and what it resolves to.
@@ -66,7 +69,8 @@ struct TentativeOffer {
     child_selector: [u8; 16],
 }
 
-#[derive(Clone)]
+/// Not `Clone`: it owns `parent_discovery_nonce`, which derives the labels
+/// this relay answers its own parent on, and every child's key material.
 struct RelayRoute {
     parent_label: [u8; 16],
     children: Vec<RelayChild>,
@@ -81,8 +85,50 @@ struct RelayRoute {
     offers_forwarded: u16,
     incoming_reply_public: [u8; 32],
     depth: u8,
-    parent_discovery_nonce: [u8; 32],
+    parent_discovery_nonce: SecretBytes<32>,
     generation: u32,
+}
+
+/// What a branch looks like to code that routes control messages.
+///
+/// Control forwarding needs labels, link indices, and the committed child; it
+/// never needs key material. Copying this out of the route table lets the
+/// borrow end before the table is mutated, which is what the old
+/// `RelayRoute::clone` was for — except that clone also duplicated every
+/// blinding factor and discovery nonce, once per control message.
+#[derive(Clone)]
+struct RouteView {
+    parent_label: [u8; 16],
+    generation: u32,
+    committed_child: Option<usize>,
+    committed_selector: Option<[u8; 16]>,
+    children: Vec<ChildView>,
+}
+
+/// The non-secret half of a [`RelayChild`].
+#[derive(Clone, Copy)]
+struct ChildView {
+    link_index: usize,
+    child_label: [u8; 16],
+}
+
+impl RelayRoute {
+    fn view(&self) -> RouteView {
+        RouteView {
+            parent_label: self.parent_label,
+            generation: self.generation,
+            committed_child: self.committed_child,
+            committed_selector: self.committed_selector,
+            children: self
+                .children
+                .iter()
+                .map(|child| ChildView {
+                    link_index: child.link_index,
+                    child_label: child.child_label,
+                })
+                .collect(),
+        }
+    }
 }
 
 fn forward_control(message: Control, label: [u8; 16]) -> Envelope {
@@ -408,8 +454,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                         children.push(RelayChild {
                             link_index,
                             child_label,
-                            blinding_factor: factor,
-                            child_discovery_nonce,
+                            blinding_factor: SecretBytes(factor),
+                            child_discovery_nonce: SecretBytes(child_discovery_nonce),
                         });
                     }
                     if children.is_empty() {
@@ -435,7 +481,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             offers_forwarded: 0,
                             incoming_reply_public: discover.reply_public_key,
                             depth,
-                            parent_discovery_nonce,
+                            parent_discovery_nonce: SecretBytes(parent_discovery_nonce),
                             generation: 0,
                         },
                     );
@@ -451,7 +497,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         None if routes.contains_key(&control.local_label) => control.local_label,
                         None => continue,
                     };
-                    let Some(route) = routes.get(&parent_label).cloned() else {
+                    let Some(route) = routes.get(&parent_label).map(RelayRoute::view) else {
                         continue;
                     };
                     if control.generation != route.generation {
@@ -661,9 +707,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                         continue;
                     };
                     let parent_label = slot.parent_label;
-                    let Some(route) = routes.get(&parent_label).cloned() else {
+                    if !routes.contains_key(&parent_label) {
                         continue;
-                    };
+                    }
                     if usize::from(candidate.layer_count) > LIMIT_MAX_CANDIDATE_LAYERS {
                         cleanup_route(
                             parent_label,
@@ -679,35 +725,44 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                     // The candidate arrived on one specific child, so it must
                     // be unwrapped with that child's blinding factor and nonce.
+                    // Those are key material, so they are read through a borrow
+                    // that ends with this block rather than copied out of the
+                    // table with the rest of the route.
                     let child_index = slot.child_index;
-                    if route.children.get(child_index).is_none() {
-                        drops.record("relay", ERROR_STATE_VIOLATION, "candidate_unknown_child");
-                        continue;
-                    }
-                    // After selection the branch follows one child; an offer
-                    // returning through a losing sibling is off route.
-                    if route
-                        .committed_child
-                        .is_some_and(|chosen| chosen != child_index)
-                    {
-                        drops.record("relay", ERROR_STATE_VIOLATION, "candidate_after_commit");
-                        continue;
-                    }
-                    let child = &route.children[child_index];
-                    // The candidate blob is remote input; a wrap failure
-                    // drops the candidate rather than terminating the relay.
-                    let Ok(wrapped) = wrap_candidate(
-                        &route.incoming_reply_public,
-                        route.depth,
-                        child.blinding_factor,
-                        child.child_label,
-                        route.parent_label,
-                        route.parent_discovery_nonce,
-                        child.child_discovery_nonce,
-                        candidate.candidate_blob,
-                    ) else {
-                        drops.record("relay", ERROR_MALFORMED, "candidate_blob_wrap");
-                        continue;
+                    let wrapped = {
+                        let Some(route) = routes.get(&parent_label) else {
+                            continue;
+                        };
+                        let Some(child) = route.children.get(child_index) else {
+                            drops.record("relay", ERROR_STATE_VIOLATION, "candidate_unknown_child");
+                            continue;
+                        };
+                        // After selection the branch follows one child; an
+                        // offer returning through a losing sibling is off
+                        // route.
+                        if route
+                            .committed_child
+                            .is_some_and(|chosen| chosen != child_index)
+                        {
+                            drops.record("relay", ERROR_STATE_VIOLATION, "candidate_after_commit");
+                            continue;
+                        }
+                        // The candidate blob is remote input; a wrap failure
+                        // drops the candidate rather than terminating the relay.
+                        let Ok(wrapped) = wrap_candidate(
+                            &route.incoming_reply_public,
+                            route.depth,
+                            child.blinding_factor.0,
+                            child.child_label,
+                            route.parent_label,
+                            route.parent_discovery_nonce.0,
+                            child.child_discovery_nonce.0,
+                            candidate.candidate_blob,
+                        ) else {
+                            drops.record("relay", ERROR_MALFORMED, "candidate_blob_wrap");
+                            continue;
+                        };
+                        wrapped
                     };
                     if states
                         .apply(parent_label, Event::CandidateAccepted, clock.now_ms())
@@ -722,15 +777,22 @@ fn run() -> Result<(), Box<dyn Error>> {
                     // on the token it used, which is its own selector when the
                     // child is a relay and its branch token when it is a
                     // gateway.
+                    let Some(entry) = routes.get_mut(&parent_label) else {
+                        continue;
+                    };
                     let Ok(tentative) =
-                        offer_label(&route.parent_discovery_nonce, route.offers_forwarded)
+                        offer_label(&entry.parent_discovery_nonce.0, entry.offers_forwarded)
                     else {
                         drops.record("relay", ERROR_RESOURCE_EXHAUSTED, "offer_response_limit");
                         continue;
                     };
-                    if let Some(entry) = routes.get_mut(&parent_label) {
-                        entry.offers_forwarded = entry.offers_forwarded.saturating_add(1);
-                    }
+                    entry.offers_forwarded = entry.offers_forwarded.saturating_add(1);
+                    // Slide the child's window on by one so a later offer still
+                    // has a reserved label.
+                    let next_slot = slot.index.saturating_add(OFFER_LABEL_WINDOW);
+                    let next_label = entry.children.get(child_index).and_then(|child| {
+                        offer_label(&child.child_discovery_nonce.0, next_slot).ok()
+                    });
                     tentatives.insert(
                         tentative,
                         TentativeOffer {
@@ -740,22 +802,17 @@ fn run() -> Result<(), Box<dyn Error>> {
                         },
                     );
                     // Downstream control for this chain arrives under the
-                    // child's label, so it resolves to this branch too. Slide
-                    // the child's window on by one so a later offer still has
-                    // a reserved label.
+                    // child's label, so it resolves to this branch too.
                     reverse.insert(candidate_token, parent_label);
-                    if let Some(child) = route.children.get(child_index) {
-                        let next = slot.index.saturating_add(OFFER_LABEL_WINDOW);
-                        if let Ok(label) = offer_label(&child.child_discovery_nonce, next) {
-                            incoming.insert(
-                                label,
-                                IncomingOffer {
-                                    parent_label,
-                                    child_index,
-                                    index: next,
-                                },
-                            );
-                        }
+                    if let Some(label) = next_label {
+                        incoming.insert(
+                            label,
+                            IncomingOffer {
+                                parent_label,
+                                child_index,
+                                index: next_slot,
+                            },
+                        );
                     }
                     if upstream
                         .send(Envelope {
@@ -776,7 +833,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     let Some(parent_label) = reverse.get(&control.local_label).copied() else {
                         continue;
                     };
-                    let Some(route) = routes.get(&parent_label).cloned() else {
+                    let Some(route) = routes.get(&parent_label).map(RelayRoute::view) else {
                         continue;
                     };
                     if control.generation != route.generation {
@@ -987,6 +1044,62 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_route_view_carries_no_key_material() -> Result<(), Box<dyn Error>> {
+        // Control forwarding needs labels and link indices, never secrets.
+        // Cloning the whole route to get them duplicated every blinding factor
+        // and discovery nonce once per control message, and those copies were
+        // never wiped. The view is what control paths take instead.
+        let parent = [0x61; 16];
+        let route = RelayRoute {
+            parent_label: parent,
+            children: vec![
+                RelayChild {
+                    link_index: 2,
+                    child_label: [0x62; 16],
+                    blinding_factor: SecretBytes([9; 32]),
+                    child_discovery_nonce: SecretBytes([8; 32]),
+                },
+                RelayChild {
+                    link_index: 5,
+                    child_label: [0x63; 16],
+                    blinding_factor: SecretBytes([7; 32]),
+                    child_discovery_nonce: SecretBytes([6; 32]),
+                },
+            ],
+            committed_child: Some(1),
+            committed_selector: Some([0x64; 16]),
+            offers_forwarded: 2,
+            incoming_reply_public: [1; 32],
+            depth: 3,
+            parent_discovery_nonce: SecretBytes([5; 32]),
+            generation: 0,
+        };
+
+        let view = route.view();
+        assert_eq!(view.parent_label, parent);
+        assert_eq!(view.committed_child, Some(1));
+        assert_eq!(view.children.len(), 2);
+        assert_eq!(view.children[1].link_index, 5);
+        assert_eq!(view.children[1].child_label, [0x63; 16]);
+
+        // The view is Clone precisely because it holds nothing secret; the
+        // route is not, so the table keeps one copy of each nonce and factor.
+        let copied = view.clone();
+        assert_eq!(copied.children[0].link_index, 2);
+
+        // The labels a child may answer on come from its nonce, so the nonce
+        // is a key: knowing it is enough to compute them.
+        let expected = offer_label(&route.children[0].child_discovery_nonce.0, 0)?;
+        assert_ne!(expected, [0_u8; 16]);
+        assert_ne!(
+            expected,
+            offer_label(&route.children[1].child_discovery_nonce.0, 0)?,
+            "different children never share a label"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn every_offer_on_a_branch_gets_its_own_selector() -> Result<(), Box<dyn Error>> {
         // Two children answer the same branch. Each offer must reach the
         // initiator under a distinct label, or a COMMIT names the branch
@@ -1135,15 +1248,15 @@ mod tests {
                 children: vec![RelayChild {
                     link_index: 0,
                     child_label: child,
-                    blinding_factor: [7; 32],
-                    child_discovery_nonce: [0; 32],
+                    blinding_factor: SecretBytes([7; 32]),
+                    child_discovery_nonce: SecretBytes([0; 32]),
                 }],
                 committed_child: None,
                 committed_selector: None,
                 offers_forwarded: 0,
                 incoming_reply_public: [0; 32],
                 depth: 1,
-                parent_discovery_nonce: [0; 32],
+                parent_discovery_nonce: SecretBytes([0; 32]),
                 generation: 1,
             },
         );
@@ -1179,8 +1292,8 @@ mod tests {
             .map(|index| RelayChild {
                 link_index: index,
                 child_label: [index as u8 + 1; 16],
-                blinding_factor: [7; 32],
-                child_discovery_nonce: [0; 32],
+                blinding_factor: SecretBytes([7; 32]),
+                child_discovery_nonce: SecretBytes([0; 32]),
             })
             .collect();
         for child in &children {
@@ -1196,7 +1309,7 @@ mod tests {
                 offers_forwarded: 0,
                 incoming_reply_public: [0; 32],
                 depth: 1,
-                parent_discovery_nonce: [0; 32],
+                parent_discovery_nonce: SecretBytes([0; 32]),
                 generation: 1,
             },
         );
@@ -1241,15 +1354,15 @@ mod tests {
                     children: vec![RelayChild {
                         link_index: 0,
                         child_label: child,
-                        blinding_factor: [7; 32],
-                        child_discovery_nonce: [0; 32],
+                        blinding_factor: SecretBytes([7; 32]),
+                        child_discovery_nonce: SecretBytes([0; 32]),
                     }],
                     committed_child: None,
                     committed_selector: None,
                     offers_forwarded: 0,
                     incoming_reply_public: [0; 32],
                     depth: 1,
-                    parent_discovery_nonce: [0; 32],
+                    parent_discovery_nonce: SecretBytes([0; 32]),
                     generation: 0,
                 },
             );

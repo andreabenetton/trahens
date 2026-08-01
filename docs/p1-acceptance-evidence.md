@@ -55,7 +55,9 @@ has been removed.
 Each returned offer now travels under a label derived from the discovery nonce
 the parent replaced for that child, which both ends can compute and no
 observer can link. COMMIT therefore names one chain, the relay activates that
-child and cancels its siblings, and `netns-fanout.sh` asserts it.
+child and cancels its siblings, and `netns-fanout.sh` asserts it. The
+derivation, and the confidentiality and freshness the nonce must now have as
+key material, are recorded in `docs/adr/0039-offer-label-derivation.md`.
 
 ## Measurement coverage
 
