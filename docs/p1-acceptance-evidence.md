@@ -2,7 +2,7 @@
 
 # P1 acceptance evidence
 
-- Status: Evidence map for the acceptance gate in `spec/p1-prototype-profile-v1.5.md`
+- Status: Evidence map for the acceptance gate in `spec/p1-prototype-profile-v1.6.md`
 - Registry: 1.6.0 (v1.5 retained; see the note on what that does and does not mean)
 
 The profile requires that a source-only revision report its gates as pending
@@ -23,7 +23,7 @@ executes it, so the claim rests on execution rather than on source presence.
 | success, cancellation, timeout, and transport failure reclaim all remote state | `linux-interop`: the direct arm for success, the NO_CANDIDATE arm for cancellation, the expired-capability arm for timeout, and the transport-failure arm for T1 exhaustion. Every arm asserts `live_routes == 0` on every node. The fan-out arm covers cancellation of a subtree the initiator did not select |
 | packet captures contain only 1,052-byte W2 records | `tools/check_pcap_cells.py` runs in every arm, including the fan-out topology |
 | a fanned-out branch commits the chain the initiator selected | `linux-interop`, fan-out arm: two gateways answer through one relay, the initiator selects one, and the arm asserts the relay released the other subtree and that its gateway observed the cancellation |
-| Linux CI builds and tests without manual repository edits | all seven jobs green at head |
+| Linux CI builds and tests without manual repository edits | all seven jobs green at head; `linux-interop` runs sixteen arms, thirteen mandatory and three for the selectable experimental profiles |
 | the schedule shape claimed by the fixed profile actually held | every arm reports `fixed_trace_valid` per link. It is a slot-occupancy claim with one slot interval as the stated tolerance: no position passed empty and none was filled late enough to displace its successor. Sub-slot lateness is real and reported separately as `worst_jitter_us`, so a tighter tolerance can be judged from the same run |
 
 ## Known gaps

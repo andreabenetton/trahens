@@ -13,10 +13,25 @@ An eligibility suite exposes the following abstract operations:
 ```text
 Setup() -> params
 KeyGen(params) -> endpoint_context
-Initial(endpoint_context; coins) -> discover_field
-Transform(discover_field; coins) -> discover_field'
-Accept(local_role, endpoint_context, discover_field) -> boolean
+Initial(endpoint_context; coins) -> eligibility_field
+Transform(eligibility_field; coins) -> eligibility_field'
+Accept(local_role, eligibility_field) -> boolean
+IsEligible(endpoint_context, eligibility_field) -> boolean
 ```
+
+Since v1.6 the field this interface owns is the **eligibility field** alone.
+The routing nonce that binds the candidate chain and keys per-offer labels is
+suite-independent and is not passed here, which is what allows a suite to size
+its field freely (`core-v1.6.md` section 5, ADR 0040).
+
+`Accept` and `IsEligible` answer different questions and MUST NOT be merged.
+`Accept` is well-formedness for the given role. `IsEligible` is the recipient's
+decision that a well-formed field addresses it, and only a recipient can
+answer it: a relay MUST NOT be able to, which is the property a rerandomising
+suite exists to provide. A suite carrying no endpoint-specific material, such
+as R1, answers `IsEligible` true for every well-formed field. A recipient
+holding no key MUST answer false rather than true — absence must not read as
+acceptance.
 
 The route protocol additionally assigns each suite:
 
@@ -29,7 +44,11 @@ maximum_length
 failure_policy
 ```
 
-`Initial`, `Transform`, and `Accept` MUST have one uniform externally observable failure class. A disabled suite MUST fail before branch-state allocation.
+All four operations MUST have one uniform externally observable failure class:
+a well-formed field that is not addressed to this recipient MUST be refused
+indistinguishably from a malformed one. The two MAY be, and are, distinguished
+in local counters under separate registry error identifiers. A disabled suite
+MUST fail before branch-state allocation.
 
 ## 2. Active and research providers
 

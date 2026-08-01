@@ -50,6 +50,25 @@ cargo build --release --manifest-path implementation/rust/Cargo.toml
 # Linux namespace interoperability harness (requires root, ip, tc, tcpdump)
 sudo implementation/harness/netns-p1.sh --relays 2 --loss 5
 sudo implementation/harness/netns-p1.sh --relays 12 --loss 0
+sudo implementation/harness/netns-fanout.sh          # fan-out and off-route cancellation
+
+# Selectable experimental profiles, each with its own CI gate. Neither may be
+# cited as evidence for a mandatory gate line.
+sudo implementation/harness/netns-p1.sh --relays 2 --schedule-profile adaptive
+sudo implementation/harness/netns-p1.sh --relays 2 --eligibility-suite c1
+sudo implementation/harness/netns-p1.sh --relays 2 --scenario c1-not-eligible
+
+# A third-party initiator against our relays and gateway
+sudo implementation/harness/netns-p1.sh --relays 2 --external-endpoint "<command>"
+
+# A foreign M2 decoder against the published corpus, before it can speak
+python3 tools/check_external_codec.py "<decoder command>"
+
+# One node per host over ssh; --runner replaces ssh for local testing
+sudo implementation/harness/multihost-p1.sh --relays 1 --node 0=a --node 1=b --node 2=c
+
+# Cost measurement, not a derived artifact: excluded from check_repo
+sudo tools/run_p1_load_sweep.sh
 ```
 
 ### Full reproducibility
@@ -89,9 +108,9 @@ Suite IDs and all numeric constants are generated from the single source of trut
 
 | Path | Role |
 |---|---|
-| `spec/core-v1.5.md` | Normative semantics and evidence boundary |
+| `spec/core-v1.6.md` | Normative semantics and evidence boundary |
 | `spec/protocol-registry-v1.6.json` | Single source of truth for all IDs, widths, and limits |
-| `spec/p1-prototype-profile-v1.5.md` | P1 acceptance gate and claim boundary |
+| `spec/p1-prototype-profile-v1.6.md` | P1 acceptance gate and claim boundary |
 | `simulator/trahens_sim/` | Python deterministic protocol models |
 | `simulator/trahens_crypto/` | Crypto providers (C1, C2-ideal, C2-k2, ristretto, tagging) |
 | `simulator/trahens_codec/` | M2/W2, T1, T2 codecs |
@@ -108,13 +127,18 @@ Suite IDs and all numeric constants are generated from the single source of trut
 
 ### Generated files — never edit directly
 
-Three files are mechanically derived from `spec/protocol-registry-v1.5.json` and must stay in sync:
+Three files are mechanically derived from `spec/protocol-registry-v1.6.json` and must stay in sync:
 
 1. `simulator/trahens_spec/generated.py`
 2. `implementation/rust/crates/protocol-registry/src/generated.rs`
-3. `spec/protocol-registry-v1.5.md`
+3. `spec/protocol-registry-v1.6.md`
 
 After any registry change, run `make registry` and commit all three outputs together.
+
+`spec/protocol-registry-v1.5.md` is also generated, from the historical v1.5
+registry, and `check_repo.sh` still regenerates and compares it. Do not edit
+either v1.5 artifact: that profile is history and its files exist so it stays
+reproducible.
 
 ### `make check` integrity invariants
 
@@ -123,7 +147,8 @@ After any registry change, run `make registry` and commit all three outputs toge
 - All required files exist and are committed
 - Every vector file matches a fresh generator run (`cmp` on regenerated output)
 - `simulator/trahens_spec/generated.py` and the Rust generated file match `make registry` output
-- P1 conformance vectors and corpus match `tools/generate_p1_conformance.py`
+- **Both** registries regenerate: v1.6 produces the bindings and its markdown, and the historical v1.5 registry still produces its own markdown
+- P1 conformance vectors and corpus match `tools/generate_p1_conformance.py` for both v1.6 and v1.5
 - Bounded state models and anonymity metrics match their generators
 - `paper/rewrite/main.tex` contains no forbidden historical terms (`Nexus`, `2020`, `W1`, `M1`, `Core v0.*`, etc.)
 - Python compiles cleanly; Rust tests pass if `cargo` is available

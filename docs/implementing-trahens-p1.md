@@ -16,7 +16,7 @@ fixed in July 2026 were exactly that confusion.
 
 ## The one rule
 
-`spec/protocol-registry-v1.5.json` is the only source of identifiers, widths,
+`spec/protocol-registry-v1.6.json` is the only source of identifiers, widths,
 limits, and domain separators. Do not copy constants out of prose, out of this
 document, or out of our Rust. Generate them, as we do — `make registry` emits
 Python, Rust, and Markdown from that one file, and `tools/check_repo.sh` fails
@@ -30,11 +30,17 @@ a wire problem.
 
 ### 1. Registry and codecs, no network
 
-Read `spec/message-codec-m2.md` and `spec/wire-cell-w2.md`. Implement M2
+Read `spec/core-v1.6.md` first for the shape of the whole path, then
+`spec/message-codec-m2.md` and `spec/wire-cell-w2.md`.
+
+Note the v1.6 split before you encode anything: `DISCOVER` carries a
+suite-independent 32-byte `routing_nonce` **and** a separate eligibility field
+the suite sizes. Route discovery reads only the former. Getting this wrong is
+the one mistake that will make everything else fail confusingly. Implement M2
 encode/decode and W2 fragmentation.
 
-Check against `spec/p1-conformance-vectors-v1.5.json` and the binary corpus
-`spec/p1-conformance-corpus-v1.5.bin` (3,037 bytes, format described
+Check against `spec/p1-conformance-vectors-v1.6.json` and the binary corpus
+`spec/p1-conformance-corpus-v1.6.bin` (3,133 bytes, format described
 below; 32 vectors at registry 1.5.2). Canonical encodings must round-trip; **noncanonical ones must
 be rejected**, and that half matters more. A decoder that accepts a
 noncanonical encoding is the classic source of cross-implementation
@@ -82,13 +88,20 @@ here:
 `spec/crypto-profile-c1.md` and `spec/rendezvous-capability-r1.md`. Check
 against `spec/crypto-test-vectors-c1.json` and `spec/r1-test-vectors.json`.
 
-R1 is the mandatory suite. C1 is a network-disabled research suite: implement
-it only for vector agreement, and refuse to select it for a live node. See ADR
-0038.
+R1 is the mandatory suite and the only one the mandatory profile admits.
+
+C1 v2 is selectable on the **experimental** profile, and since v1.6 it is a
+live path rather than a library: an initiator encrypts an eligibility marker to
+a recipient's key, every relay rerandomises the capsule without learning
+anything, and only the recipient can tell a discovery is for it. Implement it
+if you want that profile; you do not need it to interoperate on the mandatory
+one. Reaching it takes an explicit profile as well as an explicit suite. The
+retired C1 v1 `0x0001` and the disabled C2 k=2 audit suite `0x7f02` must be
+refused everywhere. See ADR 0038 and ADR 0040.
 
 ### 4. Lifecycle and discovery
 
-`spec/state-machines-v1.5.md`, `spec/invariants-v1.5.md`, and
+`spec/state-machines-v1.6.md`, `spec/invariants-v1.6.md`, and
 `spec/event-lifecycle-profile-e1.md`.
 
 Time is a **monotonically increasing local clock**. Use wall clock only for the
@@ -101,7 +114,7 @@ falls idle. Otherwise a peer that keeps sending keeps your expired state alive.
 
 ### 5. Resource bounds
 
-`spec/resource-accounting-v1.5.md`. Every ceiling is in the registry.
+`spec/resource-accounting-v1.6.md`. Every ceiling is in the registry.
 
 Count queued **cells**, not messages: the sender ceiling and the fragment
 ceiling multiply, so a per-message count does not bound anything. Track branch
@@ -121,7 +134,7 @@ nonce is key material as a result: confidential to its hop, never reused.
 
 ## Corpus format
 
-`spec/p1-conformance-corpus-v1.5.bin` is:
+`spec/p1-conformance-corpus-v1.6.bin` is:
 
 ```text
 "TP15"                     magic
@@ -162,7 +175,7 @@ that accepts the arguments and speaks nothing, and check it exits non-zero.
 
 ## Acceptance
 
-`spec/p1-prototype-profile-v1.5.md` holds the gate.
+`spec/p1-prototype-profile-v1.6.md` holds the gate.
 `docs/p1-acceptance-evidence.md` maps each line to the job or harness arm that
 executes it here, and states what remains open. Source presence is not passing;
 the gate is a runtime gate.

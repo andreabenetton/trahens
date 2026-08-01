@@ -63,7 +63,7 @@ The reply path now uses independent first-hop reply keys, multiplicative `ristre
 
 ## v1.6 P1 implementation
 
-The frozen registry in `spec/protocol-registry-v1.5.json` generates Python, Rust, and Markdown constants. C1 v1 suite `0x0001` is retired; C1 v2 is `0x0003`. Canonical M2 vectors are produced by an independent manual encoder that reads only the registry. Three Rust executables use UDP, fixed 1,052-byte W2 cells, bounded T1 recovery, fixed T2 scheduling, typed route state, atomic R1 redemption, and zeroizing secret wrappers.
+The registry in `spec/protocol-registry-v1.6.json` generates Python, Rust, and Markdown constants. C1 v1 suite `0x0001` is retired; C1 v2 is `0x0003`. Canonical M2 vectors are produced by an independent manual encoder that reads only the registry. Three Rust executables use UDP, fixed 1,052-byte W2 cells, bounded T1 recovery, fixed T2 scheduling, typed route state, atomic R1 redemption, and zeroizing secret wrappers.
 
 The namespace harness runs each process in its own Linux namespace with veth, `tc netem`, MTU control, packet capture, and aggregate metrics. The Rust and namespace gates are intentionally reported separately from Python/reference-model checks; source inclusion alone is not a passed interoperability result.
 
@@ -95,7 +95,7 @@ make paper
 make check
 ```
 
-Start with [`spec/core-v1.5.md`](spec/core-v1.5.md), [`spec/p1-prototype-profile-v1.5.md`](spec/p1-prototype-profile-v1.5.md), [`spec/protocol-registry-v1.5.md`](spec/protocol-registry-v1.5.md), [`spec/private-directory-d1.md`](spec/private-directory-d1.md), [`spec/rendezvous-capability-r1.md`](spec/rendezvous-capability-r1.md), [`spec/message-codec-m2.md`](spec/message-codec-m2.md), [`spec/wire-cell-w2.md`](spec/wire-cell-w2.md), [`spec/transport-profile-t1.md`](spec/transport-profile-t1.md), [`spec/transport-profile-t2.md`](spec/transport-profile-t2.md), [`spec/transport-profile-t3.md`](spec/transport-profile-t3.md), [`spec/transport-profile-t4.md`](spec/transport-profile-t4.md), [`docs/threat-model.md`](docs/threat-model.md), and [`docs/citation-audit.md`](docs/citation-audit.md).
+Start with [`spec/core-v1.6.md`](spec/core-v1.6.md), [`spec/p1-prototype-profile-v1.6.md`](spec/p1-prototype-profile-v1.6.md), [`spec/protocol-registry-v1.6.md`](spec/protocol-registry-v1.6.md), [`docs/implementing-trahens-p1.md`](docs/implementing-trahens-p1.md), [`spec/private-directory-d1.md`](spec/private-directory-d1.md), [`spec/rendezvous-capability-r1.md`](spec/rendezvous-capability-r1.md), [`spec/message-codec-m2.md`](spec/message-codec-m2.md), [`spec/wire-cell-w2.md`](spec/wire-cell-w2.md), [`spec/transport-profile-t1.md`](spec/transport-profile-t1.md), [`spec/transport-profile-t2.md`](spec/transport-profile-t2.md), [`spec/transport-profile-t3.md`](spec/transport-profile-t3.md), [`spec/transport-profile-t4.md`](spec/transport-profile-t4.md), [`docs/threat-model.md`](docs/threat-model.md), and [`docs/citation-audit.md`](docs/citation-audit.md).
 
 
 ## Development-record note

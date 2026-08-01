@@ -2,7 +2,9 @@
 
 # Trahens T2 Congestion and Quantized Scheduling Profile
 
-- Status: Active experimental research profile
+- Status: Active experimental research profile. The fixed profile is
+  mandatory; adaptive is implemented and selectable with `--schedule-profile
+  adaptive` and has its own CI gate.
 - Date: 2026-07-30
 - Extends: T1 hop-local recovery and fixed-cell framing
 - Wire record: 1,052 bytes
