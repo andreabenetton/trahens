@@ -40,17 +40,37 @@ struct RelayChild {
     child_discovery_nonce: SecretBytes<32>,
 }
 
-/// One offer label this relay published to a child, and what it resolves to.
+/// What a label this relay knows resolves to.
 ///
-/// The labels are derived from the discovery nonce the relay replaced for that
-/// child, so both ends compute the same sequence without any of it appearing
-/// as a pattern on the wire. A sliding window keeps live state small while the
-/// total per child stays bounded by the registry's response ceiling.
+/// Both kinds answer the same question — which branch is this? — and control
+/// resolution never cares which kind it found, so they share one namespace.
+/// Two maps meant every lookup site had to know in advance which to try, and
+/// the candidate path ended up registering a label it had just resolved from
+/// the other one.
 #[derive(Clone, Copy)]
-struct IncomingOffer {
-    parent_label: [u8; 16],
-    child_index: usize,
-    index: u16,
+enum LabelBinding {
+    /// A branch token minted for a child in a DISCOVER, or the token a child
+    /// answers control on. Resolves to the branch and no further.
+    Branch { parent_label: [u8; 16] },
+    /// A label reserved for one of a child's offers, derived from the
+    /// discovery nonce that child was given so both ends compute the same
+    /// sequence without it appearing as a pattern on the wire. Resolves to the
+    /// branch and to which child, which is what makes a COMMIT selective. A
+    /// sliding window keeps live state small while the total per child stays
+    /// bounded by the registry's response ceiling.
+    Offer {
+        parent_label: [u8; 16],
+        child_index: usize,
+        index: u16,
+    },
+}
+
+impl LabelBinding {
+    fn parent_label(self) -> [u8; 16] {
+        match self {
+            Self::Branch { parent_label } | Self::Offer { parent_label, .. } => parent_label,
+        }
+    }
 }
 
 /// One CANDIDATE this relay forwarded upstream.
@@ -145,25 +165,19 @@ fn forward_control(message: Control, label: [u8; 16]) -> Envelope {
 fn cleanup_route(
     parent: [u8; 16],
     routes: &mut HashMap<[u8; 16], RelayRoute>,
-    reverse: &mut HashMap<[u8; 16], [u8; 16]>,
+    labels: &mut HashMap<[u8; 16], LabelBinding>,
     tentatives: &mut HashMap<[u8; 16], TentativeOffer>,
-    incoming: &mut HashMap<[u8; 16], IncomingOffer>,
     states: &mut RouteTable,
     event: Event,
     now_ms: u64,
 ) {
-    if let Some(route) = routes.remove(&parent) {
-        for child in &route.children {
-            reverse.remove(&child.child_label);
-        }
+    if routes.remove(&parent).is_some() {
         let _ = states.apply(parent, event, now_ms);
     }
-    // Every selector that resolved to this branch goes with it, including the
-    // child selectors registered when offers came back and the tentative
-    // selectors this relay handed upstream.
-    reverse.retain(|_, mapped| *mapped != parent);
+    // Every label that resolved to this branch goes with it, whichever kind it
+    // was, along with the tentative selectors this relay handed upstream.
+    labels.retain(|_, binding| binding.parent_label() != parent);
     tentatives.retain(|_, offer| offer.parent_label != parent);
-    incoming.retain(|_, slot| slot.parent_label != parent);
 }
 
 /// Reclaim every branch whose deadline has passed.
@@ -176,9 +190,8 @@ fn cleanup_route(
 fn reclaim_expired(
     now_ms: u64,
     routes: &mut HashMap<[u8; 16], RelayRoute>,
-    reverse: &mut HashMap<[u8; 16], [u8; 16]>,
+    labels: &mut HashMap<[u8; 16], LabelBinding>,
     tentatives: &mut HashMap<[u8; 16], TentativeOffer>,
-    incoming: &mut HashMap<[u8; 16], IncomingOffer>,
     states: &mut RouteTable,
 ) -> usize {
     let expired: Vec<[u8; 16]> = routes
@@ -195,9 +208,8 @@ fn reclaim_expired(
         cleanup_route(
             label,
             routes,
-            reverse,
+            labels,
             tentatives,
-            incoming,
             states,
             Event::Timeout,
             now_ms,
@@ -292,12 +304,11 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     let mut states = RouteTable::default();
     let mut routes: HashMap<[u8; 16], RelayRoute> = HashMap::new();
-    let mut reverse: HashMap<[u8; 16], [u8; 16]> = HashMap::new();
+    // Every label this relay can resolve, of either kind.
+    let mut labels: HashMap<[u8; 16], LabelBinding> = HashMap::new();
     // Selector handed upstream for one returned offer -> which child it came
     // from. This is what lets a COMMIT name one chain out of several.
     let mut tentatives: HashMap<[u8; 16], TentativeOffer> = HashMap::new();
-    // Label a child may answer on -> which branch and child it belongs to.
-    let mut incoming: HashMap<[u8; 16], IncomingOffer> = HashMap::new();
     let mut drops = RemoteInputDrops::new();
     // Checked rather than assumed: a research-only provider on the wire would
     // otherwise be a silent misconfiguration, with the run still looking
@@ -325,9 +336,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         reclaim_expired(
             clock.now_ms(),
             &mut routes,
-            &mut reverse,
+            &mut labels,
             &mut tentatives,
-            &mut incoming,
             &mut states,
         );
         let next = match ordered.pop_front() {
@@ -426,7 +436,12 @@ fn run() -> Result<(), Box<dyn Error>> {
                             drops.record("relay", ERROR_INTERNAL, "discovery_field_width");
                             break;
                         };
-                        reverse.insert(child_label, discover.branch_token);
+                        labels.insert(
+                            child_label,
+                            LabelBinding::Branch {
+                                parent_label: discover.branch_token,
+                            },
+                        );
                         let forwarded = downstream[link_index].1.send(Envelope {
                             suite_id: SUITE_R1,
                             message: Message::Discover(Discover {
@@ -453,9 +468,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                         // resolves to this branch and this child.
                         for index in 0..OFFER_LABEL_WINDOW {
                             let label = offer_label(&child_discovery_nonce, index)?;
-                            incoming.insert(
+                            labels.insert(
                                 label,
-                                IncomingOffer {
+                                LabelBinding::Offer {
                                     parent_label: discover.branch_token,
                                     child_index: link_index,
                                     index,
@@ -473,9 +488,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                         cleanup_route(
                             discover.branch_token,
                             &mut routes,
-                            &mut reverse,
+                            &mut labels,
                             &mut tentatives,
-                            &mut incoming,
                             &mut states,
                             Event::CancelAccepted,
                             clock.now_ms(),
@@ -594,10 +608,12 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     offer.parent_label != parent_label
                                         || offer.child_index != loser.child_index
                                 });
-                                reverse.remove(&loser.child_selector);
-                                incoming.retain(|_, slot| {
-                                    slot.parent_label != parent_label
-                                        || slot.child_index != loser.child_index
+                                // Every label bound to the losing child goes,
+                                // including the one it answered on, so nothing
+                                // from that subtree resolves any more.
+                                labels.retain(|_, binding| {
+                                    !matches!(binding, LabelBinding::Offer { parent_label: p, child_index: c, .. }
+                                        if *p == parent_label && *c == loser.child_index)
                                 });
                                 cancelled_subtrees += 1;
                             }
@@ -693,9 +709,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                             cleanup_route(
                                 route.parent_label,
                                 &mut routes,
-                                &mut reverse,
+                                &mut labels,
                                 &mut tentatives,
-                                &mut incoming,
                                 &mut states,
                                 event,
                                 clock.now_ms(),
@@ -714,10 +729,18 @@ fn run() -> Result<(), Box<dyn Error>> {
                     // The child answers on a label derived from the discovery
                     // nonce this relay gave it, so the label names the branch
                     // and the child even though the child chose which one.
-                    let Some(slot) = incoming.get(&candidate_token).copied() else {
+                    // Only an offer label makes a candidate routable: it names
+                    // the child as well as the branch. A plain branch token
+                    // does not, and a candidate arriving under one is not ours
+                    // to forward.
+                    let Some(LabelBinding::Offer {
+                        parent_label,
+                        child_index: slot_child,
+                        index: slot_index,
+                    }) = labels.get(&candidate_token).copied()
+                    else {
                         continue;
                     };
-                    let parent_label = slot.parent_label;
                     if !routes.contains_key(&parent_label) {
                         continue;
                     }
@@ -725,9 +748,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                         cleanup_route(
                             parent_label,
                             &mut routes,
-                            &mut reverse,
+                            &mut labels,
                             &mut tentatives,
-                            &mut incoming,
                             &mut states,
                             Event::CancelAccepted,
                             clock.now_ms(),
@@ -739,7 +761,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     // Those are key material, so they are read through a borrow
                     // that ends with this block rather than copied out of the
                     // table with the rest of the route.
-                    let child_index = slot.child_index;
+                    let child_index = slot_child;
                     let wrapped = {
                         let Some(route) = routes.get(&parent_label) else {
                             continue;
@@ -800,7 +822,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     entry.offers_forwarded = entry.offers_forwarded.saturating_add(1);
                     // Slide the child's window on by one so a later offer still
                     // has a reserved label.
-                    let next_slot = slot.index.saturating_add(OFFER_LABEL_WINDOW);
+                    let next_slot = slot_index.saturating_add(OFFER_LABEL_WINDOW);
                     let next_label = entry.children.get(child_index).and_then(|child| {
                         offer_label(&child.child_discovery_nonce.0, next_slot).ok()
                     });
@@ -812,13 +834,13 @@ fn run() -> Result<(), Box<dyn Error>> {
                             child_selector: candidate_token,
                         },
                     );
-                    // Downstream control for this chain arrives under the
-                    // child's label, so it resolves to this branch too.
-                    reverse.insert(candidate_token, parent_label);
+                    // Downstream control for this chain arrives under the same
+                    // label the offer did, which is already bound, so nothing
+                    // needs registering for it.
                     if let Some(label) = next_label {
-                        incoming.insert(
+                        labels.insert(
                             label,
-                            IncomingOffer {
+                            LabelBinding::Offer {
                                 parent_label,
                                 child_index,
                                 index: next_slot,
@@ -841,7 +863,10 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                 }
                 Message::Control(control) => {
-                    let Some(parent_label) = reverse.get(&control.local_label).copied() else {
+                    let Some(parent_label) = labels
+                        .get(&control.local_label)
+                        .map(|binding| binding.parent_label())
+                    else {
                         continue;
                     };
                     let Some(route) = routes.get(&parent_label).map(RelayRoute::view) else {
@@ -931,9 +956,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                             cleanup_route(
                                 parent_label,
                                 &mut routes,
-                                &mut reverse,
+                                &mut labels,
                                 &mut tentatives,
-                                &mut incoming,
                                 &mut states,
                                 Event::CloseAccepted,
                                 clock.now_ms(),
@@ -994,9 +1018,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         cleanup_route(
             label,
             &mut routes,
-            &mut reverse,
+            &mut labels,
             &mut tentatives,
-            &mut incoming,
             &mut states,
             Event::Timeout,
             clock.now_ms(),
@@ -1126,12 +1149,12 @@ mod tests {
         // without naming which child answered and the relay has to guess.
         let parent = [0x51; 16];
         let nonces = [[0x61_u8; 32], [0x62_u8; 32]];
-        let mut incoming: HashMap<[u8; 16], IncomingOffer> = HashMap::new();
+        let mut labels: HashMap<[u8; 16], LabelBinding> = HashMap::new();
         for (child_index, nonce) in nonces.iter().enumerate() {
             for index in 0..OFFER_LABEL_WINDOW {
-                incoming.insert(
+                labels.insert(
                     offer_label(nonce, index)?,
-                    IncomingOffer {
+                    LabelBinding::Offer {
                         parent_label: parent,
                         child_index,
                         index,
@@ -1144,17 +1167,24 @@ mod tests {
         // resolves that label back to the branch and the child.
         for (child_index, nonce) in nonces.iter().enumerate() {
             let answered = offer_label(nonce, 0)?;
-            let slot = incoming
+            let LabelBinding::Offer {
+                parent_label,
+                child_index: bound_child,
+                ..
+            } = *labels
                 .get(&answered)
-                .ok_or("a child's reserved label must resolve")?;
-            assert_eq!(slot.parent_label, parent);
-            assert_eq!(slot.child_index, child_index);
+                .ok_or("a child's reserved label must resolve")?
+            else {
+                return Err("a reserved offer label must bind to a child".into());
+            };
+            assert_eq!(parent_label, parent);
+            assert_eq!(bound_child, child_index);
         }
 
         // The labels are distinct across children and across offers, and no
         // two share a prefix the way a counter or an XOR of the branch token
         // would.
-        let mut all: Vec<[u8; 16]> = incoming.keys().copied().collect();
+        let mut all: Vec<[u8; 16]> = labels.keys().copied().collect();
         all.sort_unstable();
         let total = all.len();
         all.dedup();
@@ -1258,9 +1288,8 @@ mod tests {
         let parent = [0x01; 16];
         let child = [0x02; 16];
         let mut routes = HashMap::new();
-        let mut reverse = HashMap::new();
+        let mut labels = HashMap::new();
         let mut tentatives = HashMap::new();
-        let mut incoming = HashMap::new();
         routes.insert(
             parent,
             RelayRoute {
@@ -1280,22 +1309,26 @@ mod tests {
                 generation: 1,
             },
         );
-        reverse.insert(child, parent);
+        labels.insert(
+            child,
+            LabelBinding::Branch {
+                parent_label: parent,
+            },
+        );
         let mut states = RouteTable::default();
 
         cleanup_route(
             parent,
             &mut routes,
-            &mut reverse,
+            &mut labels,
             &mut tentatives,
-            &mut incoming,
             &mut states,
             Event::CloseAccepted,
             0,
         );
 
         assert!(routes.is_empty(), "parent mapping must be removed");
-        assert!(reverse.is_empty(), "child reverse mapping must be removed");
+        assert!(labels.is_empty(), "the child's label must be released");
     }
 
     #[test]
@@ -1305,9 +1338,8 @@ mod tests {
         // route that no longer exists.
         let parent = [0x11; 16];
         let mut routes = HashMap::new();
-        let mut reverse = HashMap::new();
+        let mut labels = HashMap::new();
         let mut tentatives = HashMap::new();
-        let mut incoming = HashMap::new();
         let children: Vec<RelayChild> = (0..3)
             .map(|index| RelayChild {
                 link_index: index,
@@ -1317,7 +1349,12 @@ mod tests {
             })
             .collect();
         for child in &children {
-            reverse.insert(child.child_label, parent);
+            labels.insert(
+                child.child_label,
+                LabelBinding::Branch {
+                    parent_label: parent,
+                },
+            );
         }
         routes.insert(
             parent,
@@ -1338,16 +1375,15 @@ mod tests {
         cleanup_route(
             parent,
             &mut routes,
-            &mut reverse,
+            &mut labels,
             &mut tentatives,
-            &mut incoming,
             &mut states,
             Event::CancelAccepted,
             0,
         );
 
         assert!(routes.is_empty());
-        assert!(reverse.is_empty(), "every child mapping is released");
+        assert!(labels.is_empty(), "every child label is released");
     }
 
     #[test]
@@ -1358,15 +1394,19 @@ mod tests {
         let lapsed = [0x21; 16];
         let live = [0x22; 16];
         let mut routes = HashMap::new();
-        let mut reverse = HashMap::new();
+        let mut labels = HashMap::new();
         let mut tentatives = HashMap::new();
-        let mut incoming = HashMap::new();
         let mut states = RouteTable::default();
 
         for (label, child, deadline) in [(lapsed, [0x31_u8; 16], 100_u64), (live, [0x32; 16], 900)]
         {
             states.begin(label, 1, 0, deadline)?;
-            reverse.insert(child, label);
+            labels.insert(
+                child,
+                LabelBinding::Branch {
+                    parent_label: label,
+                },
+            );
             routes.insert(
                 label,
                 RelayRoute {
@@ -1389,35 +1429,21 @@ mod tests {
         }
 
         assert_eq!(
-            reclaim_expired(
-                500,
-                &mut routes,
-                &mut reverse,
-                &mut tentatives,
-                &mut incoming,
-                &mut states,
-            ),
+            reclaim_expired(500, &mut routes, &mut labels, &mut tentatives, &mut states,),
             1
         );
         assert!(!routes.contains_key(&lapsed), "the lapsed branch is gone");
         assert!(routes.contains_key(&live), "the live branch is untouched");
         assert!(
-            !reverse.contains_key(&[0x31; 16]),
-            "its child mapping goes with it"
+            !labels.contains_key(&[0x31; 16]),
+            "its child label goes with it"
         );
         assert_eq!(states.live_routes(), 1);
 
         // A second sweep at the same instant is a no-op, so running it every
         // iteration costs nothing.
         assert_eq!(
-            reclaim_expired(
-                500,
-                &mut routes,
-                &mut reverse,
-                &mut tentatives,
-                &mut incoming,
-                &mut states,
-            ),
+            reclaim_expired(500, &mut routes, &mut labels, &mut tentatives, &mut states,),
             0
         );
         Ok(())
@@ -1426,23 +1452,22 @@ mod tests {
     #[test]
     fn cleanup_route_is_idempotent_for_unknown_labels() {
         let mut routes: HashMap<[u8; 16], RelayRoute> = HashMap::new();
-        let mut reverse: HashMap<[u8; 16], [u8; 16]> = HashMap::new();
+        // Every label this relay can resolve, of either kind.
+        let mut labels: HashMap<[u8; 16], LabelBinding> = HashMap::new();
         let mut tentatives: HashMap<[u8; 16], TentativeOffer> = HashMap::new();
-        let mut incoming: HashMap<[u8; 16], IncomingOffer> = HashMap::new();
         let mut states = RouteTable::default();
 
         cleanup_route(
             [0xff; 16],
             &mut routes,
-            &mut reverse,
+            &mut labels,
             &mut tentatives,
-            &mut incoming,
             &mut states,
             Event::CloseAccepted,
             0,
         );
 
         assert!(routes.is_empty());
-        assert!(reverse.is_empty());
+        assert!(labels.is_empty());
     }
 }
