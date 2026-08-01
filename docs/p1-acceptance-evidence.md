@@ -63,6 +63,12 @@ These are recorded rather than claimed as passing.
    reaching C1 takes two explicit choices, and the retired C1 v1 and disabled
    C2 k=2 suites stay refused on every profile.
 
+## v1.5 is history
+
+Stated plainly, because the retention could be misread as v1.5 remaining a
+co-equal profile: it does not. v1.6 is the profile the implementation speaks
+and the one this document is evidence for.
+
 ## What retaining v1.5 does and does not mean
 
 The binaries implement **v1.6 only**. `DISCOVER` gained a 32-byte routing

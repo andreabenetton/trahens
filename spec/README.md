@@ -2,7 +2,18 @@
 
 # Specifications
 
-## Active frozen P1 profile
+## Active P1 profile (v1.6)
+
+v1.6 is the profile the implementation speaks. **v1.5 is history**: it is
+retained, still regenerates from its own generators, and is not spoken by any
+binary here. `DISCOVER` differs by 32 bytes between the two, so they do not
+interoperate (`docs/adr/0040-routing-nonce-split.md`).
+
+Files below carry `v1.5` in their names where that revision froze them and
+v1.6 did not change their content; the registry and conformance vectors exist
+in both revisions, and the v1.6 ones are authoritative.
+
+## Frozen component specifications
 
 - [`core-v1.5.md`](core-v1.5.md) — mandatory interoperability semantics and evidence boundary.
 - [`protocol-registry-v1.5.json`](protocol-registry-v1.5.json) — normative IDs, widths, limits, byte order, domains, and protection classes.

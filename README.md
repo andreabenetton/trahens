@@ -6,7 +6,15 @@ More precisely, and this is the description to use in preference to any shorter 
 
 ## Status
 
-The active specification is **Trahens Core v1.5**, the frozen P1 interoperability revision composed of:
+The active specification is **Trahens Core v1.6**. **v1.5 is history.** v1.6
+separated the suite-independent routing nonce from the eligibility field, which
+added 32 bytes to `DISCOVER`, so a v1.5 encoding does not decode here and a
+v1.5 peer will not interoperate (ADR 0040). The v1.5 registry, vectors and
+corpus are kept and still regenerate from their generators, so that profile
+stays reproducible for anyone checking against it; the binaries do not speak
+it.
+
+v1.6 is composed of:
 
 - **U1** - branch-local representation replacement and conditional passive unlinkability;
 - **E1** - deterministic event and route-state lifecycle;
@@ -18,7 +26,7 @@ The active specification is **Trahens Core v1.5**, the frozen P1 interoperabilit
 - **T3** - equal-budget multi-link route classification, correlated background traffic, boundary-phase measurement, and active probing;
 - **T4** - deterministic packet-event emulation with heterogeneous clocks, jitter, shared bottlenecks, route churn, partial observation, open-world classification, and bounded selective delay.
 
-> **System-level anonymity boundary.** Core v1.5 is not a complete endpoint-anonymity system. R1 removes endpoint-specific selectors from route discovery, but an authorized initiator still needs a private descriptor lookup and distribution mechanism. Until D1 or an equivalent independently reviewed directory profile exists, directory enumeration, lookup correlation, and directory--gateway collusion remain load-bearing unsolved problems.
+> **System-level anonymity boundary.** Core v1.6 is not a complete endpoint-anonymity system. R1 removes endpoint-specific selectors from route discovery, but an authorized initiator still needs a private descriptor lookup and distribution mechanism. Until D1 or an equivalent independently reviewed directory profile exists, directory enumeration, lookup correlation, and directory--gateway collusion remain load-bearing unsolved problems.
 
 Endpoint-specific material is absent from active `DISCOVER` messages. A destination issues a random, short-lived capability, registers its commitment at selected rendezvous gateways, and privately distributes a descriptor to an authorized initiator. Discovery returns authenticated gateway candidates. After `COMMIT` and `READY`, the initiator presents the capability through the active route; the gateway atomically consumes it and starts the local rendezvous procedure.
 
@@ -53,7 +61,7 @@ Research-only providers remain executable and fail closed:
 The reply path now uses independent first-hop reply keys, multiplicative `ristretto255` blinding factors, nested ChaCha20-Poly1305 encryption, Ed25519 candidate authentication, and one RFC 5869-style Extract-then-Expand schedule. Multiplicative blinding gives an exact uniform public-key distribution after one honest relay. Full reply-layer unlinkability remains conditional on key privacy and independent review of the complete composition.
 
 
-## v1.5 P1 implementation
+## v1.6 P1 implementation
 
 The frozen registry in `spec/protocol-registry-v1.5.json` generates Python, Rust, and Markdown constants. C1 v1 suite `0x0001` is retired; C1 v2 is `0x0003`. Canonical M2 vectors are produced by an independent manual encoder that reads only the registry. Three Rust executables use UDP, fixed 1,052-byte W2 cells, bounded T1 recovery, fixed T2 scheduling, typed route state, atomic R1 redemption, and zeroizing secret wrappers.
 

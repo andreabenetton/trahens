@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Trahens is a research protocol for privacy-enabled route discovery in decentralized path-aware networks. The active frozen profile is **Core v1.5 (P1)**. It is not a complete endpoint-anonymity system — private directory (D1), global-observer traffic-flow theorems, and production implementations are explicitly out of scope.
+Trahens is a research protocol for privacy-enabled route discovery in decentralized path-aware networks. The active profile is **Core v1.6 (P1)**; v1.5 is history and its files are retained only so that profile stays reproducible. It is not a complete endpoint-anonymity system — private directory (D1), global-observer traffic-flow theorems, and production implementations are explicitly out of scope.
 
 ## Commands
 
@@ -83,14 +83,14 @@ The protocol is built from named profiles that stack on each other. Working top-
 - **C2 k=2 audit (`0x7f02`)** — disabled transcription experiment; full rerandomization fails closed (`simulator/trahens_crypto/c2_klinear.py`).
 - **C1 v1 (`0x0001`)** — retired; MUST be rejected.
 
-Suite IDs and all numeric constants are generated from the single source of truth: `spec/protocol-registry-v1.5.json`. Regenerate derived files with `make registry`.
+Suite IDs and all numeric constants are generated from the single source of truth: `spec/protocol-registry-v1.6.json`. The v1.5 registry is historical and regenerates its own markdown only. Regenerate derived files with `make registry`.
 
 ### Repository layout
 
 | Path | Role |
 |---|---|
 | `spec/core-v1.5.md` | Normative semantics and evidence boundary |
-| `spec/protocol-registry-v1.5.json` | Single source of truth for all IDs, widths, and limits |
+| `spec/protocol-registry-v1.6.json` | Single source of truth for all IDs, widths, and limits |
 | `spec/p1-prototype-profile-v1.5.md` | P1 acceptance gate and claim boundary |
 | `simulator/trahens_sim/` | Python deterministic protocol models |
 | `simulator/trahens_crypto/` | Crypto providers (C1, C2-ideal, C2-k2, ristretto, tagging) |
