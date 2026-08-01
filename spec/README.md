@@ -4,25 +4,39 @@
 
 ## Active P1 profile (v1.6)
 
-v1.6 is the profile the implementation speaks. **v1.5 is history**: it is
-retained, still regenerates from its own generators, and is not spoken by any
-binary here. `DISCOVER` differs by 32 bytes between the two, so they do not
-interoperate (`docs/adr/0040-routing-nonce-split.md`).
+v1.6 is the profile the implementation speaks. `DISCOVER` differs by 32 bytes
+from v1.5, so the two do not interoperate
+(`../docs/adr/0040-routing-nonce-split.md`).
 
-Files below carry `v1.5` in their names where that revision froze them and
-v1.6 did not change their content; the registry and conformance vectors exist
-in both revisions, and the v1.6 ones are authoritative.
+- [`core-v1.6.md`](core-v1.6.md) — mandatory interoperability semantics and evidence boundary.
+- [`protocol-registry-v1.6.json`](protocol-registry-v1.6.json) — normative IDs, widths, limits, byte order, domains, and protection classes.
+- [`protocol-registry-v1.6.md`](protocol-registry-v1.6.md) — generated human-readable registry.
+- [`p1-prototype-profile-v1.6.md`](p1-prototype-profile-v1.6.md) — executables, Linux harness, fuzzing, metrics, and acceptance gate.
+- [`messages-v1.6.md`](messages-v1.6.md), [`state-machines-v1.6.md`](state-machines-v1.6.md), [`invariants-v1.6.md`](invariants-v1.6.md), and [`resource-accounting-v1.6.md`](resource-accounting-v1.6.md) — P1 message roles, typed lifecycle, safety invariants, and concrete ceilings.
+- `p1-conformance-vectors-v1.6.json` and `p1-conformance-corpus-v1.6.bin` — canonical and noncanonical encodings.
 
-## Frozen component specifications
+The mandatory v1.6 path is U1 + E1 + R1 + M2 + W2 + T1 + fixed T2/P1. Adaptive
+T2 and C1 eligibility are selectable experimental profiles with their own CI
+gates and their own narrower claims. T3/T4 remain analysis profiles. D1 remains
+a non-normative private-directory dependency.
 
-- [`core-v1.5.md`](core-v1.5.md) — mandatory interoperability semantics and evidence boundary.
-- [`protocol-registry-v1.5.json`](protocol-registry-v1.5.json) — normative IDs, widths, limits, byte order, domains, and protection classes.
-- [`protocol-registry-v1.5.md`](protocol-registry-v1.5.md) — generated human-readable registry.
-- [`p1-prototype-profile-v1.5.md`](p1-prototype-profile-v1.5.md) — executables, Linux harness, fuzzing, metrics, and acceptance gate.
-- [`messages-v1.5.md`](messages-v1.5.md), [`state-machines-v1.5.md`](state-machines-v1.5.md), [`invariants-v1.5.md`](invariants-v1.5.md), and [`resource-accounting-v1.5.md`](resource-accounting-v1.5.md) — P1 message roles, typed lifecycle, safety invariants, and concrete ceilings.
-- [`rendezvous-capability-r1.md`](rendezvous-capability-r1.md), [`message-codec-m2.md`](message-codec-m2.md), [`wire-cell-w2.md`](wire-cell-w2.md), [`transport-profile-t1.md`](transport-profile-t1.md), and [`transport-profile-t2.md`](transport-profile-t2.md) — bound component profiles.
+## Component profiles
 
-The mandatory v1.5 path is U1 + E1 + R1 + M2 + W2 + T1 + fixed T2/P1. Adaptive T2 and T3/T4 remain experimental analysis profiles. D1 remains a non-normative private-directory dependency.
+These filenames carry no revision, so each always describes the **active**
+profile rather than the revision it was introduced in. A change here applies to
+v1.6; the frozen v1.5 documents below are not retrospectively edited.
+
+- [`rendezvous-capability-r1.md`](rendezvous-capability-r1.md), [`message-codec-m2.md`](message-codec-m2.md), [`wire-cell-w2.md`](wire-cell-w2.md), [`transport-profile-t1.md`](transport-profile-t1.md), [`transport-profile-t2.md`](transport-profile-t2.md), [`event-lifecycle-profile-e1.md`](event-lifecycle-profile-e1.md), and [`eligibility-suite-interface-v1.md`](eligibility-suite-interface-v1.md).
+
+## Historical: v1.5 and earlier
+
+**v1.5 is history.** Its files are retained and still regenerate from their own
+generators, so anyone checking an implementation against that profile can, but
+no binary in this repository speaks it.
+
+- [`core-v1.5.md`](core-v1.5.md), [`messages-v1.5.md`](messages-v1.5.md), [`state-machines-v1.5.md`](state-machines-v1.5.md), [`invariants-v1.5.md`](invariants-v1.5.md), [`resource-accounting-v1.5.md`](resource-accounting-v1.5.md), [`p1-prototype-profile-v1.5.md`](p1-prototype-profile-v1.5.md).
+- `protocol-registry-v1.5.json`, `protocol-registry-v1.5.md`, `p1-conformance-vectors-v1.5.json`, `p1-conformance-corpus-v1.5.bin`.
+- Earlier revisions: `core-v1.4.1.md`, `core-v0.*.md`, and the other superseded documents in this directory.
 
 ## Cryptographic profiles
 

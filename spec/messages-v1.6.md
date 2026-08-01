@@ -15,13 +15,15 @@
 | COMMIT | forward | select tentative route | end-to-end proof |
 | READY | reverse | confirm activation | end-to-end proof |
 | CANCEL | either | advisory teardown | end-to-end or empty protected reason |
-| ABORT | either | failure teardown | end-to-end or empty protected reason |
+| ABORT | either | failure teardown | empty protected reason |
 | CLOSE | either | orderly teardown | end-to-end reason |
 | RENDEZVOUS_OPEN | forward | redeem R1 capability | pseudonym and capability end-to-end encrypted |
 | RENDEZVOUS_RESULT | reverse | redemption result | end-to-end status |
 | DATA | either | bidirectional route data | direction, sequence, and payload end-to-end encrypted |
 
-The stable IDs are generated in `protocol-registry-v1.5.md`. All messages use suite R1 `0x0101` in the mandatory P1 flow.
+The stable IDs are generated in `protocol-registry-v1.6.md`. All messages use suite R1 `0x0101` in the mandatory P1 flow; on the experimental C1 profile they use `0x0003`, since the envelope names the suite whose eligibility field it carries.
+
+ABORT is sent by a node that cannot honour a COMMIT — it cannot reserve route capacity, or the COMMIT names no live tentative mapping. It carries no sealed reason: the sender holds no route secret for either end, and a uniform failure class means the message type is the whole signal. CANCEL remains advisory and CLOSE orderly.
 
 ## M2 common prefix
 
@@ -46,13 +48,16 @@ branch_token:16
 hop_remaining:u8
 fanout_class:u8
 expiry_class:u8
-options:u8          # P1 relay depth on forwarded messages
+depth:u8            # P1 relay depth on forwarded messages
+routing_nonce:32    # suite-independent; binds the candidate chain and keys offer labels
 reply_public_key:32
 field_length:minimal-varuint
 r1_discovery_nonce:32
 ```
 
-Branch token, reply public key, and discovery nonce MUST be non-zero/canonical. `options` MUST NOT exceed the candidate-layer limit.
+Branch token, reply public key, and routing nonce MUST be non-zero/canonical, and the eligibility field MUST match the width the active suite fixes. `depth` MUST NOT exceed the candidate-layer limit.
+
+The routing nonce and the eligibility field are separate since v1.6: route discovery reads only the former, so a suite may size the latter freely (ADR 0040).
 
 ## CANDIDATE body
 
