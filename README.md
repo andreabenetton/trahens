@@ -1,82 +1,183 @@
 # Trahens
 
-Trahens is a research protocol for privacy-enabled route discovery in decentralized and path-aware networks. The repository develops a bounded, executable control-plane core before attempting a complete routing architecture.
+Trahens is a research protocol for privacy-oriented route discovery in
+decentralized and path-aware networks. The repository develops a bounded,
+executable control-plane core before attempting a complete routing architecture.
 
-More precisely, and this is the description to use in preference to any shorter one: **Trahens is a privacy-oriented rendezvous route-discovery and control-plane protocol, not a complete anonymous communication network.** It is not a replacement for Tor, I2P, or a mixnet, and it does not compete with them: those systems assume an IP substrate and a public relay directory, and they carry anonymity claims Trahens does not make. What Trahens contributes is the control plane — bounded discovery, hop-local state, and capability-based rendezvous — with endpoint anonymity still depending on a private directory that does not yet exist.
+The description to prefer over shorter summaries is:
+
+> **Trahens is a privacy-oriented rendezvous route-discovery and control-plane
+> protocol, not a complete anonymous communication network.**
+
+It is not a replacement for Tor, I2P, or a mixnet. Those systems assume an IP
+substrate and a relay-discovery model and make anonymity claims Trahens does not
+make. Trahens contributes bounded route discovery, hop-local state,
+capability-based rendezvous, and explicit evidence boundaries.
 
 ## Status
 
-The active specification is **Trahens Core v1.6**. **v1.5 is history.** v1.6
-separated the suite-independent routing nonce from the eligibility field, which
-added 32 bytes to `DISCOVER`, so a v1.5 encoding does not decode here and a
-v1.5 peer will not interoperate (ADR 0040). The v1.5 registry, vectors and
-corpus are kept and still regenerate from their generators, so that profile
-stays reproducible for anyone checking against it; the binaries do not speak
+The active specification is **Trahens Core v1.6**, registry **1.6.1**.
+**v1.5 is history.**
+
+v1.6 separated the suite-independent routing nonce from the suite-sized
+eligibility field. This added 32 bytes to `DISCOVER`, so v1.5 and v1.6 do not
+interoperate. The v1.5 registry, vectors, corpus, and generated Markdown remain
+only so that historical profile stays reproducible; no current binary speaks
 it.
 
-v1.6 is composed of:
+The active profile stack is:
 
-- **U1** - branch-local representation replacement and conditional passive unlinkability;
-- **E1** - deterministic event and route-state lifecycle;
-- **R1** - generic rendezvous-gateway discovery with post-READY one-time capability redemption;
-- **M2** - canonical suite-agile variable-length logical messages;
-- **W2** - canonical 992-byte fragmentation and fixed-size authenticated adjacent-link records;
-- **T1** - hop-local selective recovery, fresh retry ciphertexts, and fragment interleaving;
-- **T2** - fixed or quantized-adaptive schedule epochs, authenticated rate negotiation, weighted fair service, and bounded overload behavior;
-- **T3** - equal-budget multi-link route classification, correlated background traffic, boundary-phase measurement, and active probing;
-- **T4** - deterministic packet-event emulation with heterogeneous clocks, jitter, shared bottlenecks, route churn, partial observation, open-world classification, and bounded selective delay.
+- **U1** — branch-local representation replacement and conditional passive unlinkability;
+- **E1** — deterministic route lifecycle, event precedence, and cleanup;
+- **R1** — generic rendezvous-gateway discovery with post-READY capability redemption;
+- **M2** — canonical suite-agile logical messages;
+- **W2** — fixed-size authenticated adjacent-link records and canonical fragmentation;
+- **T1** — hop-local selective recovery, fresh retry ciphertexts, and fragment interleaving;
+- **T2** — fixed or selectable quantized-adaptive scheduling, weighted fair service, and bounded overload behavior;
+- **T3** — equal-budget multi-link classification and active probing analysis;
+- **T4** — packet-event emulation with clocks, jitter, bottlenecks, churn, partial observation, and selective delay.
 
-> **System-level anonymity boundary.** Core v1.6 is not a complete endpoint-anonymity system. R1 removes endpoint-specific selectors from route discovery, but an authorized initiator still needs a private descriptor lookup and distribution mechanism. Until D1 or an equivalent independently reviewed directory profile exists, directory enumeration, lookup correlation, and directory--gateway collusion remain load-bearing unsolved problems.
+The mandatory interoperability path is U1 + E1 + R1 + M2 + W2 + T1 + fixed
+T2/P1. Adaptive T2 and C1 eligibility are selectable experimental profiles with
+their own narrower CI gates. T3 and T4 remain analysis profiles.
 
-Endpoint-specific material is absent from active `DISCOVER` messages. A destination issues a random, short-lived capability, registers its commitment at selected rendezvous gateways, and privately distributes a descriptor to an authorized initiator. Discovery returns authenticated gateway candidates. After `COMMIT` and `READY`, the initiator presents the capability through the active route; the gateway atomically consumes it and starts the local rendezvous procedure.
+## Complete-system boundaries
 
-This removes the active protocol's dependency on an unresolved receiver-anonymous universal-rerandomization construction, but relocates endpoint privacy to the directory and rendezvous infrastructure. `spec/private-directory-d1.md` now defines a non-normative strawman so the missing trust and leakage assumptions are explicit. The protocol still lacks an implemented private directory, protection from colluding directory and gateway operators, a global-observer traffic-flow theorem, production congestion control, and a production-ready implementation.
+Core v1.6 is not a complete endpoint-anonymity system.
+
+### Private directory
+
+R1 removes endpoint-specific selectors from mandatory route discovery, but an
+authorized initiator still needs a private descriptor. D1 is currently a
+non-normative strawman. Directory enumeration, lookup correlation, publication
+timing, authorization, and directory-gateway collusion remain unresolved.
+
+### Network bootstrap
+
+P1 starts only after an authenticated graph of adjacent nodes already exists.
+The current prototype receives peer addresses, node IDs, link epochs, and
+32-byte link base keys from configuration. It therefore demonstrates **route
+bootstrap**, not autonomous network bootstrap.
+
+The non-normative [`spec/network-bootstrap-b1.md`](spec/network-bootstrap-b1.md)
+records future work for peer discovery, admission, authenticated adjacent-link
+key exchange, profile negotiation, gateway-service advertisement, and
+directory-root discovery.
+
+### Traffic analysis
+
+Fixed-size records and local representation replacement do not establish
+global traffic-flow unlinkability. Fixed T2 supports only a narrow conditional
+slot-occupancy claim during an already established, non-overloaded schedule.
+Adaptive T2 exposes public cadence changes and makes no activity-presence claim.
+
+## Active discovery model
+
+A destination creates a short-lived one-time capability, registers its
+commitment at selected rendezvous gateways, and privately distributes a
+descriptor to an authorized initiator.
+
+A v1.6 `DISCOVER` contains:
+
+- a suite-independent 32-byte routing nonce;
+- a suite-sized eligibility field.
+
+The routing nonce binds the returned candidate chain and derives per-offer
+labels. Under mandatory R1 the eligibility field is another non-semantic nonce.
+Under experimental C1 v2 it is a 128-byte rerandomizable capsule.
+
+Every relay independently replaces the branch token, routing nonce,
+transmission identifier, reply-key representation, padding, sequence, and link
+ciphertext, and separately transforms the eligibility field according to the
+selected suite.
+
+Gateways return authenticated nested candidates. The initiator selects one
+exact chain, sends `COMMIT`, receives `READY`, and only then presents the
+one-time capability. The gateway atomically consumes the capability and begins
+the destination-side rendezvous. Losing fan-out subtrees receive `CANCEL`;
+failed commits receive `ABORT`; all terminal paths reclaim state locally.
 
 ## Current transport result
 
-M2 separates semantic encoding from observable framing. W2 defines canonical fragments. T1 carries fragments in 1,052-byte encrypted DATA records, returns same-size encrypted selective ACKs, and retransmits only missing fragments with fresh sequences, padding, tags, and ciphertexts.
+M2 separates semantic encoding from observable framing. W2 defines canonical
+fragments. T1 carries fragments in 1,052-byte encrypted DATA records, returns
+same-size encrypted selective ACKs, and retransmits only missing fragments with
+fresh sequences, padding, tags, and ciphertext.
 
-T2 adds three release modes:
+T2 exposes three release modes:
 
-- **fixed** - one public rate class for a declared interval, with idle slots filled by CHAFF;
-- **adaptive** - one class per epoch, changing by at most one class after encrypted OFFER/ACCEPT negotiation and hysteresis;
-- **work-conserving** - real cells only, retained as an efficiency and correlation baseline.
+- **fixed** — one public rate class, with idle slots filled by CHAFF;
+- **adaptive** — one class per epoch, moving by at most one adjacent class after authenticated negotiation and hysteresis;
+- **work-conserving** — real cells only, retained as an efficiency and correlation baseline.
 
-Weighted deficit round robin shares new-data service among backlogged link-local transmissions. Queue admission, schedule-control reserve, retry work, rate transitions, and overload cleanup are finite. Adaptive scheduling reduces reserved CHAFF, but public rate transitions reveal coarse queue activity and therefore carry no activity-presence privacy claim.
-
-The deterministic T2 model shows the intended trade-off. Under the equal-overload workload, adaptive scheduling delivered all admitted work with a peak queue of 98 cells and 370 chaff cells, whereas the fixed low-rate profile dropped 15% of offered work and the fixed high-rate profile emitted 1,600 chaff cells. A simple rate-class distinguisher had no advantage against fixed-high active versus idle traces, but perfect advantage against the evaluated adaptive traces.
-
-T3 removes total bandwidth as a trivial feature by assigning fixed, adaptive, and hybrid traces the same exact per-link super-epoch cell budget. It then evaluates four route labels over longer windows, independent and correlated background traffic, public transition phases, and a bounded active bandwidth probe. The fixed count trace is route-independent in this model. Adaptive traces remain strongly classifiable and probe-responsive. The hybrid profile uses a non-zero baseline, smoothing, independent decoy uplifts, and non-boundary transitions; it lowers the simple classifier and probe advantage but does not establish traffic-flow unlinkability. These are deterministic model results, not network benchmarks or anonymity proofs.
-
-T4 converts those public schedules into timestamped cell events. It adds finite access and shared-bottleneck serialization, bounded propagation jitter, independent observer-clock skew/offset/noise/quantisation, partial link observation, route churn, disjoint open-world unknown routes, and a bounded selective-delay probe. Every compared trace retains the exact public-cell budget. The transparent classifier reports monitored recall and unknown false-positive rate separately; the transparent delay detector is treated as a falsification tool, not a security proof.
+Queue admission, schedule-control reserve, retry work, rate transitions, and
+overload cleanup are finite. New fragmented transmissions share service through
+weighted deficit round robin.
 
 ## Cryptographic research status
 
-Research-only providers remain executable and fail closed:
+- **R1 (`0x0101`)** is the mandatory eligibility suite and carries no endpoint-specific material in `DISCOVER`.
+- **C1 v2 (`0x0003`)** is selectable only on the experimental profile. It is wired end to end and lets a recipient decide eligibility after relays rerandomize the capsule. Its algebraic ratio-tag negative control remains, and it must not be cited as evidence of endpoint anonymity.
+- **C1 v1 (`0x0001`)** is retired and rejected.
+- **Symbolic C2 (`0x0002`)** is an ideal research functionality, not a live network suite.
+- **C2 k=2 audit (`0x7f02`)** is disabled and rejected by live decoders.
 
-- **C1 v2 eligibility/reply research control (`0x0003`; retired `0x0001` is rejected)** reproduces a persistent algebraic ratio tag and remains a mandatory negative control. The retained reply-path components are specified separately in C1 profile version `0x02`.
-- **Symbolic C2 (`0x0002`)** is an ideal functionality used only to test composition and failure placement.
-- **C2 k=2 audit (`0x7f02`)** is a disabled transcription experiment. The project's literal mapping of an abstract related-group operation to ordinary finite-field representatives does not satisfy the required equation. This is treated as an interpretation/transcription failure, not as evidence of a defect in the cited CRYPTO 2021 construction.
-
-The reply path now uses independent first-hop reply keys, multiplicative `ristretto255` blinding factors, nested ChaCha20-Poly1305 encryption, Ed25519 candidate authentication, and one RFC 5869-style Extract-then-Expand schedule. Multiplicative blinding gives an exact uniform public-key distribution after one honest relay. Full reply-layer unlinkability remains conditional on key privacy and independent review of the complete composition.
-
+The reply path uses independent first-hop reply keys, multiplicative
+`ristretto255` blinding, nested ChaCha20-Poly1305 encryption, Ed25519 gateway
+authentication, and an Extract-then-Expand key schedule. Full reply-layer
+unlinkability remains conditional on key privacy and independent review of the
+complete multi-user composition.
 
 ## v1.6 P1 implementation
 
-The registry in `spec/protocol-registry-v1.6.json` generates Python, Rust, and Markdown constants. C1 v1 suite `0x0001` is retired; C1 v2 is `0x0003`. Canonical M2 vectors are produced by an independent manual encoder that reads only the registry. Three Rust executables use UDP, fixed 1,052-byte W2 cells, bounded T1 recovery, fixed T2 scheduling, typed route state, atomic R1 redemption, and zeroizing secret wrappers.
+The registry in `spec/protocol-registry-v1.6.json` generates Python, Rust, and
+Markdown constants. Independent generators produce canonical and noncanonical
+M2 vectors and the binary corpus.
 
-The namespace harness runs each process in its own Linux namespace with veth, `tc netem`, MTU control, packet capture, and aggregate metrics. The Rust and namespace gates are intentionally reported separately from Python/reference-model checks; source inclusion alone is not a passed interoperability result.
+Three Rust executables use ordinary UDP:
+
+```text
+trahens-endpoint
+trahens-relay
+trahens-rendezvous
+```
+
+They implement fixed 1,052-byte W2 records, bounded T1 recovery, selectable T2
+scheduling, typed route state, atomic R1 redemption, experimental C1
+eligibility, and zeroizing secret wrappers.
+
+The Linux namespace harness starts each process separately, builds veth
+networks, applies `tc netem`, captures every link, and checks packet size,
+cleanup, loss recovery, fan-out selection, fixed scheduling, adaptive
+negotiation, and C1 eligibility. A separate multi-host harness exists for
+future real-network evaluation.
+
+## Evidence boundary
+
+A passing harness demonstrates implementation coherence, tested
+interoperability, and bounded failure behavior for the tested topology and
+impairments. It does not prove anonymity, key privacy, directory privacy,
+autonomous bootstrap, resistance to a global observer, or production security.
+
+The highest-value remaining work is:
+
+1. a second independent implementation;
+2. independent cryptographic review of the reply path;
+3. a concrete and reviewed D1 directory;
+4. real multi-host measurement;
+5. independent traffic-analysis evaluation;
+6. explicit B1 identity, admission, and adjacent-link bootstrap profiles.
 
 ## Repository map
 
-- `paper/legacy/` - preserved historical source material.
-- `paper/rewrite/` - standalone current formal protocol paper.
-- `docs/` - strategy, threat model, ADRs, citation audit, cryptographic reviews, the independent review, and internal retrospective notes. `docs/review-log/` is not evidence of independent review rounds.
-- `spec/` - active and research specifications, invariants, transcripts, and vectors.
-- `simulator/` - deterministic discovery, lifecycle, transport, scheduling, and adversarial models.
-- `implementation/` - Rust UDP P1 nodes, bounded crates, conformance tests, fuzz targets, and Linux namespace harness.
-- `reports/` - reproducible experiment and conformance outputs.
-- `tools/` - repository checks, vector generators, exhaustive audits, and experiment runners.
+- `paper/legacy/` — preserved historical source material.
+- `paper/rewrite/` — current standalone protocol paper.
+- `docs/` — strategy, threat model, ADRs, reviews, implementation guidance, and evidence maps.
+- `spec/` — active, historical, experimental, and future-profile specifications and vectors.
+- `simulator/` — deterministic protocol and adversarial models.
+- `implementation/` — Rust nodes, crates, conformance tests, fuzz targets, and Linux harnesses.
+- `reports/` — reproducible experiment and conformance outputs.
+- `tools/` — registry/vector generators, repository checks, audits, and experiment runners.
 
 ## Quick start
 
@@ -95,13 +196,24 @@ make paper
 make check
 ```
 
-Start with [`spec/core-v1.6.md`](spec/core-v1.6.md), [`spec/p1-prototype-profile-v1.6.md`](spec/p1-prototype-profile-v1.6.md), [`spec/protocol-registry-v1.6.md`](spec/protocol-registry-v1.6.md), [`docs/implementing-trahens-p1.md`](docs/implementing-trahens-p1.md), [`spec/private-directory-d1.md`](spec/private-directory-d1.md), [`spec/rendezvous-capability-r1.md`](spec/rendezvous-capability-r1.md), [`spec/message-codec-m2.md`](spec/message-codec-m2.md), [`spec/wire-cell-w2.md`](spec/wire-cell-w2.md), [`spec/transport-profile-t1.md`](spec/transport-profile-t1.md), [`spec/transport-profile-t2.md`](spec/transport-profile-t2.md), [`spec/transport-profile-t3.md`](spec/transport-profile-t3.md), [`spec/transport-profile-t4.md`](spec/transport-profile-t4.md), [`docs/threat-model.md`](docs/threat-model.md), and [`docs/citation-audit.md`](docs/citation-audit.md).
+Start with:
 
+1. [`FORDUMMY.md`](FORDUMMY.md)
+2. [`spec/core-v1.6.md`](spec/core-v1.6.md)
+3. [`spec/p1-prototype-profile-v1.6.md`](spec/p1-prototype-profile-v1.6.md)
+4. [`spec/protocol-registry-v1.6.md`](spec/protocol-registry-v1.6.md)
+5. [`docs/implementing-trahens-p1.md`](docs/implementing-trahens-p1.md)
+6. [`docs/p1-acceptance-evidence.md`](docs/p1-acceptance-evidence.md)
+7. [`docs/threat-model.md`](docs/threat-model.md)
+8. [`spec/private-directory-d1.md`](spec/private-directory-d1.md)
+9. [`spec/network-bootstrap-b1.md`](spec/network-bootstrap-b1.md)
 
 ## Development-record note
 
-The version sequence and files under `docs/review-log/` are a compressed internal reconstruction of design decisions and deterministic experiments. They must not be cited as independent external review. See [`docs/development-record.md`](docs/development-record.md) and the separately stored [`30 July 2026 independent review`](docs/external-review-2026-07-30.md).
-
+The version sequence and files under `docs/review-log/` are a compressed
+internal reconstruction of design decisions and deterministic experiments.
+They must not be cited as independent external review. See
+`docs/development-record.md` and `docs/external-review-2026-07-30.md`.
 
 ## License
 
@@ -110,6 +222,8 @@ The version sequence and files under `docs/review-log/` are a compressed interna
 | Source code — `implementation/`, `simulator/`, `tools/`, `formal/` | [Apache License 2.0](LICENSE) |
 | Specifications, docs, and current paper — `spec/`, `docs/`, `paper/rewrite/` | [CC BY 4.0](LICENSE-CC-BY-4.0.txt) |
 
-Apache-2.0 covers the code for its explicit patent grant, which independent implementers of a cryptographic protocol need. CC BY 4.0 covers the written material so specifications and results can be redistributed with attribution.
+Apache-2.0 covers code and supplies an explicit patent grant for independent
+implementers. CC BY 4.0 covers the written specifications and results.
 
-`paper/legacy/` is excluded from both grants and remains confidential author material. See [`NOTICE.md`](NOTICE.md).
+`paper/legacy/` is excluded from both grants and remains confidential author
+material. See [`NOTICE.md`](NOTICE.md).

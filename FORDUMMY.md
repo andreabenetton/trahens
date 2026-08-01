@@ -2,39 +2,85 @@
 
 # Trahens, explained in plain language
 
-This document gives a high-level explanation of **Trahens Core v1.5 and its P1 prototype**. It is intended for readers who understand ordinary networking ideas but do not want to begin with cryptographic notation, packet layouts, or state-machine specifications.
+This document explains **Trahens Core v1.6 and its P1 prototype** without
+requiring the reader to begin with cryptographic notation, packet layouts, or
+state-machine specifications.
 
-Trahens is still a research project. It is best described as:
+Trahens is still a research project. The most accurate short description is:
 
-> **A privacy-oriented rendezvous route-discovery and control-plane protocol for decentralized, path-aware networks.**
+> **Trahens is a privacy-oriented rendezvous route-discovery and control-plane
+> protocol for decentralized, path-aware networks.**
 
-It is **not** a complete anonymous communication network, and it is not a replacement for Tor, I2P, or a mixnet.
+It is not a complete anonymous communication network, and it is not a
+replacement for Tor, I2P, or a mixnet.
 
 ---
 
 ## 1. What problem is Trahens trying to solve?
 
-Before two machines can communicate, the network must normally discover where the destination is and how to reach it.
+Before two machines can communicate, a network normally has to discover where
+the destination is and how to reach it.
 
-That discovery process can leak important information:
+That discovery process can leak information such as:
 
 - who is looking for whom;
-- where a destination is located in the network;
-- which intermediate nodes form the route;
-- identifiers that remain the same across several links;
-- timing and traffic patterns that help an observer correlate the route.
+- where a destination is located;
+- which relays form the path;
+- identifiers copied across several links;
+- timing and traffic patterns that allow different links to be correlated.
 
-Trahens tries to build a route without putting a destination address or another stable destination-specific selector into the active discovery message.
+Trahens tries to construct a route without putting a destination address or
+another stable destination-specific selector into the mandatory active
+`DISCOVER` message.
 
 The basic objective is:
 
-> Find a usable path to a rendezvous gateway while ensuring that each relay sees only the information it needs for its own adjacent links.
+> Find a usable path to a rendezvous gateway while ensuring that every relay
+> sees only the information required for its own adjacent links.
 
-The endpoint-specific operation happens later, after the route has been selected and authenticated.
+The endpoint-specific operation happens only after one route has been selected
+and authenticated.
 
 ---
 
-## 2. The main participants
+## 2. What must already exist?
+
+Trahens P1 does **not** currently create a network from nothing.
+
+Before P1 starts, the following must already exist:
+
+- UDP or equivalent underlay connectivity between adjacent nodes;
+- the address of each adjacent peer;
+- an authenticated adjacent-link key and link epoch;
+- a configured graph of endpoints, relays, and gateways;
+- a destination registration at one or more gateways;
+- a private descriptor known to the authorized initiator.
+
+The current Rust prototype receives peer addresses, node IDs, epochs, and
+32-byte base keys from command-line configuration. The test harness creates the
+network namespaces, veth links, routes, and keys before starting the nodes.
+
+That is **static network configuration**, not autonomous Trahens network
+bootstrap.
+
+A future non-normative design, [`spec/network-bootstrap-b1.md`](spec/network-bootstrap-b1.md),
+records how peer discovery, admission, authenticated key exchange, profile
+negotiation, gateway-service advertisement, and directory-root discovery could
+be added without mixing them into P1.
+
+The intended separation is:
+
+```text
+underlay and authenticated adjacent links
+                    ↓
+          Trahens P1 route discovery
+                    ↓
+       rendezvous and protected data use
+```
+
+---
+
+## 3. The main participants
 
 ### Initiator
 
@@ -42,100 +88,144 @@ The node that wants to establish a route.
 
 ### Relay
 
-An intermediate node that forwards discovery and control messages. A relay knows its adjacent peers and its own local mapping, but should not learn the complete route.
+An intermediate node that forwards discovery and control messages. A relay
+knows its adjacent peers and its own local mappings, but should not learn the
+complete route.
 
 ### Rendezvous gateway
 
-A gateway that can accept a valid one-time capability and begin the destination-side rendezvous procedure.
-
-The discovery process searches for suitable gateways rather than directly searching for the destination.
+A gateway that can return a route candidate and, after route activation, accept
+a valid one-time capability for a destination-side rendezvous.
 
 ### Destination
 
 The endpoint or service the initiator ultimately wants to reach.
 
-Before discovery, the destination prepares short-lived capability material and registers commitments at selected rendezvous gateways.
+Before discovery, the destination creates short-lived capability material and
+registers commitments at selected gateways.
 
 ### Private directory
 
-A mechanism through which an authorized initiator obtains the private descriptor needed to contact the destination.
+A mechanism through which an authorized initiator obtains the private
+descriptor needed to contact the destination.
 
-This is a critical part of a complete system, but it is **not yet implemented as a production component**. The experimental D1 document describes a possible direction and makes the missing assumptions explicit.
+This is a necessary part of a complete system, but it is not yet implemented as
+a production component. D1 is only a non-normative design direction.
 
 ---
 
-## 3. A postal analogy
+## 4. A postal analogy
 
-Imagine that Alice wants to reach Bob without writing “Bob” on a postcard that every sorting office can read.
+Imagine that Alice wants to reach Bob without writing “Bob” on a postcard that
+every sorting office can read.
 
 Instead:
 
 1. Bob privately gives Alice a short-lived, single-use collection ticket.
-2. Bob has previously arranged for selected collection offices to recognize a commitment to that ticket.
-3. Alice sends a generic request asking, “Which collection office can help me?”
-4. Each sorting office replaces the local tracking number before forwarding the request.
+2. Bob arranges for selected collection offices to recognize a commitment to
+   that ticket.
+3. Alice sends a bounded request asking which suitable office can help.
+4. Every sorting office replaces its local tracking information before
+   forwarding the request.
 5. Several collection offices may return sealed offers.
-6. Alice checks the offers, chooses one exact route, and cancels the others.
-7. Only after the chosen route is active does Alice present Bob's private ticket inside the protected route.
-8. The collection office consumes the ticket once and begins the final rendezvous procedure.
+6. Alice checks the offers, selects one exact path, and cancels the others.
+7. Only after that path is ready does Alice present Bob's ticket inside the
+   protected route.
+8. The selected collection office consumes the ticket once and begins the final
+   rendezvous.
 
-The analogy is incomplete because real network observers can also study timing, direction, congestion, and packet counts. Trahens explicitly does not claim that the envelope analogy hides all of those signals.
+The analogy is incomplete because real observers can also study timing,
+direction, congestion, packet counts, and who is physically adjacent. Trahens
+does not claim that sealed envelopes hide all of those signals.
 
 ---
 
-## 4. The protocol, step by step
+## 5. What the destination prepares
 
-## Step 0: The destination prepares rendezvous material
-
-Before the initiator starts route discovery, the destination:
+Before the initiator starts P1 discovery, the destination:
 
 1. creates a random, short-lived, one-time capability;
-2. registers a commitment to that capability at one or more rendezvous gateways;
-3. privately gives an authorized initiator a descriptor containing the information needed later.
+2. registers a commitment to it at one or more rendezvous gateways;
+3. privately gives an authorized initiator a descriptor.
 
-The active route-discovery message does not contain the capability, its commitment, the destination address, or an endpoint handle.
+Under the mandatory R1 profile, the descriptor contains the capability,
+acceptable short-lived gateway pseudonyms, expiry information, and endpoint
+authentication material.
 
-This separation is important: Trahens P1 discovers a **gateway route**, while the private descriptor identifies the destination relationship outside the active discovery flood.
+The raw capability does not appear in `DISCOVER`, `CANDIDATE`, `COMMIT`, or
+`READY`.
 
-## Step 1: The initiator sends `DISCOVER`
+This means P1 discovers a **gateway route** first. It does not directly search
+for the destination.
 
-The initiator opens a discovery branch and sends a `DISCOVER` message to an adjacent relay.
+---
 
-The active R1 discovery contains, among other bounded fields:
+## 6. Step 1: the initiator sends `DISCOVER`
 
-- a temporary branch token;
-- limits for hop count, fan-out, and lifetime;
-- a temporary reply public key;
-- a fresh 32-byte discovery nonce.
+The initiator creates a bounded discovery branch and sends `DISCOVER` to one
+adjacent relay.
 
-It does **not** contain destination-specific material.
+A v1.6 `DISCOVER` contains two different per-hop values:
 
-## Step 2: Every relay replaces the local representation
+### Routing nonce
 
-When a relay forwards the discovery to a child link, it does not simply copy the incoming identifiers.
+A fresh non-zero 32-byte value used by route discovery itself.
 
-For every forwarded child, it independently replaces:
+It:
+
+- binds the returned candidate chain to the branch;
+- is replaced independently at every relay;
+- is used as secret input for deriving per-offer labels.
+
+### Eligibility field
+
+A separate value controlled by the selected eligibility suite.
+
+- Under mandatory **R1**, it is another fresh, non-semantic nonce.
+- Under experimental **C1 v2**, it is a 128-byte rerandomizable capsule intended
+  for a particular recipient.
+
+The routing nonce and eligibility field were one coupled value in v1.5. Core
+v1.6 separated them so route discovery always uses the fixed 32-byte routing
+nonce while an eligibility suite can use its own field width.
+
+The mandatory R1 `DISCOVER` contains no destination address, endpoint key,
+capability, capability commitment, or endpoint handle.
+
+---
+
+## 7. Step 2: every relay replaces local representations
+
+When a relay forwards a discovery to a child, it does not copy all incoming
+identifiers unchanged.
+
+For every child, it independently changes:
 
 - the branch token;
-- the discovery nonce;
+- the routing nonce;
 - the adjacent-link transmission identifier;
-- the reply-key representation, by applying a fresh blinding factor.
+- the reply-key representation, using a fresh blinding factor;
+- the eligibility field according to the selected suite;
+- link padding, sequence number, authentication tag, and ciphertext.
 
-The relay keeps only a bounded local mapping that lets it reverse the path later.
+For R1, the relay replaces the eligibility nonce with fresh randomness. For C1,
+it rerandomizes the capsule without deciding whether the gateway is the
+intended recipient.
 
-A simplified view is:
+The relay keeps only a bounded local mapping needed for the return path.
 
 ```text
 Initiator -- label A --> Relay 1 -- label B --> Relay 2 -- label C --> Gateway
 ```
 
-`A`, `B`, and `C` are not one globally visible route identifier. Each is meaningful only on its local hop.
+`A`, `B`, and `C` are not one network-wide route identifier. Each label is
+meaningful only on one adjacent hop.
 
-The same principle applies to transport recovery: fragment identifiers, ACK state, retry counters, and timers terminate at each adjacent link.
+---
 
-## Step 3: Discovery may fan out
+## 8. Step 3: discovery may fan out
 
-A relay can forward a discovery to several children, within strict limits.
+A relay may forward a discovery to several children, within strict limits.
 
 ```text
                          -> Gateway 1
@@ -143,62 +233,89 @@ Initiator -> Relay -> Relay
                          -> Gateway 2
 ```
 
-This can produce several candidate routes. Fan-out is bounded so a malicious peer cannot create unlimited branches or state.
+Several candidate routes may therefore return.
 
-## Step 4: Gateways return `CANDIDATE` offers
+Fan-out is bounded by registry limits so that a malicious peer cannot create
+unlimited branches, queue work, or route state.
 
-A rendezvous gateway that accepts the generic discovery creates a candidate offer.
+---
 
-The offer includes protected information such as:
+## 9. Step 4: gateways return `CANDIDATE` offers
 
-- gateway identity and pseudonym;
+A suitable rendezvous gateway creates a candidate offer.
+
+The protected gateway offer includes information such as:
+
+- gateway identity and short-lived pseudonym;
 - expiry time;
-- a route secret;
-- a commit challenge;
-- the final discovery nonce;
-- a signing key and signature.
+- route secret;
+- commit challenge;
+- final routing nonce;
+- signing public key and signature.
 
 The gateway encrypts the offer to the final blinded reply key.
 
-As the candidate travels back, every relay adds its own encrypted layer. These layers let the initiator verify that the nonce and reply-key transformations form one continuous route.
+As the candidate travels back, every relay wraps it in another authenticated
+encrypted layer. Each layer records the parent and child routing nonces and the
+reply-key transformation for that hop.
 
-An intermediate relay cannot open the complete end-to-end gateway offer.
+The initiator can verify the complete chain. Intermediate relays cannot open
+the final gateway offer.
 
-## Step 5: The initiator validates and selects one candidate
+The v1.6 candidate chain binds the **routing nonce chain**. It does not bind the
+eligibility field end to end; that field is transformed hop by hop and protected
+on each adjacent W2 link. A future eligibility suite requiring end-to-end field
+binding must define it itself.
 
-The initiator opens the nested candidate layers and checks:
+---
 
-- that the number and order of layers are valid;
-- that every discovery-nonce replacement connects correctly to the next layer;
-- that the reply-key blinding chain is valid;
-- that the gateway signature is valid;
-- that the offer has not expired;
-- that no unexpected or noncanonical data is present.
+## 10. Step 5: the initiator validates and selects one candidate
 
-The initiator can receive several valid candidates and choose one according to local policy.
+For every candidate, the initiator checks:
 
-Trahens uses a distinct derived offer label for each returned candidate. This matters under fan-out: `COMMIT` must identify the exact candidate chain selected by the initiator, not merely the larger branch through which several candidates arrived.
+- the number and order of layers;
+- continuity of the routing-nonce replacements;
+- the reply-key blinding chain;
+- the gateway signature;
+- expiry;
+- canonical encoding and absence of extra data;
+- whether the gateway pseudonym is acceptable under the private descriptor.
 
-## Step 6: The initiator sends `COMMIT`
+The initiator chooses one candidate according to local policy.
 
-The initiator sends a `COMMIT` addressed to the selected offer label.
+Every returned offer has a distinct label derived from the child routing nonce.
+This allows `COMMIT` to name one exact route chain even when several offers came
+back through the same larger branch.
 
-The commit proves possession of the route secret and commit challenge contained in the protected gateway offer.
+---
 
-Each relay:
+## 11. Step 6: the initiator sends `COMMIT`
 
-1. resolves the incoming offer label to one child;
+The initiator sends `COMMIT` using the selected offer label.
+
+The message proves possession of the route secret and challenge contained in
+the protected gateway offer.
+
+Every relay:
+
+1. resolves the offer label to one child;
 2. activates that child as the selected path;
-3. forwards the commit using the child's local label;
+3. forwards the commit using the child's local selector;
 4. sends `CANCEL` to losing sibling subtrees.
 
-The losing branches stop rather than remaining active until timeout.
+A losing subtree exits cleanly instead of running until expiry.
 
-## Step 7: The gateway sends `READY`
+If a relay cannot honor a commit because state or capacity has disappeared, it
+returns `ABORT` rather than silently making the initiator wait for a timeout.
 
-After validating the commit, the rendezvous gateway returns an authenticated `READY` message.
+---
 
-The route is now committed and authenticated, but endpoint-specific capability use still has not occurred.
+## 12. Step 7: the gateway sends `READY`
+
+After validating the commit, the gateway returns an authenticated `READY`.
+
+The route is now selected and authenticated, but the destination capability has
+still not been presented.
 
 The simplified lifecycle is:
 
@@ -206,28 +323,35 @@ The simplified lifecycle is:
 DISCOVERING -> CANDIDATE -> COMMITTED -> READY -> OPEN -> RECLAIMED
 ```
 
-Only defined events can move a route from one phase to another.
+Only defined events can move a route between phases.
 
-## Step 8: The initiator presents the one-time capability
+---
 
-After `READY`, the initiator sends the destination capability through the active protected route.
+## 13. Step 8: the initiator presents the one-time capability
 
-The gateway checks that the capability is:
+After `READY`, the initiator sends the destination capability through the
+active protected route.
 
-- valid for this gateway and pseudonym;
+The gateway checks that it is:
+
+- registered at this gateway;
+- valid for the expected pseudonym;
 - not expired;
-- not previously used;
-- associated with a registered commitment.
+- not previously used.
 
 Capability consumption is atomic: at most one redemption succeeds.
 
-After successful redemption, the route enters `OPEN`, and the gateway starts the local rendezvous procedure.
+After successful redemption, the route enters `OPEN`, and the gateway starts
+the destination-side rendezvous procedure.
 
-## Step 9: Data exchange and cleanup
+---
 
-The P1 prototype can exchange protected data through the active route. When the exchange finishes, `CLOSE` reclaims the route.
+## 14. Step 9: data exchange and cleanup
 
-The route is also reclaimed after:
+The P1 prototype can exchange protected data over the open route.
+
+When communication finishes, `CLOSE` reclaims the route. State is also
+reclaimed after:
 
 - cancellation;
 - abort;
@@ -240,35 +364,41 @@ Cleanup is local and does not require the remote peer to cooperate.
 
 ---
 
-## 5. How packets travel between adjacent nodes
+## 15. How messages travel between adjacent nodes
 
-Trahens separates the meaning of a message from how it appears on one physical link.
+Trahens separates the meaning of a message from how that message appears on one
+physical link.
 
 ### M2: logical messages
 
-M2 defines canonical encodings for messages such as:
+M2 defines canonical encodings for operations such as:
 
 - `DISCOVER`;
 - `CANDIDATE`;
 - `COMMIT`;
 - `READY`;
-- capability presentation and rendezvous opening;
+- `RENDEZVOUS_OPEN` and its result;
 - `DATA`;
 - `CLOSE`, `CANCEL`, and `ABORT`.
 
-“Canonical” means there is one valid byte encoding for a value. Alternative, ambiguous, oversized, or malformed encodings are rejected.
+Canonical means there is one permitted byte encoding for each value. Ambiguous,
+oversized, nonminimal, malformed, or trailing encodings are rejected.
 
-### W2: fixed-size adjacent-link records
+### W2: fixed-size link records
 
 Every P1 UDP datagram emitted on an adjacent link is exactly **1,052 bytes**.
 
-Only the link epoch and sequence number are public. The rest of the record is encrypted and authenticated between adjacent peers.
+Only the link epoch and sequence number are public. The rest of the record is
+encrypted and authenticated between adjacent peers.
 
-A passive observer can still see that a record was sent, when it was sent, in which direction, and between which adjacent nodes. The observer should not be able to distinguish whether the encrypted record contains data, an ACK, a schedule control, or chaff merely from its size.
+An observer can still see that a record was sent, when it was sent, its
+direction, and the adjacent nodes involved. The observer should not distinguish
+DATA, ACK, schedule control, and chaff merely from packet length.
 
 ### T1: hop-local fragmentation and recovery
 
-A logical M2 message may require several cells. T1 fragments it and recovers loss separately on each adjacent link.
+A logical M2 message may require several cells. T1 fragments it and recovers
+loss independently on each adjacent link.
 
 T1 uses:
 
@@ -276,209 +406,241 @@ T1 uses:
 - retransmission of only missing fragments;
 - bounded retry rounds;
 - interleaving between transmissions;
-- fresh sequence numbers, padding, authentication tags, and ciphertext for retries.
+- fresh sequence numbers, padding, tags, and ciphertext for every retry.
 
-An end-to-end transmission identifier is not copied across relays. Each hop has its own recovery state.
+Transmission identifiers and recovery state are not copied end to end.
 
 ### T2: scheduling and chaff
 
-The mandatory P1 profile uses a fixed schedule:
+The mandatory profile uses a fixed schedule:
 
 ```text
 16 cells every 200 milliseconds
 one cell every 12.5 milliseconds
 ```
 
-If no real cell is ready, the sender emits `CHAFF` so the scheduled position is still occupied.
+When no real cell is ready, the sender emits `CHAFF` so the scheduled position
+is still occupied.
 
-This supports a narrow claim: inside an already established, non-overloaded fixed schedule, an observer sees the same cell positions whether a slot carries data, ACK, control, or chaff.
+This supports a narrow claim: within an already established, non-overloaded
+fixed schedule, every slot is occupied regardless of whether it carries data,
+ACK, control, or chaff.
 
-Adaptive T2 is implemented as an experimental mode. It can negotiate a higher or lower rate by one adjacent rate class at an epoch boundary. It saves chaff under variable load, but the visible rate changes reveal coarse queue activity. Adaptive mode therefore makes no activity-presence privacy claim.
+Experimental adaptive T2 can negotiate a neighboring rate class at epoch
+boundaries. It reduces chaff under changing load, but visible cadence changes
+reveal coarse queue activity. It therefore makes no fixed-trace or
+activity-presence claim.
 
 ---
 
-## 6. What privacy mechanisms are being used?
+## 16. What privacy mechanisms are used?
 
-### No stable cross-hop routing label
+### No stable cross-hop route label
 
-A route is not represented by one identifier repeated on every link. Each relay creates local labels and mappings.
+Each relay creates local labels and mappings instead of forwarding one global
+route identifier.
 
-### Discovery nonces are replaced at every hop
+### Routing nonces are replaced at every hop
 
-The nonce sent to a child is independent of the nonce received from the parent. The candidate return proves that the replacement chain is internally consistent.
+The child routing nonce is independent of the parent routing nonce. The return
+chain proves that the candidate followed the branch opened by the initiator.
 
 ### Reply keys are blinded
 
-Each relay changes the reply public key using fresh multiplicative blinding. Candidate layers are encrypted so only the initiator can open the full return chain.
+Every relay changes the reply public key using fresh multiplicative blinding.
+Only the initiator can open the complete nested return chain.
 
-### Destination-specific material is delayed
+### Eligibility is separated from routing
 
-The discovery flood searches for generic rendezvous gateways. The one-time destination capability is presented only after the selected route reaches `READY`.
+The eligibility suite can replace an R1 nonce or rerandomize a C1 capsule without
+changing the routing-nonce machinery.
 
-### Fixed-size records
+### Destination-specific capability use is delayed
 
-DATA, ACK, schedule control, and chaff use the same outer record size.
+The mandatory discovery flood looks for generic rendezvous gateways. The
+one-time destination capability is presented only after `READY`.
 
-### Optional fixed cadence
+### Fixed-size records and optional fixed cadence
 
-The mandatory profile fills idle schedule positions with chaff, preventing the mere presence of a cell in a scheduled position from proving that real traffic existed.
+DATA, ACK, schedule control, and chaff use the same outer size. The mandatory
+fixed profile also fills idle schedule positions.
 
 ### Bounded local state
 
-Every branch, route, fragment context, queue reservation, retry sequence, timer, and capability has a finite limit and lifetime.
+Every branch, route, candidate, fragment context, queue reservation, retry,
+timer, capability, and failed-redemption budget is finite.
 
-Resource safety is part of the security design: a privacy mechanism that allows unlimited remote allocation would become a denial-of-service mechanism.
+A privacy mechanism that permits unlimited remote allocation would become a
+denial-of-service mechanism.
 
 ---
 
-## 7. What Trahens does not hide
+## 17. What Trahens does not hide
 
 Trahens does not claim to make communication invisible.
 
-Depending on the observer, the following may still be visible or inferable:
+Depending on the observer, the following may remain visible or inferable:
 
-- which nodes are adjacent;
-- packet direction and timing;
+- physical or underlay adjacency;
+- packet timing and direction;
 - schedule start and stop;
-- fixed or adaptive public cadence;
+- fixed or adaptive cadence;
 - route setup completion;
-- congestion, loss, retries, or overload failure;
-- correlations caused by propagation delay or shared bottlenecks;
+- congestion, loss, retries, or overload;
+- correlations caused by propagation delay and shared bottlenecks;
 - gateway registration and redemption timing at a compromised gateway;
-- private-directory lookups at a compromised directory.
+- private-directory publication and lookup timing;
+- bootstrap seed access and node admission events;
+- stable node identities chosen by a future bootstrap profile.
 
-A global observer that sees many links may correlate timing and volume across the route. Fixed-size cells and local label replacement do not by themselves defeat that attack.
+A global observer may correlate traffic across several links. Fixed-size cells,
+local labels, and nonce replacement do not by themselves defeat that attack.
 
-Trahens therefore makes **no global traffic-flow unlinkability claim**.
+Trahens makes **no global traffic-flow unlinkability claim**.
 
 ---
 
-## 8. Why the private directory is important
+## 18. Why the private directory is still important
 
-Removing the destination from `DISCOVER` does not remove the need for the initiator to learn something about the destination.
+Removing the destination from mandatory `DISCOVER` does not remove the need for
+an authorized initiator to learn about the destination.
 
-That information must arrive through a private descriptor-distribution mechanism. A complete system must answer questions such as:
+A complete directory design must answer questions such as:
 
-- Can an attacker enumerate descriptors?
-- Can the directory correlate a user with a lookup?
-- What happens if a directory and a gateway collude?
-- How are clients authorized without creating stable identifiers?
+- Can descriptors be enumerated?
+- Can a directory correlate a client with a lookup?
+- What happens when directory and gateway operators collude?
+- How are clients authorized without static public handles?
 - How are gateway pseudonyms rotated and revoked?
+- How are directory roots discovered and authenticated?
 
-Until D1 or another independently reviewed directory design exists, Trahens should not be described as a complete endpoint-anonymity system.
+D1 sketches PIR and oblivious-relay approaches but remains non-normative and
+unimplemented.
 
 ---
 
-## 9. What is mandatory and what is experimental?
+## 19. Mandatory and experimental parts
 
-### Frozen P1 interoperability path
+### Mandatory v1.6 interoperability path
 
-The mandatory v1.5 path contains:
-
-- **U1** — local representation replacement;
+- **U1** — branch-local representation replacement;
 - **E1** — route lifecycle and cleanup;
-- **R1** — generic gateway discovery and one-time capability redemption;
+- **R1** — generic gateway discovery and capability redemption;
 - **M2** — canonical logical messages;
 - **W2** — fixed-size authenticated adjacent-link records;
 - **T1** — hop-local fragmentation and selective recovery;
 - **fixed T2** — constant scheduled cell positions with chaff.
 
-### Experimental or analytical work
-
-The following are not required for v1.5 interoperability:
+### Selectable experimental profiles
 
 - adaptive T2 scheduling;
-- T3 multi-link count-trace analysis;
-- T4 packet-event and active-probe analysis;
-- D1 private-directory design;
-- C1 and C2 research cryptographic providers.
+- C1 v2 eligibility.
 
-C1 is implemented for research and vector comparison but is deliberately blocked from the live P1 network path. The active P1 discovery semantics are built around R1's 32-byte nonce and cannot be converted to C1 by changing a configuration flag.
+C1 is now a live experimental path in v1.6. It requires an explicit
+experimental profile and an explicit suite choice. It must not be cited as
+proof of endpoint anonymity, and its algebraic tagging negative control remains
+relevant.
+
+### Analysis and future profiles
+
+- T3 and T4 traffic-analysis experiments;
+- D1 private-directory design;
+- B1 network bootstrap design;
+- symbolic and disabled C2 research constructions.
 
 ---
 
-## 10. How strong is the current evidence?
+## 20. How strong is the current evidence?
 
 The repository includes:
 
-- a normative protocol registry;
-- independently generated positive and negative message vectors;
-- Rust implementations of endpoint, relay, and rendezvous gateway;
+- a normative v1.6 registry;
+- canonical and noncanonical conformance vectors;
+- Rust endpoint, relay, and rendezvous executables;
 - fuzz targets;
 - Linux network-namespace topologies;
-- packet loss, delay, reordering, and burst-loss tests;
-- packet capture validation;
-- fan-out candidate-selection and cancellation tests;
-- measurements for queues, retries, cleanup, schedule timing, and state limits.
+- loss, delay, reordering, duplication, and burst-loss tests;
+- packet-capture validation;
+- fan-out selection and cancellation tests;
+- separate fixed, adaptive, and C1 test arms;
+- multi-host and external-implementation harness entry points;
+- measurements for queues, retries, cleanup, schedules, and state ceilings.
 
-This evidence demonstrates that the tested implementation can interoperate and fail in bounded ways under the tested conditions.
-
-It does **not** prove:
+This shows implementation coherence under the tested conditions. It does not
+prove:
 
 - anonymity;
-- resistance to every traffic-analysis technique;
-- security against a global observer;
-- security of the complete directory and gateway system;
-- production performance or deployment stability;
+- security against every traffic-analysis attack;
+- resistance to a global observer;
+- private-directory security;
+- autonomous or private network bootstrap;
+- production performance and operations;
 - security of the complete cryptographic composition.
 
-Independent implementations, cryptographic review, a concrete private directory, real multi-host testing, and independent traffic-analysis evaluation remain important milestones.
+Independent implementation, independent cryptographic review, real multi-host
+measurement, D1, and a reviewed B1 profile remain important milestones.
 
 ---
 
-## 11. A compact end-to-end picture
+## 21. Compact end-to-end picture
 
 ```text
-Before discovery
-----------------
+Before P1
+---------
+Operator / future B1             : establish authenticated adjacent links
 Destination -> selected gateways : register capability commitments
 Destination -> Initiator         : privately deliver descriptor/capability
 
 Route discovery
 ---------------
-Initiator -> Relays -> Gateways  : generic DISCOVER, no destination selector
-Gateways  -> Relays -> Initiator : signed, nested CANDIDATE offers
-Initiator                         : validate offers and select one
-Initiator -> selected path       : COMMIT
-Relays    -> losing subtrees     : CANCEL
-Gateway   -> Initiator           : READY
+Initiator -> Relays -> Gateways   : DISCOVER
+Relays                            : replace labels, routing nonces, reply keys,
+                                    link IDs and eligibility representations
+Gateways -> Relays -> Initiator   : signed, nested CANDIDATE offers
+Initiator                         : validate and select one exact chain
+Initiator -> selected path        : COMMIT
+Relays -> losing subtrees         : CANCEL
+Gateway -> Initiator              : READY
 
 Rendezvous and use
 ------------------
-Initiator -> Gateway             : present one-time capability
+Initiator -> Gateway              : present one-time capability
 Gateway                           : atomically redeem and open route
-Initiator <-> Gateway/path       : protected data exchange
-Either side                      : CLOSE and reclaim all state
+Initiator <-> Gateway/path        : protected data exchange
+Either side                       : CLOSE and reclaim all state
 ```
 
 ---
 
-## 12. The simplest accurate description
+## 22. The simplest accurate description
 
-Trahens does not attempt to hide every aspect of communication.
+Trahens attempts to make route discovery more private and more disciplined by
+ensuring that:
 
-It attempts to make route discovery more private and more disciplined by ensuring that:
-
-- discovery is aimed at generic rendezvous gateways rather than a named destination;
-- each relay replaces identifiers and cryptographic representations locally;
-- the initiator selects and authenticates one exact returned route;
+- mandatory discovery is aimed at generic rendezvous gateways rather than a
+  named destination;
+- each relay replaces routing and transport representations locally;
+- routing state is separated from suite-specific eligibility information;
+- the initiator validates and selects one exact returned chain;
 - endpoint-specific capability use happens only after that route is ready;
-- packets have a fixed outer size and can follow a fixed cadence;
-- transport recovery and state remain local, finite, and reclaimable;
-- the protocol states clearly which anonymity problems remain unsolved.
+- adjacent-link records have a fixed outer size and can follow a fixed cadence;
+- reliability, state, and cleanup remain local and bounded;
+- the protocol states which privacy, directory, bootstrap, and cryptographic
+  questions remain unresolved.
 
-That is the current contribution of Trahens Core v1.5.
+That is the current contribution of Trahens Core v1.6.
 
 ---
 
 ## Further reading
 
-Start with these documents after this overview:
-
-1. [`README.md`](README.md) — project status and evidence boundary.
-2. [`spec/core-v1.5.md`](spec/core-v1.5.md) — frozen interoperability profile.
-3. [`spec/p1-prototype-profile-v1.5.md`](spec/p1-prototype-profile-v1.5.md) — executable P1 acceptance profile.
-4. [`docs/threat-model.md`](docs/threat-model.md) — adversaries, claims, and exclusions.
-5. [`spec/rendezvous-capability-r1.md`](spec/rendezvous-capability-r1.md) — gateway discovery and capability redemption.
-6. [`spec/private-directory-d1.md`](spec/private-directory-d1.md) — non-normative private-directory direction.
-7. [`spec/transport-profile-t1.md`](spec/transport-profile-t1.md) and [`spec/transport-profile-t2.md`](spec/transport-profile-t2.md) — recovery, scheduling, and overload behavior.
+1. [`README.md`](README.md) — current status and claim boundary.
+2. [`spec/core-v1.6.md`](spec/core-v1.6.md) — active interoperability profile.
+3. [`spec/p1-prototype-profile-v1.6.md`](spec/p1-prototype-profile-v1.6.md) — runtime acceptance gate.
+4. [`docs/implementing-trahens-p1.md`](docs/implementing-trahens-p1.md) — second-implementation guide.
+5. [`docs/threat-model.md`](docs/threat-model.md) — adversaries and exclusions.
+6. [`spec/rendezvous-capability-r1.md`](spec/rendezvous-capability-r1.md) — mandatory rendezvous model.
+7. [`spec/private-directory-d1.md`](spec/private-directory-d1.md) — directory strawman.
+8. [`spec/network-bootstrap-b1.md`](spec/network-bootstrap-b1.md) — future bootstrap architecture.
+9. [`spec/transport-profile-t1.md`](spec/transport-profile-t1.md) and
+   [`spec/transport-profile-t2.md`](spec/transport-profile-t2.md) — recovery and scheduling.
