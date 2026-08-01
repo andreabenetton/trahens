@@ -1,5 +1,52 @@
 # Changelog
 
+## Registry 1.6.1 - 2026-08-01
+
+- Added error identifier 14, `not_eligible`. A C1 gateway previously recorded
+  both a malformed capsule and a well-formed one addressed elsewhere as
+  `malformed`, so an operator could not tell a peer sending rubbish from C1
+  working as intended. The eligibility interface splits the two questions:
+  `Accept` is well-formedness, `IsEligible` is the recipient's decision. Both
+  outcomes remain externally indistinguishable; only local counters differ.
+- No wire encoding change. The conformance corpus is byte-identical and only
+  the embedded registry version moved.
+
+## Registry 1.6.0 - 2026-08-01
+
+- **Wire change. v1.5 is superseded and is now history.** `DISCOVER` gained a
+  suite-independent 32-byte `routing_nonce` alongside an `eligibility_field`
+  the active suite sizes, so a v1.5 encoding does not decode under v1.6 and the
+  two profiles do not interoperate.
+- Before this, one 32-byte value was the eligibility field, the binding of each
+  link in the returned candidate chain, and the key per-offer labels were
+  derived from. Two of those three belong to route discovery, so every suite
+  was forced to be 32 bytes. `docs/adr/0040-routing-nonce-split.md` records the
+  decision, including that the candidate chain no longer covers the eligibility
+  field and why that is defensible.
+- Candidate layers do **not** grow: `RelayLayer` carries routing nonces at the
+  same 32 bytes it previously carried discovery nonces.
+- C1 v2 became selectable on an experimental profile and is wired end to end;
+  adaptive T2 became selectable with `--schedule-profile`. Each has its own CI
+  gate and neither may be cited as evidence for a mandatory gate line.
+- `Discover.options` is renamed `depth`, which is what it always carried. No
+  byte layout change.
+- The v1.5 registry, vectors and corpus are retained and still regenerate from
+  their own generators, so that profile stays reproducible. No binary here
+  speaks it.
+
+## Registry 1.5.2 - 2026-07-31
+
+- Pinned `expiry_class` to `limits.expiry_class_p1`. The field had been parsed,
+  bounded only away from zero, and then never read: deadlines come from the
+  phase and the registry's per-class TTLs. Both codecs now reject any other
+  value as malformed rather than accepting and ignoring it.
+- Conformance corpus grew from 22 to 32 vectors, adding ten negatives for the
+  new rule. A rule with no vector is one an implementer can miss.
+- Regenerating found that `generate_t1_vectors.py` had been emitting a
+  CANDIDATE with expiry class 3 — a published vector encoding a message no
+  conforming node may send. Its digest changes; the fragment counts and lengths
+  the T1 headers pin do not.
+
 ## Registry 1.5.1 - 2026-07-30
 
 - Amended the frozen registry with constants that normative mandatory-limit

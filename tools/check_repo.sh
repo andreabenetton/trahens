@@ -350,7 +350,55 @@ if $paper_search 'Nexus|original paper|2020|draft iteration|Core v0\.|W1|M1' pap
 fi
 rm -f /tmp/trahens-paper-forbidden.txt
 
+# Documentation staleness. A profile revision leaves prose behind, and an audit
+# found several documents still calling the superseded profile active — one of
+# them CLAUDE.md, which steers later work. These checks exist so the next drift
+# fails here instead of needing another manual sweep.
+python3 - <<'STALE'
+import json, pathlib, re, sys
+
+root = pathlib.Path(".")
+registry = json.loads((root / "spec/protocol-registry-v1.6.json").read_text())
+version = registry["registry_version"]
+series = ".".join(version.split(".")[:2])
+
+problems = []
+
+# The changelog must name the registry the tree actually ships.
+changelog = (root / "CHANGELOG.md").read_text()
+if version not in changelog:
+    problems.append(f"CHANGELOG.md does not mention registry {version}")
+
+# No live document may present a superseded profile as the active one. Files
+# that are themselves historical, or that discuss the supersession, are exempt.
+live = [
+    root / "README.md",
+    root / "CLAUDE.md",
+    root / "ROADMAP.md",
+    root / "spec/README.md",
+    root / "docs/implementing-trahens-p1.md",
+    root / "docs/p1-acceptance-evidence.md",
+]
+claim = re.compile(r"active[^.\n]{0,40}v1\.5|v1\.5[^.\n]{0,20}is (the )?active", re.I)
+for path in live:
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        if claim.search(line):
+            problems.append(f"{path}:{number}: calls v1.5 active")
+
+# The active series must actually have a core spec, which is the gap that
+# prompted this check.
+if not (root / f"spec/core-v{series}.md").exists():
+    problems.append(f"registry is {version} but spec/core-v{series}.md does not exist")
+
+if problems:
+    print("\n".join(problems), file=sys.stderr)
+    raise SystemExit("documentation is stale relative to the registry")
+print(f"documentation matches registry {version}")
+STALE
+
 bash -n implementation/harness/netns-p1.sh
+bash -n implementation/harness/multihost-p1.sh
+bash -n implementation/harness/netns-fanout.sh
 python -m compileall -q tools
 
 if command -v cargo >/dev/null 2>&1; then
