@@ -22,6 +22,10 @@ SCENARIO=ok
 # fixed-trace claim is a claim about a constant cadence, so a link that
 # renegotiates its rate is outside it.
 ADAPTIVE=()
+# Interoperability mode: run a third-party initiator against our relays and
+# gateway. The foreign command receives exactly the arguments our own endpoint
+# does, so the CLI contract is the only thing it has to match beyond the wire.
+EXTERNAL_ENDPOINT=""
 
 while (($#)); do
   case "$1" in
@@ -38,6 +42,7 @@ while (($#)); do
     --bin-dir) BIN_DIR="$2"; shift 2 ;;
     --scenario) SCENARIO="$2"; shift 2 ;;
     --adaptive-t2) ADAPTIVE=(--adaptive-t2 1); shift ;;
+    --external-endpoint) EXTERNAL_ENDPOINT="$2"; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -251,8 +256,16 @@ for ((r=RELAYS; r>=1; r--)); do
 done
 
 sleep 0.2
+if [[ -n "$EXTERNAL_ENDPOINT" ]]; then
+  # Word-split deliberately: the caller supplies a command, possibly with
+  # arguments of its own, e.g. "python3 my_endpoint.py".
+  read -r -a ENDPOINT_CMD <<< "$EXTERNAL_ENDPOINT"
+  echo "interop: initiator is external: ${ENDPOINT_CMD[*]}"
+else
+  ENDPOINT_CMD=("$BIN_DIR/trahens-endpoint")
+fi
 run_node "${NAMES[0]}" endpoint -7 \
-  "$BIN_DIR/trahens-endpoint" \
+  "${ENDPOINT_CMD[@]}" \
   --id 1 --peer-id 2 --epoch "$EPOCH" \
   "${ADAPTIVE[@]}" \
   --bind "10.200.0.1:${PORT}" --peer "10.200.0.2:${PORT}" --key "$(key_for 0)" \
@@ -290,6 +303,10 @@ python3 - "$OUTPUT" <<'PY'
 import json, pathlib, sys
 root=pathlib.Path(sys.argv[1])
 files=list(root.glob('*.metrics.json'))
+# A third-party initiator is not required to emit our metrics format, so it
+# may contribute no file. Every node that does emit one must still show no
+# leaked state, and there must be at least one: a run where nothing reported
+# proves nothing.
 assert files, 'no process metrics'
 for path in files:
     value=json.loads(path.read_text())
