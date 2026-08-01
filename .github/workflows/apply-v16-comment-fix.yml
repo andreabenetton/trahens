@@ -1,7 +1,7 @@
 name: Apply v1.6 source comment corrections
 
 on:
-  pull_request_target:
+  pull_request:
     types:
       - opened
       - synchronize
