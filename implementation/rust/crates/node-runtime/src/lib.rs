@@ -37,6 +37,11 @@ pub struct LinkConfig {
     pub peer: SocketAddr,
     pub base_key: [u8; 32],
     pub epoch: u32,
+    /// Suite this link speaks. Chaff and SCHEDULE frames follow it, so a link
+    /// does not emit a mix an observer could separate: on the C1 profile,
+    /// R1-suited chaff among C1-suited data would be exactly the distinguisher
+    /// fixed-size cells exist to remove.
+    pub suite: [u8; 2],
     /// Negotiate a T2 rate class instead of holding the frozen fixed profile.
     ///
     /// Off by default and off in CI: the P1 fixed-trace claim is a claim about
@@ -495,7 +500,7 @@ fn run_link(
     // other. The lower node identifier takes that role; it is stable and both
     // ends compute it identically.
     let mut negotiation = RateNegotiation::new(
-        SUITE_R1,
+        config.suite,
         config.local_id < config.peer_id,
         T2_HYSTERESIS_EPOCHS,
     );
@@ -900,7 +905,7 @@ fn run_link(
                 retransmit_slots += 1;
                 (SlotClass::Retransmission, frame)
             } else {
-                match fresh_chaff(SUITE_R1) {
+                match fresh_chaff(config.suite) {
                     Ok(frame) => (SlotClass::Chaff, frame),
                     Err(_) => {
                         thread::sleep(Duration::from_millis(1));

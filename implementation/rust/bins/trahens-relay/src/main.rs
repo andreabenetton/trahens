@@ -281,6 +281,28 @@ fn run() -> Result<(), Box<dyn Error>> {
     let timeout_ms = args.u64_or("timeout-ms", 30_000)?;
     let metrics_path = args.optional("metrics", "relay-metrics.json").to_owned();
 
+    // Eligibility provider. r1 is the mandatory path; c1 is research and needs
+    // the experimental profile, so selecting it takes two explicit choices.
+    let suite_name = args.optional("eligibility-suite", "r1").to_owned();
+    let profile = if suite_name == "r1" {
+        Profile::Mandatory
+    } else {
+        Profile::Experimental
+    };
+    let eligibility_label = args.optional("eligibility-label", "trahens-c1").to_owned();
+    let eligibility: Box<dyn EligibilitySuite> = match suite_name.as_str() {
+        "r1" => Box::new(R1Suite),
+        "c1" => Box::new(C1Suite::relay()),
+        other => return Err(format!("unknown --eligibility-suite: {other}").into()),
+    };
+    let _ = &eligibility_label;
+    require_provider(profile, eligibility.as_ref())
+        .map_err(|_| "eligibility provider is not permitted on this profile")?;
+    // The envelope names the suite whose eligibility field it carries, which
+    // is what tells a decoder how to parse that field. Routing is
+    // suite-independent since v1.6, so only this follows the selection.
+    let wire_suite = eligibility.suite_id();
+
     let (event_sender, event_receiver) = event_channel();
     // One budget shared by the upstream link and every child: the node-global
     // cell ceiling is a property of the process, not of any one link.
@@ -293,6 +315,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             peer: args.socket("upstream-peer")?,
             base_key: parse_hex::<32>(args.required("upstream-key")?)?,
             epoch,
+            suite: wire_suite,
             adaptive,
         },
         event_sender.clone(),
@@ -323,6 +346,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     peer: args.socket(&format!("downstream-peer{suffix}"))?,
                     base_key: parse_hex::<32>(args.required(&format!("downstream-key{suffix}"))?)?,
                     epoch,
+                    suite: wire_suite,
                     adaptive,
                 },
                 event_sender.clone(),
@@ -346,27 +370,6 @@ fn run() -> Result<(), Box<dyn Error>> {
     // Checked rather than assumed: a research-only provider on the wire would
     // otherwise be a silent misconfiguration, with the run still looking
     // healthy. See ADR 0038 for why C1 is not one of the options.
-    // Eligibility provider. r1 is the mandatory path; c1 is research and needs
-    // the experimental profile, so selecting it takes two explicit choices.
-    let suite_name = args.optional("eligibility-suite", "r1").to_owned();
-    let profile = if suite_name == "r1" {
-        Profile::Mandatory
-    } else {
-        Profile::Experimental
-    };
-    let eligibility_label = args.optional("eligibility-label", "trahens-c1").to_owned();
-    let eligibility: Box<dyn EligibilitySuite> = match suite_name.as_str() {
-        "r1" => Box::new(R1Suite),
-        "c1" => Box::new(C1Suite::relay()),
-        other => return Err(format!("unknown --eligibility-suite: {other}").into()),
-    };
-    let _ = &eligibility_label;
-    require_provider(profile, eligibility.as_ref())
-        .map_err(|_| "eligibility provider is not permitted on this profile")?;
-    // The envelope names the suite whose eligibility field it carries, which
-    // is what tells a decoder how to parse that field. Routing is
-    // suite-independent since v1.6, so only this follows the selection.
-    let wire_suite = eligibility.suite_id();
     let mut admission = IngressAdmission::new();
     let clock = Clock::start();
     let deadline = clock.now_ms().saturating_add(timeout_ms);

@@ -184,24 +184,6 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let (event_sender, event_receiver) = event_channel();
-    let budget = NodeQueueBudget::new();
-    let link = spawn_link(
-        LinkConfig {
-            local_id: node_id,
-            peer_id,
-            bind: args.socket("bind")?,
-            peer: args.socket("peer")?,
-            base_key,
-            epoch,
-            adaptive,
-        },
-        event_sender,
-        budget.clone(),
-    )?;
-
-    // The initiator produces the eligibility field, so it selects a provider
-    // exactly as a relay does.
     // Eligibility provider. r1 is the mandatory path; c1 is research and needs
     // the experimental profile, so selecting it takes two explicit choices.
     let suite_name = args.optional("eligibility-suite", "r1").to_owned();
@@ -225,6 +207,26 @@ fn run() -> Result<(), Box<dyn Error>> {
     // is what tells a decoder how to parse that field. Routing is
     // suite-independent since v1.6, so only this follows the selection.
     let wire_suite = eligibility.suite_id();
+
+    let (event_sender, event_receiver) = event_channel();
+    let budget = NodeQueueBudget::new();
+    let link = spawn_link(
+        LinkConfig {
+            local_id: node_id,
+            peer_id,
+            bind: args.socket("bind")?,
+            peer: args.socket("peer")?,
+            base_key,
+            epoch,
+            suite: wire_suite,
+            adaptive,
+        },
+        event_sender,
+        budget.clone(),
+    )?;
+
+    // The initiator produces the eligibility field, so it selects a provider
+    // exactly as a relay does.
     let root_secret = SecretBytes(random_scalar()?);
     let reply_public_key = scalar_base(&root_secret.0)?;
     let rings = parse_rings(

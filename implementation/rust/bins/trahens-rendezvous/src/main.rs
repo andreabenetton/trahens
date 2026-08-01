@@ -208,6 +208,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             peer: args.socket("peer")?,
             base_key: parse_hex::<32>(args.required("key")?)?,
             epoch,
+            suite: wire_suite,
             adaptive,
         },
         event_sender,
