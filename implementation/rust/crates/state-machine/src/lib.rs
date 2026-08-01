@@ -47,16 +47,6 @@ pub enum Event {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Action {
-    StoreCandidate,
-    ReserveRoute,
-    ActivateRoute,
-    OpenRendezvous,
-    DeliverData,
-    ReclaimState,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StateError {
     Missing,
     InvalidTransition,
@@ -240,46 +230,47 @@ impl RouteTable {
     /// generation, which makes any timer queued against the previous deadline
     /// stale. `expire` always compares the current deadline, so a renewed
     /// route is never reclaimed early.
-    pub fn apply(
-        &mut self,
-        label: [u8; 16],
-        event: Event,
-        now_ms: u64,
-    ) -> Result<Action, StateError> {
+    pub fn apply(&mut self, label: [u8; 16], event: Event, now_ms: u64) -> Result<(), StateError> {
         if matches!(
             event,
             Event::CloseAccepted | Event::CancelAccepted | Event::Timeout
         ) {
-            return self.remove(label).map(|()| Action::ReclaimState);
+            // Reclaim the state.
+            return self.remove(label);
         }
         let state = self.routes.get_mut(&label).ok_or(StateError::Missing)?;
         let was_branch = matches!(state.phase, Phase::Discovering | Phase::Candidate);
-        let transition = match (state.phase, event) {
+        // Each arm is one E1 transition; the comment names the effect the
+        // specification gives it. That used to be an Action value returned to
+        // the caller, but no caller ever read one.
+        match (state.phase, event) {
+            // Store the candidate.
             (Phase::Discovering, Event::CandidateAccepted) => {
                 state.phase = Phase::Candidate;
-                Action::StoreCandidate
             }
             // Section 4: a relay creates a tentative mapping for every
             // CANDIDATE traversing it, and with fan-out several offers return
             // through one branch. A further offer is another mapping, not an
             // invalid transition, so it is stored idempotently and renews the
             // offer deadline.
-            (Phase::Candidate, Event::CandidateAccepted) => Action::StoreCandidate,
+            // Store a further candidate on the same branch.
+            (Phase::Candidate, Event::CandidateAccepted) => {}
+            // Reserve the route.
             (Phase::Candidate, Event::CommitAccepted) => {
                 state.phase = Phase::PendingReady;
-                Action::ReserveRoute
             }
+            // Activate the route.
             (Phase::PendingReady, Event::ReadyAccepted) => {
                 state.phase = Phase::Ready;
-                Action::ActivateRoute
             }
+            // Open the rendezvous.
             (Phase::Ready, Event::CapabilityAccepted) => {
                 state.phase = Phase::Open;
-                Action::OpenRendezvous
             }
-            (Phase::Open, Event::DataAccepted) => Action::DeliverData,
+            // Deliver application data.
+            (Phase::Open, Event::DataAccepted) => {}
             _ => return Err(StateError::InvalidTransition),
-        };
+        }
         state.generation = state.generation.saturating_add(1);
         state.expires_at_ms = now_ms.saturating_add(state.phase.lifetime_ms());
         let peer = state.peer;
@@ -290,7 +281,7 @@ impl RouteTable {
             drop_one(&mut self.peer_branches, peer);
         }
         self.observe_peaks();
-        Ok(transition)
+        Ok(())
     }
 
     /// Snapshot of peak occupancy across every bounded state class.
@@ -376,30 +367,23 @@ mod tests {
         let label = [1_u8; 16];
         let mut table = RouteTable::default();
         table.begin(label, 1, 0, 100)?;
+        for (event, phase) in [
+            (Event::CandidateAccepted, Phase::Candidate),
+            (Event::CommitAccepted, Phase::PendingReady),
+            (Event::ReadyAccepted, Phase::Ready),
+            (Event::CapabilityAccepted, Phase::Open),
+        ] {
+            table.apply(label, event, 0)?;
+            assert_eq!(table.get(&label).map(|route| route.phase), Some(phase));
+        }
+        // Data is delivered without moving the route on.
+        table.apply(label, Event::DataAccepted, 0)?;
         assert_eq!(
-            table.apply(label, Event::CandidateAccepted, 0)?,
-            Action::StoreCandidate
+            table.get(&label).map(|route| route.phase),
+            Some(Phase::Open)
         );
-        assert_eq!(
-            table.apply(label, Event::CommitAccepted, 0)?,
-            Action::ReserveRoute
-        );
-        assert_eq!(
-            table.apply(label, Event::ReadyAccepted, 0)?,
-            Action::ActivateRoute
-        );
-        assert_eq!(
-            table.apply(label, Event::CapabilityAccepted, 0)?,
-            Action::OpenRendezvous
-        );
-        assert_eq!(
-            table.apply(label, Event::DataAccepted, 0)?,
-            Action::DeliverData
-        );
-        assert_eq!(
-            table.apply(label, Event::CloseAccepted, 0)?,
-            Action::ReclaimState
-        );
+        // Closing reclaims it.
+        table.apply(label, Event::CloseAccepted, 0)?;
         assert_eq!(table.live_routes(), 0);
         Ok(())
     }
@@ -548,15 +532,8 @@ mod tests {
         let label = [10_u8; 16];
         let mut table = RouteTable::default();
         table.begin(label, 1, 0, 1_000)?;
-        assert_eq!(
-            table.apply(label, Event::CandidateAccepted, 0)?,
-            Action::StoreCandidate
-        );
-        assert_eq!(
-            table.apply(label, Event::CandidateAccepted, 5)?,
-            Action::StoreCandidate,
-            "a second offer on the same branch is stored, not rejected"
-        );
+        table.apply(label, Event::CandidateAccepted, 0)?;
+        table.apply(label, Event::CandidateAccepted, 5)?;
         let route = table.get(&label).ok_or(StateError::Missing)?;
         assert_eq!(route.phase, Phase::Candidate);
         assert_eq!(
