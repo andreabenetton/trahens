@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -93,6 +94,13 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
         self.assertIn("Bootstrap boundary", guide)
         self.assertIn("network-bootstrap-b1.md", guide)
         self.assertNotIn("vectors at registry 1.5.2", guide)
+
+    def test_package_metadata_matches_active_registry(self) -> None:
+        metadata = tomllib.loads(self.read("pyproject.toml"))["project"]
+
+        self.assertEqual(metadata["version"], self.version)
+        self.assertIn(f"Core v{self.series}", metadata["description"])
+        self.assertNotIn("v1.5 frozen", metadata["description"])
 
     def test_spec_index_prioritizes_active_corpus(self) -> None:
         index = self.read("spec/README.md")
