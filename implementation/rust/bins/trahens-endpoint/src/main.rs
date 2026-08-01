@@ -167,6 +167,10 @@ fn run() -> Result<(), Box<dyn Error>> {
     let timeout_ms = args.u64_or("timeout-ms", 20_000)?;
     let metrics_path = args.optional("metrics", "endpoint-metrics.json").to_owned();
     let epoch = args.u32("epoch")?;
+    // Experimental analysis profile, off by default: the P1 fixed-trace claim
+    // is a claim about a constant cadence, so a link that renegotiates its
+    // rate is outside it.
+    let adaptive = args.flag("adaptive-t2");
 
     let (event_sender, event_receiver) = event_channel();
     let budget = NodeQueueBudget::new();
@@ -178,6 +182,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             peer: args.socket("peer")?,
             base_key,
             epoch,
+            adaptive,
         },
         event_sender,
         budget.clone(),

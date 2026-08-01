@@ -6,13 +6,16 @@ pub mod p1;
 
 use codec_m2::{decode, encode, Envelope};
 use protocol_registry::{
-    BYTES_CELL_PAYLOAD, ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED,
+    BYTES_CELL_BODY, BYTES_CELL_PAYLOAD, ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED,
     ERROR_UNSUPPORTED_SUITE, FIXED_T2_ACK_RESERVE_PER_EPOCH, FIXED_T2_CELLS_PER_EPOCH,
     FIXED_T2_EPOCH_MS, FIXED_T2_QUEUE_CELLS_GLOBAL, FIXED_T2_QUEUE_CELLS_PER_PEER,
     FIXED_T2_RETRANSMIT_RESERVE_PER_EPOCH, LIMIT_MAX_T1_RETRIES, LIMIT_T1_ACK_DELAY_MAX_MS,
     LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS, SUITE_R1,
 };
-use scheduling_t2::{FixedSchedule, QueueBudget, Reservation, ScheduleMetrics, SlotClass};
+use scheduling_t2::{
+    decode_schedule_header, encode_schedule_header, FixedSchedule, QueueBudget, RateNegotiation,
+    Reservation, ScheduleAction, ScheduleFrame, ScheduleMetrics, SlotClass,
+};
 use std::collections::{HashMap, VecDeque};
 use std::io::ErrorKind;
 use std::net::{SocketAddr, UdpSocket};
@@ -33,6 +36,12 @@ pub struct LinkConfig {
     pub peer: SocketAddr,
     pub base_key: [u8; 32],
     pub epoch: u32,
+    /// Negotiate a T2 rate class instead of holding the frozen fixed profile.
+    ///
+    /// Off by default and off in CI: the P1 fixed-trace claim is a claim about
+    /// a constant cadence, so a link that changes rate is outside it. Adaptive
+    /// T2 is an experimental analysis profile, not part of the mandatory path.
+    pub adaptive: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -54,6 +63,8 @@ pub struct LinkMetrics {
     pub events_dropped: u64,
     /// Telemetry events discarded best effort. Observability only.
     pub telemetry_dropped: u64,
+    /// SCHEDULE cells emitted while negotiating a rate class.
+    pub schedule_cells: u64,
     pub reassembly: transport_t1::ReceiverMetrics,
     pub peak_queue_cells: usize,
     pub schedule: ScheduleMetrics,
@@ -452,6 +463,20 @@ impl EventSink {
     }
 }
 
+/// Epochs a link must hold a rate before proposing another change.
+const T2_HYSTERESIS_EPOCHS: u32 = 4;
+
+/// Pad a 32-byte SCHEDULE header out to a full cell body.
+///
+/// Every frame class is the same length on the wire, so a rate negotiation is
+/// indistinguishable from any other cell to a passive observer.
+fn schedule_cell(frame: &ScheduleFrame) -> Option<[u8; BYTES_CELL_BODY]> {
+    let header = encode_schedule_header(frame).ok()?;
+    let mut body = random_bytes::<BYTES_CELL_BODY>().ok()?;
+    body[..32].copy_from_slice(&header);
+    Some(body)
+}
+
 fn run_link(
     mut config: LinkConfig,
     socket: UdpSocket,
@@ -465,6 +490,16 @@ fn run_link(
     let mut sink = EventSink::new(events, lifecycle_lost);
     let origin = Instant::now();
     let mut schedule = FixedSchedule::new(origin);
+    // Only one end of a link proposes, so two peers cannot offer past each
+    // other. The lower node identifier takes that role; it is stable and both
+    // ends compute it identically.
+    let mut negotiation = RateNegotiation::new(
+        SUITE_R1,
+        config.local_id < config.peer_id,
+        T2_HYSTERESIS_EPOCHS,
+    );
+    let mut pending_schedule: Option<ScheduleFrame> = None;
+    let mut t2_epoch = 0_u32;
     // Randomized but bounded to the low 32 bits: the start stays
     // unpredictable while leaving 2^64 - 2^32 sequence numbers of headroom, so
     // the wrap guard below is unreachable in any real run. An unbounded random
@@ -586,6 +621,32 @@ fn run_link(
                     match open_record(&receive_key, config.epoch, &buffer[..length], &mut replay) {
                         Ok((_received_sequence, body)) => {
                             metrics.received_cells = metrics.received_cells.saturating_add(1);
+                            // A SCHEDULE cell carries the T2 profile byte where
+                            // a T1 frame carries its own, so the class is read
+                            // from the header rather than guessed.
+                            if body[0] == protocol_registry::SCHEDULE_PROFILE_T2 {
+                                let header = <[u8; 32]>::try_from(&body[..32]).ok();
+                                match header.map(|bytes| decode_schedule_header(&bytes)) {
+                                    Some(Ok(frame)) => {
+                                        if let Some(reply) = negotiation.on_frame(&frame, t2_epoch)
+                                        {
+                                            pending_schedule = Some(reply);
+                                        }
+                                        if schedule.set_rate_class(negotiation.current()).is_err() {
+                                            sink.report(LinkEvent::SecurityEvent {
+                                                peer_id: config.peer_id,
+                                                error_id: ERROR_MALFORMED,
+                                                detail: "t2_rate_class",
+                                            });
+                                        }
+                                    }
+                                    _ => {
+                                        metrics.malformed_cells =
+                                            metrics.malformed_cells.saturating_add(1);
+                                    }
+                                }
+                                continue;
+                            }
                             match decode_frame(&body) {
                                 Ok(Frame::Ack {
                                     transmission_id,
@@ -734,6 +795,45 @@ fn run_link(
 
         let now = Instant::now();
         if now >= schedule.next_deadline() {
+            // A queued reply, or a proposal this end decides to open, takes
+            // the slot ahead of the other classes: a negotiation is short,
+            // rate-limited by hysteresis, and stalls nothing if it waits.
+            if config.adaptive && pending_schedule.is_none() {
+                negotiation.expire_pending(t2_epoch);
+                // Backlog is the only signal a link has about its own
+                // pressure: a full queue asks for the next class up, a quiet
+                // one gives a class back.
+                let backlog = sender.queue_depth().saturating_add(ack_queue.len());
+                let target = if backlog >= schedule.cells_per_epoch() {
+                    negotiation.current().saturating_add(1)
+                } else if backlog == 0 {
+                    negotiation.current().saturating_sub(1)
+                } else {
+                    negotiation.current()
+                };
+                if let Some(id) = next_transmission_id() {
+                    pending_schedule = negotiation.offer(target, t2_epoch, id);
+                }
+            }
+            if let Some(frame) = pending_schedule.take() {
+                if let Some(body) = schedule_cell(&frame) {
+                    if let Ok(record) = seal_record(&send_key, config.epoch, sequence, &body) {
+                        if socket.send(&record).is_ok() {
+                            metrics.sent_cells = metrics.sent_cells.saturating_add(1);
+                            metrics.schedule_cells = metrics.schedule_cells.saturating_add(1);
+                        }
+                        sequence = sequence.saturating_add(1);
+                        // A negotiation cell occupies a slot like any other.
+                        schedule.advance_at(SlotClass::Chaff, Instant::now());
+                        slot_in_epoch += 1;
+                        if frame.action != ScheduleAction::Offer {
+                            let _ = schedule.set_rate_class(negotiation.current());
+                        }
+                        continue;
+                    }
+                }
+            }
+
             let ack_available = !ack_queue.is_empty();
             let take_ack = ack_available && ack_slots < FIXED_T2_ACK_RESERVE_PER_EPOCH;
             let take_retransmit =
@@ -817,10 +917,11 @@ fn run_link(
                     // stall is reported rather than absorbed as a burst.
                     schedule.advance_at(class, Instant::now());
                     slot_in_epoch += 1;
-                    if slot_in_epoch >= FIXED_T2_CELLS_PER_EPOCH {
+                    if slot_in_epoch >= schedule.cells_per_epoch() {
                         slot_in_epoch = 0;
                         ack_slots = 0;
                         retransmit_slots = 0;
+                        t2_epoch = t2_epoch.saturating_add(1);
                     }
                 }
                 Err(_) => {
@@ -1139,7 +1240,7 @@ pub fn write_link_metrics(
             output.push_str(",\n");
         }
         output.push_str(&format!(
-            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"queue_cells_rejected\":{},\"events_dropped\":{},\"telemetry_dropped\":{},\"duplicate_fragments\":{},\"capacity_drops\":{},\"metadata_failures\":{},\"peak_reassembly_messages\":{},\"peak_reassembly_bytes\":{},\"chaff_to_real_cell_ratio\":{:.4},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{},\"late_slots\":{},\"missed_slots\":{},\"worst_lateness_ms\":{},\"worst_jitter_us\":{},\"fixed_trace_valid\":{}}}",
+            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"queue_cells_rejected\":{},\"events_dropped\":{},\"telemetry_dropped\":{},\"schedule_cells\":{},\"rate_class_changes\":{},\"duplicate_fragments\":{},\"capacity_drops\":{},\"metadata_failures\":{},\"peak_reassembly_messages\":{},\"peak_reassembly_bytes\":{},\"chaff_to_real_cell_ratio\":{:.4},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{},\"late_slots\":{},\"missed_slots\":{},\"worst_lateness_ms\":{},\"worst_jitter_us\":{},\"fixed_trace_valid\":{}}}",
             metrics.sent_cells,
             metrics.received_cells,
             metrics.malformed_cells,
@@ -1152,6 +1253,8 @@ pub fn write_link_metrics(
             metrics.queue_cells_rejected,
             metrics.events_dropped,
             metrics.telemetry_dropped,
+            metrics.schedule_cells,
+            metrics.schedule.rate_class_changes,
             metrics.reassembly.duplicate_fragments,
             metrics.reassembly.capacity_drops,
             metrics.reassembly.metadata_failures,

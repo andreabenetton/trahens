@@ -30,13 +30,18 @@ executes it, so the claim rests on execution rather than on source presence.
 
 These are recorded rather than claimed as passing.
 
-1. **Adaptive T2 is codec-only.** The SCHEDULE frame, the rate menu, and
-   weighted DRR are implemented and tested as libraries, but no node
-   negotiates a rate class and the live slot selector still runs the fixed
-   profile, so the P1 fixed-trace claim is unchanged. The cell budget is no
-   longer in this category: every link now reserves a transmission's whole
-   fragment set against the per-peer and node-global ceilings before its first
-   emission.
+1. **Adaptive T2 is off the mandatory path by choice, not by omission.**
+   Nodes do negotiate a rate class when started with `--adaptive-t2`: one end
+   of each link proposes, steps are adjacent, hysteresis damps oscillation, and
+   the accepted class changes the live slot cadence. A local two-relay run
+   negotiates on every link and reports it as `schedule_cells` and
+   `rate_class_changes`.
+
+   It is off by default and never in CI, because the P1 fixed-trace claim is a
+   claim about a constant cadence and a link that renegotiates its rate is
+   outside it. On the default path every link still reports zero SCHEDULE
+   cells, zero rate changes, and a valid fixed trace. Weighted DRR remains
+   library-only: the fixed profile has one DATA class to serve.
 2. **C1 is library-only.** The URE capsule, endpoint identity, and eligibility
    provider exist so the published C1 vectors can be checked from Rust and so
    the suite interface has a second provider. C1 remains network-disabled per

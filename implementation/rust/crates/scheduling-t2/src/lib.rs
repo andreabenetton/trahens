@@ -31,6 +31,8 @@ pub struct ScheduleMetrics {
     pub missed_slots: u64,
     /// Worst single overrun observed, in milliseconds.
     pub worst_lateness_ms: u64,
+    /// Times the negotiated rate class changed on this link.
+    pub rate_class_changes: u64,
     /// Worst overrun *within* one slot interval, in microseconds.
     ///
     /// Reported separately because it is the part `fixed_trace_valid` does not
@@ -44,6 +46,7 @@ pub struct ScheduleMetrics {
 pub struct FixedSchedule {
     next: Instant,
     interval: Duration,
+    rate_class: u8,
     metrics: ScheduleMetrics,
 }
 
@@ -57,8 +60,46 @@ impl FixedSchedule {
         Self {
             next: origin,
             interval: Duration::from_micros(FIXED_T2_SLOT_INTERVAL_US as u64),
+            rate_class: default_rate_class(),
             metrics: ScheduleMetrics::default(),
         }
+    }
+
+    /// Rate class currently in force.
+    #[must_use]
+    pub fn rate_class(&self) -> u8 {
+        self.rate_class
+    }
+
+    /// Adopt a negotiated rate class from the menu.
+    ///
+    /// The epoch stays `FIXED_T2_EPOCH_MS`; only the number of slots in it
+    /// changes, so the link keeps emitting on a constant cadence and only the
+    /// cadence itself moves. Refuses a class outside the menu, and counts the
+    /// change so a run says how often its rate moved.
+    pub fn set_rate_class(&mut self, class: u8) -> Result<(), ScheduleError> {
+        let cells = *RATE_MENU_CELLS_PER_EPOCH
+            .get(usize::from(class))
+            .ok_or(ScheduleError::Malformed)?;
+        if cells == 0 {
+            return Err(ScheduleError::Malformed);
+        }
+        if class == self.rate_class {
+            return Ok(());
+        }
+        self.rate_class = class;
+        self.interval = Duration::from_micros((FIXED_T2_EPOCH_MS as u64 * 1_000) / cells as u64);
+        self.metrics.rate_class_changes = self.metrics.rate_class_changes.saturating_add(1);
+        Ok(())
+    }
+
+    /// Cells this link may emit in one epoch at its current class.
+    #[must_use]
+    pub fn cells_per_epoch(&self) -> usize {
+        RATE_MENU_CELLS_PER_EPOCH
+            .get(usize::from(self.rate_class))
+            .copied()
+            .unwrap_or(FIXED_T2_CELLS_PER_EPOCH)
     }
 
     pub fn next_deadline(&self) -> Instant {
@@ -197,6 +238,17 @@ mod tests {
 
 /// Quantized rate classes offered by the fixed profile's rate menu.
 pub const RATE_MENU_CELLS_PER_EPOCH: [usize; 4] = [8, 16, 32, 64];
+
+/// Class whose rate is the frozen fixed profile, which is where every link
+/// starts and where a link that never negotiates stays.
+#[must_use]
+pub fn default_rate_class() -> u8 {
+    RATE_MENU_CELLS_PER_EPOCH
+        .iter()
+        .position(|cells| *cells == FIXED_T2_CELLS_PER_EPOCH)
+        .and_then(|index| u8::try_from(index).ok())
+        .unwrap_or(1)
+}
 
 /// Negotiation action carried by a SCHEDULE frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -786,6 +838,273 @@ mod fairness_tests {
         let before = budget.reserved_cells();
         budget.release(reservation);
         assert_eq!(budget.reserved_cells(), before - LIMIT_MAX_FRAGMENTS);
+        Ok(())
+    }
+}
+
+/// Rate-class negotiation for one adjacent link (`transport-profile-t2.md`
+/// section 5).
+///
+/// Only one side proposes, so two peers cannot offer past each other; the
+/// responder answers whatever arrives. Proposals move one class at a time,
+/// never exceed what the peer advertised, and are rate-limited by a hysteresis
+/// interval so a link cannot oscillate. A negotiation that is stale,
+/// conflicting, or unanswered leaves the next epoch at the current class,
+/// which is what keeps a link that never negotiates on the frozen profile.
+#[derive(Debug, Clone)]
+pub struct RateNegotiation {
+    suite: [u8; 2],
+    current: u8,
+    maximum: u8,
+    proposer: bool,
+    pending: Option<PendingOffer>,
+    /// `None` until the class has actually moved. Hysteresis damps
+    /// oscillation between changes; it must not hold off the first proposal,
+    /// when nothing has changed yet to oscillate.
+    last_change_epoch: Option<u32>,
+    hysteresis_epochs: u32,
+    accepted: u64,
+    rejected: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PendingOffer {
+    negotiation_id: [u8; 16],
+    requested: u8,
+    effective_epoch: u32,
+}
+
+impl RateNegotiation {
+    /// `proposer` decides which end offers; give it to exactly one peer.
+    #[must_use]
+    pub fn new(suite: [u8; 2], proposer: bool, hysteresis_epochs: u32) -> Self {
+        Self {
+            suite,
+            current: default_rate_class(),
+            maximum: (RATE_MENU_CELLS_PER_EPOCH.len() - 1) as u8,
+            proposer,
+            pending: None,
+            last_change_epoch: None,
+            hysteresis_epochs,
+            accepted: 0,
+            rejected: 0,
+        }
+    }
+
+    #[must_use]
+    pub fn current(&self) -> u8 {
+        self.current
+    }
+
+    #[must_use]
+    pub fn accepted(&self) -> u64 {
+        self.accepted
+    }
+
+    #[must_use]
+    pub fn rejected(&self) -> u64 {
+        self.rejected
+    }
+
+    /// Propose a step toward `target`, or `None` if there is nothing to do.
+    ///
+    /// `backlog_cells` is what the link has queued; the caller maps that to a
+    /// target class. The step is always adjacent, because section 5 forbids
+    /// skipping a class.
+    pub fn offer(
+        &mut self,
+        target: u8,
+        epoch: u32,
+        negotiation_id: [u8; 16],
+    ) -> Option<ScheduleFrame> {
+        if !self.proposer || self.pending.is_some() || negotiation_id == [0_u8; 16] {
+            return None;
+        }
+        if self
+            .last_change_epoch
+            .is_some_and(|last| epoch.saturating_sub(last) < self.hysteresis_epochs)
+        {
+            return None;
+        }
+        let target = target.min(self.maximum);
+        let requested = match target.cmp(&self.current) {
+            std::cmp::Ordering::Equal => return None,
+            std::cmp::Ordering::Greater => self.current.saturating_add(1),
+            std::cmp::Ordering::Less => self.current.saturating_sub(1),
+        };
+        let effective_epoch = epoch.saturating_add(1);
+        let frame = ScheduleFrame {
+            suite: self.suite,
+            negotiation_id,
+            effective_epoch,
+            current_rate_class: self.current,
+            requested_rate_class: requested,
+            maximum_rate_class: self.maximum,
+            action: ScheduleAction::Offer,
+        };
+        self.pending = Some(PendingOffer {
+            negotiation_id,
+            requested,
+            effective_epoch,
+        });
+        Some(frame)
+    }
+
+    /// Handle a frame from the peer, returning any reply to emit.
+    ///
+    /// The class actually adopted, if any, is available from
+    /// [`Self::current`] afterwards.
+    pub fn on_frame(&mut self, frame: &ScheduleFrame, epoch: u32) -> Option<ScheduleFrame> {
+        match frame.action {
+            ScheduleAction::Offer => {
+                if self.proposer {
+                    // Both ends offering would race; only one end proposes.
+                    return None;
+                }
+                let granted = frame.requested_rate_class.min(self.maximum);
+                let action = if granted == frame.requested_rate_class {
+                    self.current = granted;
+                    self.last_change_epoch = Some(epoch);
+                    self.accepted = self.accepted.saturating_add(1);
+                    ScheduleAction::Accept
+                } else {
+                    self.rejected = self.rejected.saturating_add(1);
+                    ScheduleAction::Reject
+                };
+                Some(ScheduleFrame {
+                    suite: self.suite,
+                    negotiation_id: frame.negotiation_id,
+                    effective_epoch: frame.effective_epoch,
+                    current_rate_class: frame.current_rate_class,
+                    requested_rate_class: frame.requested_rate_class,
+                    maximum_rate_class: self.maximum,
+                    action,
+                })
+            }
+            ScheduleAction::Accept | ScheduleAction::Reject => {
+                // A reply for a negotiation this end never opened, or for one
+                // that has already been superseded, leaves the class alone.
+                let Some(pending) = self.pending else {
+                    return None;
+                };
+                if pending.negotiation_id != frame.negotiation_id
+                    || pending.requested != frame.requested_rate_class
+                    || pending.effective_epoch != frame.effective_epoch
+                {
+                    return None;
+                }
+                self.pending = None;
+                if frame.action == ScheduleAction::Accept {
+                    self.current = pending.requested;
+                    self.last_change_epoch = Some(epoch);
+                    self.accepted = self.accepted.saturating_add(1);
+                } else {
+                    self.rejected = self.rejected.saturating_add(1);
+                }
+                None
+            }
+        }
+    }
+
+    /// Abandon an offer that was never answered, so the link can try again.
+    pub fn expire_pending(&mut self, epoch: u32) {
+        if let Some(pending) = self.pending {
+            if epoch > pending.effective_epoch {
+                self.pending = None;
+                self.rejected = self.rejected.saturating_add(1);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod negotiation_tests {
+    use super::*;
+
+    fn pair() -> (RateNegotiation, RateNegotiation) {
+        (
+            RateNegotiation::new(protocol_registry::SUITE_R1, true, 0),
+            RateNegotiation::new(protocol_registry::SUITE_R1, false, 0),
+        )
+    }
+
+    #[test]
+    fn a_link_climbs_one_class_at_a_time() -> Result<(), ScheduleError> {
+        let (mut proposer, mut responder) = pair();
+        let start = proposer.current();
+
+        // Asking for the top class moves one step, because section 5 forbids
+        // skipping and the codec would refuse the frame outright.
+        let offer = proposer
+            .offer(3, 1, [1_u8; 16])
+            .ok_or(ScheduleError::Malformed)?;
+        assert_eq!(offer.requested_rate_class, start + 1);
+        assert!(encode_schedule_header(&offer).is_ok(), "adjacency holds");
+
+        let reply = responder
+            .on_frame(&offer, 1)
+            .ok_or(ScheduleError::Malformed)?;
+        assert_eq!(reply.action, ScheduleAction::Accept);
+        assert_eq!(responder.current(), start + 1);
+
+        assert!(proposer.on_frame(&reply, 1).is_none());
+        assert_eq!(proposer.current(), start + 1, "both ends agree");
+
+        // The next step is again adjacent.
+        let next = proposer
+            .offer(3, 2, [2_u8; 16])
+            .ok_or(ScheduleError::Malformed)?;
+        assert_eq!(next.requested_rate_class, start + 2);
+        Ok(())
+    }
+
+    #[test]
+    fn only_one_end_proposes_and_replies_must_match() -> Result<(), ScheduleError> {
+        let (mut proposer, mut responder) = pair();
+        let offer = proposer
+            .offer(3, 1, [3_u8; 16])
+            .ok_or(ScheduleError::Malformed)?;
+
+        // The proposing end ignores an offer, so two peers cannot race.
+        let (mut other, _) = pair();
+        assert!(other.on_frame(&offer, 1).is_none());
+
+        // A reply naming a different negotiation leaves the class alone.
+        let mut forged = responder
+            .on_frame(&offer, 1)
+            .ok_or(ScheduleError::Malformed)?;
+        let before = proposer.current();
+        forged.negotiation_id = [9_u8; 16];
+        assert!(proposer.on_frame(&forged, 1).is_none());
+        assert_eq!(proposer.current(), before, "a stale reply changes nothing");
+        Ok(())
+    }
+
+    #[test]
+    fn hysteresis_and_an_unanswered_offer_leave_the_class_alone() -> Result<(), ScheduleError> {
+        let mut proposer = RateNegotiation::new(protocol_registry::SUITE_R1, true, 4);
+        let start = proposer.current();
+
+        // One offer at a time.
+        assert!(proposer.offer(3, 10, [1_u8; 16]).is_some());
+        assert!(proposer.offer(3, 10, [2_u8; 16]).is_none());
+
+        // Unanswered, it lapses and the class is unchanged.
+        proposer.expire_pending(12);
+        assert_eq!(proposer.current(), start);
+
+        // Hysteresis then holds off the next proposal until enough epochs pass.
+        let mut settled = RateNegotiation::new(protocol_registry::SUITE_R1, true, 4);
+        let offer = settled
+            .offer(3, 10, [4_u8; 16])
+            .ok_or(ScheduleError::Malformed)?;
+        let mut responder = RateNegotiation::new(protocol_registry::SUITE_R1, false, 4);
+        let reply = responder
+            .on_frame(&offer, 10)
+            .ok_or(ScheduleError::Malformed)?;
+        settled.on_frame(&reply, 10);
+        assert!(settled.offer(3, 11, [5_u8; 16]).is_none(), "too soon");
+        assert!(settled.offer(3, 20, [6_u8; 16]).is_some(), "settled");
         Ok(())
     }
 }

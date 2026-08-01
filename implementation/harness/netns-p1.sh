@@ -18,6 +18,10 @@ BIN_DIR="${PWD}/implementation/rust/target/release"
 # ok | replay | wrong-capability | expired-capability | no-candidate |
 # transport-failure
 SCENARIO=ok
+# Experimental analysis profile. Off by default and never in CI: the P1
+# fixed-trace claim is a claim about a constant cadence, so a link that
+# renegotiates its rate is outside it.
+ADAPTIVE=()
 
 while (($#)); do
   case "$1" in
@@ -33,6 +37,7 @@ while (($#)); do
     --output) OUTPUT="$2"; shift 2 ;;
     --bin-dir) BIN_DIR="$2"; shift 2 ;;
     --scenario) SCENARIO="$2"; shift 2 ;;
+    --adaptive-t2) ADAPTIVE=(--adaptive-t2 1); shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -227,6 +232,7 @@ GIDX=$((NODES-1))
 run_node "${NAMES[$GIDX]}" rendezvous 7 \
   "$BIN_DIR/trahens-rendezvous" \
   --id "$((GIDX+1))" --peer-id "$GIDX" --gateway-id 7 --epoch "$EPOCH" \
+  "${ADAPTIVE[@]}" \
   --bind "10.200.$((GIDX-1)).2:${PORT}" --peer "10.200.$((GIDX-1)).1:${PORT}" \
   --key "$(key_for $((GIDX-1)))" --signing-seed "$SIGNING_SEED" \
   --capability "$CAPABILITY" --capability-ttl-ms "$GATEWAY_TTL_MS" \
@@ -236,6 +242,7 @@ for ((r=RELAYS; r>=1; r--)); do
   run_node "${NAMES[$r]}" "relay-${r}" "$((r-RELAYS/2))" \
     "$BIN_DIR/trahens-relay" \
     --id "$((r+1))" --upstream-id "$r" --downstream-id "$((r+2))" --epoch "$EPOCH" \
+    "${ADAPTIVE[@]}" \
     --upstream-bind "10.200.$((r-1)).2:${PORT}" --upstream-peer "10.200.$((r-1)).1:${PORT}" \
     --upstream-key "$(key_for $((r-1)))" \
     --downstream-bind "10.200.${r}.1:${PORT}" --downstream-peer "10.200.${r}.2:${PORT}" \
@@ -247,6 +254,7 @@ sleep 0.2
 run_node "${NAMES[0]}" endpoint -7 \
   "$BIN_DIR/trahens-endpoint" \
   --id 1 --peer-id 2 --epoch "$EPOCH" \
+  "${ADAPTIVE[@]}" \
   --bind "10.200.0.1:${PORT}" --peer "10.200.0.2:${PORT}" --key "$(key_for 0)" \
   --gateway-public "$GATEWAY_PUBLIC" --capability "$ENDPOINT_CAPABILITY" \
   "${ENDPOINT_EXTRA[@]}" \

@@ -131,6 +131,10 @@ fn run() -> Result<(), Box<dyn Error>> {
     let peer_id = args.u32("peer-id")?;
     let gateway_id = args.u32("gateway-id")?;
     let epoch = args.u32("epoch")?;
+    // Experimental analysis profile, off by default: the P1 fixed-trace claim
+    // is a claim about a constant cadence, so a link that renegotiates its
+    // rate is outside it.
+    let adaptive = args.flag("adaptive-t2");
     let timeout_ms = args.u64_or("timeout-ms", 30_000)?;
     let metrics_path = args
         .optional("metrics", "rendezvous-metrics.json")
@@ -169,6 +173,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             peer: args.socket("peer")?,
             base_key: parse_hex::<32>(args.required("key")?)?,
             epoch,
+            adaptive,
         },
         event_sender,
         budget.clone(),

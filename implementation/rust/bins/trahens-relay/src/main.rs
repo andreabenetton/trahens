@@ -229,6 +229,10 @@ fn run() -> Result<(), Box<dyn Error>> {
     let node_id = args.u32("id")?;
     let upstream_id = args.u32("upstream-id")?;
     let epoch = args.u32("epoch")?;
+    // Experimental analysis profile, off by default: the P1 fixed-trace claim
+    // is a claim about a constant cadence, so a link that renegotiates its
+    // rate is outside it.
+    let adaptive = args.flag("adaptive-t2");
     let timeout_ms = args.u64_or("timeout-ms", 30_000)?;
     let metrics_path = args.optional("metrics", "relay-metrics.json").to_owned();
 
@@ -244,6 +248,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             peer: args.socket("upstream-peer")?,
             base_key: parse_hex::<32>(args.required("upstream-key")?)?,
             epoch,
+            adaptive,
         },
         event_sender.clone(),
         budget.clone(),
@@ -273,6 +278,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     peer: args.socket(&format!("downstream-peer{suffix}"))?,
                     base_key: parse_hex::<32>(args.required(&format!("downstream-key{suffix}"))?)?,
                     epoch,
+                    adaptive,
                 },
                 event_sender.clone(),
                 budget.clone(),
