@@ -41,6 +41,17 @@ noncanonical encoding is the classic source of cross-implementation
 divergence, and it will not show up in interoperability testing against a
 correct peer.
 
+You can check this before writing any networking:
+
+```bash
+python3 tools/check_external_codec.py "<your decoder command>"
+```
+
+Your decoder is run once per vector, receives the encoding as raw bytes on
+stdin, and signals acceptance by exiting 0. Nothing else is part of the
+contract, so an existing test binary usually needs no changes. The tool names
+every vector you classify differently from the published corpus.
+
 ### 2. Transport
 
 `spec/transport-profile-t1.md` and `spec/transport-profile-t2.md`. Fragment
