@@ -34,8 +34,8 @@ Read `spec/message-codec-m2.md` and `spec/wire-cell-w2.md`. Implement M2
 encode/decode and W2 fragmentation.
 
 Check against `spec/p1-conformance-vectors-v1.5.json` and the binary corpus
-`spec/p1-conformance-corpus-v1.5.bin` (22 vectors, 1,991 bytes, format
-described below). Canonical encodings must round-trip; **noncanonical ones must
+`spec/p1-conformance-corpus-v1.5.bin` (3,037 bytes, format described
+below; 32 vectors at registry 1.5.2). Canonical encodings must round-trip; **noncanonical ones must
 be rejected**, and that half matters more. A decoder that accepts a
 noncanonical encoding is the classic source of cross-implementation
 divergence, and it will not show up in interoperability testing against a

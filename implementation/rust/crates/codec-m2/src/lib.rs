@@ -107,6 +107,18 @@ pub struct Envelope {
     pub message: Message,
 }
 
+/// P1 pins every control message to one expiry class.
+///
+/// The field used to be validated only as non-zero and then never read: the
+/// deadlines that matter come from the phase and the registry's per-class
+/// TTLs, not from the wire. That left a remote-supplied byte parsed, barely
+/// bounded, and ignored — a degree of freedom with no meaning, which a second
+/// implementer would reasonably assume meant something. Until a second class
+/// is specified, exactly one value is canonical.
+fn p1_expiry_class(value: u8) -> bool {
+    usize::from(value) == LIMIT_EXPIRY_CLASS_P1
+}
+
 fn nonzero(value: &[u8]) -> bool {
     value.iter().any(|byte| *byte != 0)
 }
@@ -200,7 +212,7 @@ pub fn encode(envelope: &Envelope) -> Result<Vec<u8>, CodecError> {
         Message::Discover(message) => {
             if !nonzero(&message.branch_token)
                 || message.fanout_class == 0
-                || message.expiry_class == 0
+                || !p1_expiry_class(message.expiry_class)
                 || !nonzero(&message.reply_public_key)
             {
                 return Err(CodecError::Malformed);
@@ -227,7 +239,7 @@ pub fn encode(envelope: &Envelope) -> Result<Vec<u8>, CodecError> {
         }
         Message::Candidate(message) => {
             if !nonzero(&message.candidate_token)
-                || message.expiry_class == 0
+                || !p1_expiry_class(message.expiry_class)
                 || message.layer_count == 0
                 || message.candidate_blob.is_empty()
             {
@@ -245,7 +257,7 @@ pub fn encode(envelope: &Envelope) -> Result<Vec<u8>, CodecError> {
                 message.message_type,
                 MessageType::Chaff | MessageType::Discover | MessageType::Candidate
             ) || !nonzero(&message.local_label)
-                || message.expiry_class == 0
+                || !p1_expiry_class(message.expiry_class)
                 || message.protected_body.len() > LIMIT_MAX_CONTROL_PROTECTED_BYTES
             {
                 return Err(CodecError::Malformed);
@@ -323,7 +335,7 @@ pub fn decode(input: &[u8]) -> Result<Envelope, CodecError> {
             if field_end != body.len()
                 || !nonzero(&branch_token)
                 || fanout_class == 0
-                || expiry_class == 0
+                || !p1_expiry_class(expiry_class)
                 || !nonzero(&reply_public_key)
             {
                 return Err(CodecError::Malformed);
@@ -353,7 +365,7 @@ pub fn decode(input: &[u8]) -> Result<Envelope, CodecError> {
             let blob_end = at.checked_add(blob_len).ok_or(CodecError::Malformed)?;
             if blob_end != body.len()
                 || !nonzero(&candidate_token)
-                || expiry_class == 0
+                || !p1_expiry_class(expiry_class)
                 || layer_count == 0
                 || blob_len == 0
             {
@@ -375,7 +387,10 @@ pub fn decode(input: &[u8]) -> Result<Envelope, CodecError> {
             let protected_len =
                 decode_varuint(body, &mut at, LIMIT_MAX_CONTROL_PROTECTED_BYTES as u32)? as usize;
             let protected_end = at.checked_add(protected_len).ok_or(CodecError::Malformed)?;
-            if protected_end != body.len() || !nonzero(&local_label) || expiry_class == 0 {
+            if protected_end != body.len()
+                || !nonzero(&local_label)
+                || !p1_expiry_class(expiry_class)
+            {
                 return Err(CodecError::Malformed);
             }
             Message::Control(Control {

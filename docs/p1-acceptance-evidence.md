@@ -3,7 +3,7 @@
 # P1 acceptance evidence
 
 - Status: Evidence map for the acceptance gate in `spec/p1-prototype-profile-v1.5.md`
-- Registry: 1.5.1
+- Registry: 1.5.2
 
 The profile requires that a source-only revision report its gates as pending
 rather than passed. Every line below now names the CI job or harness arm that

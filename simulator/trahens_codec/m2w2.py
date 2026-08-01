@@ -28,6 +28,7 @@ from trahens_spec.generated import (
     BYTES_LINK_TAG,
     DOMAIN_W2_LINK_KEY,
     LIFECYCLE_PROFILE_E1 as REG_LIFECYCLE_PROFILE_E1,
+    LIMIT_EXPIRY_CLASS_P1,
     LIMIT_MAX_CONTROL_PROTECTED_BYTES,
     LIMIT_MAX_FRAGMENTS,
     LIMIT_MAX_LOGICAL_MESSAGE_BYTES,
@@ -455,8 +456,8 @@ def encode_discover(record: DiscoverRecord) -> bytes:
         raise CodecError("hop_remaining is out of range")
     if not 1 <= record.fanout_class <= 255:
         raise CodecError("fanout_class is out of range")
-    if not 1 <= record.expiry_class <= 255:
-        raise CodecError("expiry_class is out of range")
+    if record.expiry_class != LIMIT_EXPIRY_CLASS_P1:
+        raise CodecError("expiry_class is not the P1 class")
     if not 0 <= record.options <= 255:
         raise CodecError("options is out of range")
     try:
@@ -476,8 +477,8 @@ def encode_discover(record: DiscoverRecord) -> bytes:
 
 def encode_candidate(record: CandidateRecord) -> bytes:
     _require_token(record.candidate_token, "candidate token")
-    if not 1 <= record.expiry_class <= 255:
-        raise CodecError("expiry_class is out of range")
+    if record.expiry_class != LIMIT_EXPIRY_CLASS_P1:
+        raise CodecError("expiry_class is not the P1 class")
     if not 1 <= record.layer_count <= 255:
         raise CodecError("layer_count is out of range")
     if not 1 <= len(record.candidate_blob) <= MAX_LOGICAL_MESSAGE_BYTES:
@@ -506,8 +507,8 @@ def encode_control(record: ControlRecord) -> bytes:
     _require_label(record.local_label)
     if not 0 <= record.generation <= 0xFFFFFFFF:
         raise CodecError("generation is out of range")
-    if not 1 <= record.expiry_class <= 255:
-        raise CodecError("expiry_class is out of range")
+    if record.expiry_class != LIMIT_EXPIRY_CLASS_P1:
+        raise CodecError("expiry_class is not the P1 class")
     if len(record.protected_body) > CONTROL_PROTECTED_MAX:
         raise CodecError("protected control body is too long")
     body = (
@@ -541,7 +542,7 @@ def decode_message(
         cursor += TOKEN_BYTES
         hop_remaining, fanout_class, expiry_class, options = body[cursor : cursor + 4]
         cursor += 4
-        if fanout_class == 0 or expiry_class == 0:
+        if fanout_class == 0 or expiry_class != LIMIT_EXPIRY_CLASS_P1:
             raise CodecError("invalid DISCOVER bounds")
         reply_public = body[cursor : cursor + r255.POINT_BYTES]
         cursor += r255.POINT_BYTES
@@ -577,7 +578,7 @@ def decode_message(
             cursor,
             maximum=MAX_LOGICAL_MESSAGE_BYTES,
         )
-        if expiry_class == 0 or layer_count == 0 or blob_length < 1:
+        if expiry_class != LIMIT_EXPIRY_CLASS_P1 or layer_count == 0 or blob_length < 1:
             raise CodecError("invalid CANDIDATE bounds")
         if cursor + blob_length != len(body):
             raise CodecError("candidate blob length mismatch")
@@ -603,7 +604,7 @@ def decode_message(
         cursor,
         maximum=CONTROL_PROTECTED_MAX,
     )
-    if expiry_class == 0 or cursor + protected_length != len(body):
+    if expiry_class != LIMIT_EXPIRY_CLASS_P1 or cursor + protected_length != len(body):
         raise CodecError("invalid control bounds")
     return ControlRecord(
         message_type=message_type,

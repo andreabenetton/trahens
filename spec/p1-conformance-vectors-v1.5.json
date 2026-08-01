@@ -1,6 +1,6 @@
 {
   "schema": "trahens-p1-conformance-v1",
-  "registry_version": "1.5.1",
+  "registry_version": "1.5.2",
   "generator_independence": "manual encoder reads only protocol-registry-v1.5.json",
   "vectors": [
     {
@@ -30,6 +30,13 @@
       "expected_error": "unsupported_profile"
     },
     {
+      "name": "discover-negative-expiry-class",
+      "message": "DISCOVER",
+      "valid": false,
+      "encoding_hex": "2001010101010200550102030405060708090a0b0c0d0e0f100c010200e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76204142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f60",
+      "expected_error": "malformed"
+    },
+    {
       "name": "candidate-positive",
       "message": "CANDIDATE",
       "valid": true,
@@ -41,6 +48,13 @@
       "valid": false,
       "encoding_hex": "2101010101010201530102030405060708090a0b0c0d0e0f100102406162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0",
       "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "candidate-negative-expiry-class",
+      "message": "CANDIDATE",
+      "valid": false,
+      "encoding_hex": "2101010101010200530102030405060708090a0b0c0d0e0f100202406162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0",
+      "expected_error": "malformed"
     },
     {
       "name": "commit-positive",
@@ -56,6 +70,13 @@
       "expected_error": "unsupported_profile"
     },
     {
+      "name": "commit-negative-expiry-class",
+      "message": "COMMIT",
+      "valid": false,
+      "encoding_hex": "2201010101010200381112131415161718191a1b1c1d1e1f20000000070222220102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
+    },
+    {
       "name": "ready-positive",
       "message": "READY",
       "valid": true,
@@ -67,6 +88,13 @@
       "valid": false,
       "encoding_hex": "2301010101010201381112131415161718191a1b1c1d1e1f20000000070122230102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
       "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "ready-negative-expiry-class",
+      "message": "READY",
+      "valid": false,
+      "encoding_hex": "2301010101010200381112131415161718191a1b1c1d1e1f20000000070222230102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
     },
     {
       "name": "cancel-positive",
@@ -82,6 +110,13 @@
       "expected_error": "unsupported_profile"
     },
     {
+      "name": "cancel-negative-expiry-class",
+      "message": "CANCEL",
+      "valid": false,
+      "encoding_hex": "2401010101010200381112131415161718191a1b1c1d1e1f20000000070222240102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
+    },
+    {
       "name": "abort-positive",
       "message": "ABORT",
       "valid": true,
@@ -93,6 +128,13 @@
       "valid": false,
       "encoding_hex": "2501010101010201381112131415161718191a1b1c1d1e1f20000000070122250102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
       "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "abort-negative-expiry-class",
+      "message": "ABORT",
+      "valid": false,
+      "encoding_hex": "2501010101010200381112131415161718191a1b1c1d1e1f20000000070222250102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
     },
     {
       "name": "close-positive",
@@ -108,6 +150,13 @@
       "expected_error": "unsupported_profile"
     },
     {
+      "name": "close-negative-expiry-class",
+      "message": "CLOSE",
+      "valid": false,
+      "encoding_hex": "2601010101010200381112131415161718191a1b1c1d1e1f20000000070222260102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
+    },
+    {
       "name": "rendezvous_open-positive",
       "message": "RENDEZVOUS_OPEN",
       "valid": true,
@@ -119,6 +168,13 @@
       "valid": false,
       "encoding_hex": "2701010101010201381112131415161718191a1b1c1d1e1f20000000070122270102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
       "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "rendezvous_open-negative-expiry-class",
+      "message": "RENDEZVOUS_OPEN",
+      "valid": false,
+      "encoding_hex": "2701010101010200381112131415161718191a1b1c1d1e1f20000000070222270102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
     },
     {
       "name": "rendezvous_result-positive",
@@ -134,6 +190,13 @@
       "expected_error": "unsupported_profile"
     },
     {
+      "name": "rendezvous_result-negative-expiry-class",
+      "message": "RENDEZVOUS_RESULT",
+      "valid": false,
+      "encoding_hex": "2801010101010200381112131415161718191a1b1c1d1e1f20000000070222280102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
+    },
+    {
       "name": "data-positive",
       "message": "DATA",
       "valid": true,
@@ -145,6 +208,13 @@
       "valid": false,
       "encoding_hex": "2901010101010201381112131415161718191a1b1c1d1e1f20000000070122290102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
       "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "data-negative-expiry-class",
+      "message": "DATA",
+      "valid": false,
+      "encoding_hex": "2901010101010200381112131415161718191a1b1c1d1e1f20000000070222290102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
     }
   ],
   "field_protection": {

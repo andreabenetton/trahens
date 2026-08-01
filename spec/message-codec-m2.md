@@ -44,6 +44,13 @@ field_length        canonical VarUInt
 discovery_field      field_length bytes
 ```
 
+`expiry_class` MUST equal `limits.expiry_class_p1`, which is 1. P1 defines one
+class, and state deadlines are taken from the phase and the registry's
+per-class TTLs rather than from this field, so no other value has a meaning. A
+decoder MUST reject any other value as malformed rather than accept and ignore
+it. A future revision that defines a second class must also define what it
+changes.
+
 The suite determines the field parser:
 
 - R1 (`0x0101`, active): exactly 32 non-zero bytes representing a non-semantic service-query nonce;

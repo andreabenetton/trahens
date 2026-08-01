@@ -58,7 +58,10 @@ mod tests {
         let Some(vectors) = parse_corpus() else {
             panic!("invalid embedded P1 corpus");
         };
-        assert_eq!(vectors.len(), 22);
+        // 11 canonical and 21 noncanonical. The count is pinned so that a
+        // corpus which silently lost vectors fails here rather than passing
+        // vacuously.
+        assert_eq!(vectors.len(), 32);
         for vector in vectors {
             assert_eq!(
                 decode(vector.encoding).is_ok(),

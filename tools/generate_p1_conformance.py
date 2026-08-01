@@ -67,6 +67,29 @@ def build_vectors(reg: dict) -> list[dict]:
         protected = bytes([ids[name]]) + bytes(range(1, 34))
         bodies[name] = label + struct.pack(">I", 7) + bytes([1]) + varuint(len(protected)) + protected
 
+    # P1 pins one expiry class, so any other value is noncanonical. Building
+    # the bad bodies alongside the good ones avoids doing offset arithmetic on
+    # an encoded message to find the byte.
+    other = reg["limits"]["expiry_class_p1"] + 1
+    bad_expiry: dict[str, bytes] = {
+        "DISCOVER": token + bytes([12, 1, other, 0]) + reply + varuint(len(nonce)) + nonce,
+        "CANDIDATE": token + bytes([other, 2]) + varuint(len(candidate_blob)) + candidate_blob,
+    }
+    for name in [
+        "COMMIT",
+        "READY",
+        "CANCEL",
+        "ABORT",
+        "CLOSE",
+        "RENDEZVOUS_OPEN",
+        "RENDEZVOUS_RESULT",
+        "DATA",
+    ]:
+        protected = bytes([ids[name]]) + bytes(range(1, 34))
+        bad_expiry[name] = (
+            label + struct.pack(">I", 7) + bytes([other]) + varuint(len(protected)) + protected
+        )
+
     for name, body in bodies.items():
         encoded = envelope(reg, ids[name], body)
         vectors.append(
@@ -88,6 +111,16 @@ def build_vectors(reg: dict) -> list[dict]:
                 "expected_error": "unsupported_profile",
             }
         )
+        if name in bad_expiry:
+            vectors.append(
+                {
+                    "name": f"{name.lower()}-negative-expiry-class",
+                    "message": name,
+                    "valid": False,
+                    "encoding_hex": envelope(reg, ids[name], bad_expiry[name]).hex(),
+                    "expected_error": "malformed",
+                }
+            )
 
     return vectors
 

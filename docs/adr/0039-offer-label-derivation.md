@@ -4,7 +4,7 @@
 
 ## Status
 
-Accepted for v1.5 (registry 1.5.1). Extends ADR 0038.
+Accepted for v1.5 (registry 1.5.2). Extends ADR 0038.
 
 ## Context
 

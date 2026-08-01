@@ -11,6 +11,7 @@ from pathlib import Path
 from random import Random
 
 from trahens_codec.m2w2 import CandidateRecord, derive_link_key, encode_candidate
+from trahens_spec.generated import LIMIT_EXPIRY_CLASS_P1
 from trahens_codec.t1 import (
     ack_bitmap,
     encode_ack_body,
@@ -32,7 +33,7 @@ def build_vectors() -> dict[str, object]:
     message = encode_candidate(
         CandidateRecord(
             candidate_token=bytes.fromhex("00112233445566778899aabbccddeeff"),
-            expiry_class=3,
+            expiry_class=LIMIT_EXPIRY_CLASS_P1,
             layer_count=12,
             candidate_blob=candidate_blob,
             crypto_suite_id=R1_SUITE_ID,

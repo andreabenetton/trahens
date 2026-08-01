@@ -1,5 +1,5 @@
 {
-  "registry_version": "1.5.1",
+  "registry_version": "1.5.2",
   "status": "frozen-p1",
   "byte_order": "big",
   "protocol": {
@@ -129,7 +129,8 @@
     "max_registrations_per_endpoint": 8,
     "max_registrations_per_gateway": 1024,
     "endpoint_handle_ttl_ms": 5000,
-    "max_fanout_class": 3
+    "max_fanout_class": 3,
+    "expiry_class_p1": 1
   },
   "fixed_t2_p1": {
     "profile_id": 1,

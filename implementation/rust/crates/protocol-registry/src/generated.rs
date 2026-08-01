@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Generated from spec/protocol-registry-v1.5.json; do not edit.
-pub const REGISTRY_VERSION: &str = "1.5.1";
+pub const REGISTRY_VERSION: &str = "1.5.2";
 
 pub const VERSION: u8 = 1;
 pub const PRIVACY_PROFILE_U1: u8 = 1;
@@ -120,6 +120,7 @@ pub const LIMIT_MAX_REGISTRATIONS_PER_ENDPOINT: usize = 8;
 pub const LIMIT_MAX_REGISTRATIONS_PER_GATEWAY: usize = 1024;
 pub const LIMIT_ENDPOINT_HANDLE_TTL_MS: usize = 5000;
 pub const LIMIT_MAX_FANOUT_CLASS: usize = 3;
+pub const LIMIT_EXPIRY_CLASS_P1: usize = 1;
 
 pub const FIXED_T2_PROFILE_ID: usize = 1;
 pub const FIXED_T2_EPOCH_MS: usize = 200;

@@ -98,7 +98,12 @@ would reject encodings the current reference accepts, so it needs the
 conformance corpus regenerated and both codecs changed together.
 
 **Recommendation: pin to 1 for P1 in v1.6 unless a second class is
-specified.**
+specified.** — **done**, registry 1.5.2. `limits.expiry_class_p1` is the single
+source, both codecs reject anything else, `spec/message-codec-m2.md` states it,
+and ten new negative corpus vectors cover it. Regenerating found that
+`generate_t1_vectors.py` had been emitting a CANDIDATE with class 3: a
+published vector encoding a message no conforming node may send, which is the
+incoherence the pin removes.
 
 ### 5. `Discover.options` — rename, do not delete
 
@@ -142,10 +147,10 @@ child selectors learned when an offer returns, `incoming` holds labels derived
 from the child discovery nonce — so they are not trivially interchangeable.
 
 **Recommendation: consolidate into one map from label to a
-`Child | Offer` enum.** This is a genuine simplification of recent work, not a
-theoretical one, but it touches the path that took three attempts to get
-right, so it should land alone and with the fan-out arm run repeatedly. It is
-listed here rather than done in the same change as this report.
+`Child | Offer` enum.** — **done**. One `labels` map holds a `LabelBinding`
+that is either `Branch` or `Offer`; three call sites lost an argument and the
+candidate path stopped registering a label it had just resolved out of the
+other map. The fan-out arm ran 8/8.
 
 ## What was considered and left alone
 
@@ -162,15 +167,17 @@ known bugs.
 | 1 | `state_machine::Action` | Remove now |
 | 2 | Five never-emitted error identifiers | Defer, v1.6 registry decision |
 | 3 | `MessageType::Abort` | Defer, merge into `CANCEL` unless distinguished |
-| 4 | `expiry_class` | Defer, pin to 1 or give it meaning |
+| 4 | `expiry_class` | **Done** — pinned to 1, registry 1.5.2 |
 | 5 | `Discover.options` | Rename to `depth` |
 | 6 | Fixed-T2 reserves | Keep |
 | 7 | `Phase` / `Event` variants | Keep |
 | 8 | `RemoteInputDrops` labels | Keep |
-| 9 | Relay `reverse` / `incoming` maps | Consolidate, own change |
+| 9 | Relay `reverse` / `incoming` maps | **Done** — one `labels` map |
 
-One deletion is actionable without touching the frozen profile. Four of the
-remaining candidates are held not because they are justified but because
-removing them is a v1.6 registry or wire decision — which is the honest reason
-a frozen profile accumulates surface, and the reason to make those decisions
-deliberately rather than by default.
+Three are now done: the `Action` enum, the relay map consolidation, and the
+`expiry_class` pin, the last at the cost of a registry revision to 1.5.2 and a
+regenerated corpus. Three remain deferred because they are wire decisions with
+no forced timing — the unemitted error identifiers, `ABORT` as a synonym for
+`CANCEL`, and renaming `options` to `depth`. That they are wire decisions is
+the honest reason a frozen profile accumulates surface, and the reason to take
+them deliberately rather than by default.

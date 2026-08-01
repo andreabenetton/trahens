@@ -5,7 +5,7 @@
 - Status: brief for an external cryptographic reviewer. Asserts no new result.
 - Companion to [`reply-path-security.md`](reply-path-security.md), which holds
   the construction, the games, and the one proposition established so far.
-- Registry: 1.5.1. Suite R1 `0x0101` is the network suite; C1 v2 `0x0003` is
+- Registry: 1.5.2. Suite R1 `0x0101` is the network suite; C1 v2 `0x0003` is
   research-only and never emitted on the P1 wire (ADR 0038).
 
 ## What is being asked
