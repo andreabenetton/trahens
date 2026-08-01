@@ -265,10 +265,17 @@ fn run() -> Result<(), Box<dyn Error>> {
     let node_id = args.u32("id")?;
     let upstream_id = args.u32("upstream-id")?;
     let epoch = args.u32("epoch")?;
-    // Experimental analysis profile, off by default: the P1 fixed-trace claim
-    // is a claim about a constant cadence, so a link that renegotiates its
-    // rate is outside it.
-    let adaptive = args.flag("adaptive-t2");
+    // Which T2 schedule profile this node runs. The mandatory P1 path is
+    // fixed; adaptive renegotiates its rate and is therefore outside the
+    // fixed-trace claim, which is a claim about a constant cadence.
+    let schedule_profile = args.optional("schedule-profile", "fixed").to_owned();
+    let adaptive = match schedule_profile.as_str() {
+        "fixed" => false,
+        "adaptive" => true,
+        other => {
+            return Err(format!("unknown --schedule-profile: {other}").into());
+        }
+    };
     let timeout_ms = args.u64_or("timeout-ms", 30_000)?;
     let metrics_path = args.optional("metrics", "relay-metrics.json").to_owned();
 

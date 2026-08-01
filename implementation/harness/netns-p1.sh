@@ -18,10 +18,11 @@ BIN_DIR="${PWD}/implementation/rust/target/release"
 # ok | replay | wrong-capability | expired-capability | no-candidate |
 # transport-failure
 SCENARIO=ok
-# Experimental analysis profile. Off by default and never in CI: the P1
-# fixed-trace claim is a claim about a constant cadence, so a link that
-# renegotiates its rate is outside it.
-ADAPTIVE=()
+# Which T2 schedule profile the nodes run. The mandatory arms use fixed and
+# assert the constant cadence they claim; adaptive renegotiates its rate, so
+# this script refuses to assert the fixed trace when it is selected. Neither
+# profile may make the other's claim.
+SCHEDULE_PROFILE=fixed
 # Interoperability mode: run a third-party initiator against our relays and
 # gateway. The foreign command receives exactly the arguments our own endpoint
 # does, so the CLI contract is the only thing it has to match beyond the wire.
@@ -41,7 +42,7 @@ while (($#)); do
     --output) OUTPUT="$2"; shift 2 ;;
     --bin-dir) BIN_DIR="$2"; shift 2 ;;
     --scenario) SCENARIO="$2"; shift 2 ;;
-    --adaptive-t2) ADAPTIVE=(--adaptive-t2 1); shift ;;
+    --schedule-profile) SCHEDULE_PROFILE="$2"; shift 2 ;;
     --external-endpoint) EXTERNAL_ENDPOINT="$2"; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -209,7 +210,7 @@ PORT=4242
 EPOCH=1
 # Shared with multihost-p1.sh so the two harnesses cannot drift into testing
 # different protocols.
-P1_ADAPTIVE=("${ADAPTIVE[@]}")
+P1_ADAPTIVE=(--schedule-profile "$SCHEDULE_PROFILE")
 P1_ENDPOINT_EXTRA=("${ENDPOINT_EXTRA[@]}")
 # shellcheck source=implementation/harness/p1-node-args.sh
 source "$ROOT/implementation/harness/p1-node-args.sh"
@@ -299,6 +300,44 @@ for path in files:
 report=json.loads((root/'run-metrics.json').read_text())
 assert report['all_remote_state_reclaimed']
 PY
+
+# The two schedule profiles make different claims and neither may make the
+# other's. Fixed asserts the constant cadence the P1 gate rests on; adaptive
+# asserts that negotiation happened and stayed within its rules, and is refused
+# the fixed-trace assertion entirely.
+python3 - "$OUTPUT" "$SCHEDULE_PROFILE" <<'SCHED'
+import json, pathlib, sys
+
+root, profile = pathlib.Path(sys.argv[1]), sys.argv[2]
+links = [
+    (path.name, link)
+    for path in sorted(root.glob("*.metrics.json"))
+    for link in json.loads(path.read_text()).get("links", [])
+]
+assert links, "no link metrics"
+
+if profile == "fixed":
+    for name, link in links:
+        assert link["fixed_trace_valid"], f"{name}: fixed trace broken"
+        assert link["missed_slots"] == 0, f"{name}: missed a slot"
+        assert link["rate_class_changes"] == 0, f"{name}: rate changed on fixed"
+        assert link["schedule_cells"] == 0, f"{name}: SCHEDULE cell on fixed"
+    print(f"fixed profile: {len(links)} links held a constant cadence")
+elif profile == "adaptive":
+    negotiating = [(n, l) for n, l in links if l["schedule_cells"] > 0]
+    assert negotiating, "adaptive profile negotiated on no link"
+    changed = sum(l["rate_class_changes"] for _, l in links)
+    assert changed >= 1, "adaptive profile never changed rate"
+    # An adaptive run says nothing about a constant cadence, so the value is
+    # reported and deliberately not asserted.
+    traces = {l["fixed_trace_valid"] for _, l in links}
+    print(
+        f"adaptive profile: {len(negotiating)} links negotiated, "
+        f"{changed} rate change(s); fixed-trace not asserted (observed {traces})"
+    )
+else:
+    raise SystemExit(f"unknown schedule profile: {profile}")
+SCHED
 if (( EXPECT_RETRY_EXHAUSTION )); then
   if ! grep -lq "retry budget exhausted" "$OUTPUT"/*.err 2>/dev/null; then
     echo "scenario ${SCENARIO}: no node reached T1 retry exhaustion" >&2

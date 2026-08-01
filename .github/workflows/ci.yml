@@ -138,6 +138,18 @@ jobs:
           sudo -E implementation/harness/netns-p1.sh \
             --relays 12 --loss 0 --delay 2ms --jitter 1ms \
             --timeout-ms 90000 --output "$GITHUB_WORKSPACE/build/p1-12-hop"
+      # Experimental analysis profile, deliberately its own arm. An adaptive
+      # run renegotiates its cadence, so it must never be cited as evidence for
+      # the fixed-trace claim; the harness refuses to assert that claim when
+      # this profile is selected. What it does assert is that negotiation
+      # happened and stayed within its rules, which local-only runs could not
+      # protect against regressing.
+      - name: Adaptive T2 negotiates within its rules
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 2 --loss 5 --delay 8ms --jitter 2ms \
+            --schedule-profile adaptive \
+            --timeout-ms 60000 --output "$GITHUB_WORKSPACE/build/p1-adaptive"
       - name: Upload captures and metrics
         if: always()
         uses: actions/upload-artifact@v7
