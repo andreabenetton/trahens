@@ -272,6 +272,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut cleanup_started = None;
     let mut transport_failed = false;
     let mut redemption_refused = false;
+    let mut route_aborted = false;
     let redeem_twice = args.flag("redeem-twice");
     let mut redemptions = 0_u32;
 
@@ -504,6 +505,18 @@ fn run() -> Result<(), Box<dyn Error>> {
                         || control_message.generation != route.generation
                     {
                         continue;
+                    }
+                    // ABORT is a hop-local failure teardown: a relay that could
+                    // not honour the COMMIT holds no route secret, so there is
+                    // no sealed body to open. Acting on it is the whole point —
+                    // without it the initiator waits out a deadline for a route
+                    // that has already failed.
+                    if control_message.message_type == MessageType::Abort {
+                        drops.record("endpoint", ERROR_CANCELLED, "route_aborted_in_path");
+                        structured_event("endpoint", "route_aborted", &[]);
+                        cleanup_started = Some(Instant::now());
+                        route_aborted = true;
+                        break;
                     }
                     // Sealed control bodies are remote input: authentication
                     // failure drops the message, never the process.
@@ -756,6 +769,12 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
     if transport_failed {
         return Err(format!("T1 retry budget exhausted; status={ERROR_TIMEOUT}").into());
+    }
+    if route_aborted {
+        // A relay reported it could not establish the route. That is a clean
+        // terminal outcome, not a local fault: state is reclaimed and the exit
+        // status says the route never came up.
+        return Err(format!("route aborted in path; status={ERROR_CANCELLED}").into());
     }
     if redemption_refused {
         return Err(

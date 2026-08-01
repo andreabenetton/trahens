@@ -151,6 +151,30 @@ impl RelayRoute {
     }
 }
 
+/// Failure teardown returned along the reverse path.
+///
+/// `messages-v1.5.md` separates three teardowns: CANCEL is advisory, CLOSE is
+/// orderly, and ABORT is failure. E1 section 12 has a relay that cannot
+/// reserve route capacity, or cannot find its tentative state, release what it
+/// holds by abort. Dropping such a COMMIT silently, as this did, leaves the
+/// initiator waiting out a deadline for a route that already failed.
+///
+/// The body is empty: the relay holds no route secret for either end, so there
+/// is nothing it could seal, and section 8's uniform failure behaviour means
+/// it must not distinguish why beyond the message type itself.
+fn abort_control(label: [u8; 16], generation: u32) -> Envelope {
+    Envelope {
+        suite_id: SUITE_R1,
+        message: Message::Control(Control {
+            message_type: MessageType::Abort,
+            local_label: label,
+            generation,
+            expiry_class: 1,
+            protected_body: vec![0_u8],
+        }),
+    }
+}
+
 fn forward_control(message: Control, label: [u8; 16]) -> Envelope {
     Envelope {
         suite_id: SUITE_R1,
@@ -325,6 +349,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut observed_terminal = false;
     let mut transport_failed: Option<u32> = None;
     let mut cancelled_subtrees = 0_u64;
+    let mut aborts_sent = 0_u64;
 
     // Events that arrive together share a local timestamp, so they are drained
     // as a batch, ordered by E1 section 2 precedence, and then consumed one at
@@ -550,6 +575,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 .is_err()
                             {
                                 drops.record("relay", ERROR_STATE_VIOLATION, "commit_transition");
+                                let _ = upstream
+                                    .send(abort_control(control.local_label, route.generation));
+                                aborts_sent += 1;
                                 continue;
                             }
                             let Some(offer) = selected else {
@@ -557,10 +585,16 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 // to one returned offer does not say which
                                 // child was chosen, so it cannot be forwarded.
                                 drops.record("relay", ERROR_STATE_VIOLATION, "commit_unselective");
+                                let _ = upstream
+                                    .send(abort_control(control.local_label, route.generation));
+                                aborts_sent += 1;
                                 continue;
                             };
                             let Some(child) = route.children.get(offer.child_index) else {
                                 drops.record("relay", ERROR_STATE_VIOLATION, "commit_child_gone");
+                                let _ = upstream
+                                    .send(abort_control(control.local_label, route.generation));
+                                aborts_sent += 1;
                                 continue;
                             };
                             let child_link = child.link_index;
@@ -1055,6 +1089,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             ("route_map", routes.len().to_string()),
             ("token_bucket_drops", admission.rejected().to_string()),
             ("cancelled_subtrees", cancelled_subtrees.to_string()),
+            ("aborts_sent", aborts_sent.to_string()),
             ("id", node_id.to_string()),
         ],
     );
@@ -1085,6 +1120,28 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_abort_is_a_bare_failure_teardown() {
+        // messages-v1.5.md separates three teardowns and ABORT is the failure
+        // one. A relay that cannot honour a COMMIT sends it instead of
+        // dropping the message, which used to leave the initiator waiting out
+        // a deadline for a route that had already failed.
+        let envelope = abort_control([0x41; 16], 3);
+        assert_eq!(envelope.suite_id, SUITE_R1);
+        let Message::Control(control) = envelope.message else {
+            panic!("abort_control must produce a control message");
+        };
+        assert_eq!(control.message_type, MessageType::Abort);
+        assert_eq!(control.local_label, [0x41; 16]);
+        assert_eq!(control.generation, 3, "it answers the COMMIT it refuses");
+        assert_eq!(control.expiry_class, 1);
+
+        // The body carries no reason. A relay holds no route secret for either
+        // end, so it could not seal one, and Core section 8 requires uniform
+        // failure behaviour: the message type is the whole signal.
+        assert_eq!(control.protected_body, vec![0_u8]);
+    }
 
     #[test]
     fn a_route_view_carries_no_key_material() -> Result<(), Box<dyn Error>> {
