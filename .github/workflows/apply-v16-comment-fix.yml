@@ -1,21 +1,29 @@
 name: Apply v1.6 source comment corrections
 
 on:
-  push:
-    branches:
-      - agent/fix-v16-source-comments
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/fix-v16-source-comments' &&
+      github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: agent/fix-v16-source-comments
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Correct stale active-profile comments
         shell: bash
@@ -26,13 +34,12 @@ jobs:
           path = Path("implementation/rust/bins/trahens-relay/src/main.rs")
           text = path.read_text(encoding="utf-8")
 
-          required = {
-              "Core v1.5 section 5": "Core v1.6",
-              "discovery nonces": "routing nonces",
-              "discovery nonce": "routing nonce",
-              "messages-v1.5.md": "messages-v1.6.md",
-          }
-          for old, new in required.items():
+          for old, new in (
+              ("Core v1.5 section 5", "Core v1.6"),
+              ("discovery nonces", "routing nonces"),
+              ("discovery nonce", "routing nonce"),
+              ("messages-v1.5.md", "messages-v1.6.md"),
+          ):
               if old not in text:
                   raise SystemExit(f"expected stale comment text is absent: {old!r}")
               text = text.replace(old, new)
@@ -41,18 +48,16 @@ jobs:
               "// child 0, and --downstream-id-N and friends describe child N. Core v1.5\n"
               "    // section 5 requires every forwarded child to get independently replaced\n"
               "    // context, so each child has its own link, label, and blinding factor."
-          )
+          ).replace("Core v1.5", "Core v1.6")
           new_children = (
               "// child 0, and --downstream-id-N and friends describe child N. Core v1.6\n"
               "    // requires independently replaced routing context for every forwarded child,\n"
               "    // so each child has its own link, label, routing nonce, and reply-key\n"
               "    // blinding factor."
           )
-          # The first replacement above may already have changed the first line.
-          old_children_after_version = old_children.replace("Core v1.5", "Core v1.6")
-          if old_children_after_version not in text:
+          if old_children not in text:
               raise SystemExit("expected downstream-child comment block is absent")
-          text = text.replace(old_children_after_version, new_children)
+          text = text.replace(old_children, new_children)
 
           old_admission = (
               "// Checked rather than assumed: a research-only provider on the wire would\n"
@@ -69,22 +74,22 @@ jobs:
               raise SystemExit("expected obsolete C1/ADR 0038 comment block is absent")
           text = text.replace(old_admission, new_admission)
 
-          forbidden = (
+          for value in (
               "Core v1.5 section 5",
               "discovery nonce",
               "messages-v1.5.md",
               "ADR 0038 for why C1 is not one of the options",
-          )
-          for value in forbidden:
+          ):
               if value in text:
                   raise SystemExit(f"stale active-profile comment remains: {value!r}")
 
           path.write_text(text, encoding="utf-8")
           PY
 
+          git checkout origin/main -- .github/workflows/apply-v16-comment-fix.yml
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add implementation/rust/bins/trahens-relay/src/main.rs
+          git add implementation/rust/bins/trahens-relay/src/main.rs .github/workflows/apply-v16-comment-fix.yml
           git commit -m "Align relay comments with Core v1.6"
-          git push origin HEAD:agent/fix-v16-source-comments
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
