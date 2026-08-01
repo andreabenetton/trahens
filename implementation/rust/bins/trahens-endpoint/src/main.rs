@@ -242,7 +242,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 hop_remaining: ring.depth,
                 fanout_class: ring.fanout_class,
                 expiry_class: 1,
-                options: 0,
+                depth: 0,
                 reply_public_key,
                 discovery_field: discovery_nonce.to_vec(),
             }),

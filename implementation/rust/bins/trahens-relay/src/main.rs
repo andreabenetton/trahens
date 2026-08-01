@@ -397,7 +397,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         continue;
                     }
                     if discover.hop_remaining == 0
-                        || usize::from(discover.options) >= LIMIT_MAX_CANDIDATE_LAYERS
+                        || usize::from(discover.depth) >= LIMIT_MAX_CANDIDATE_LAYERS
                     {
                         drops.record(
                             "relay",
@@ -422,7 +422,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         drops.record("relay", ERROR_MALFORMED, "discover_nonce_length");
                         continue;
                     };
-                    let depth = discover.options.saturating_add(1);
+                    let depth = discover.depth.saturating_add(1);
                     let expires_at_ms = clock
                         .now_ms()
                         .saturating_add(Phase::Discovering.lifetime_ms());
@@ -474,7 +474,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 hop_remaining: discover.hop_remaining.saturating_sub(1),
                                 fanout_class: discover.fanout_class,
                                 expiry_class: discover.expiry_class,
-                                options: depth,
+                                depth,
                                 reply_public_key: child_public,
                                 discovery_field: child_discovery_nonce.to_vec(),
                             }),

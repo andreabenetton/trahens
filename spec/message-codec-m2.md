@@ -38,7 +38,7 @@ branch_token        16 bytes
 hop_remaining       u8
 fanout_class        u8
 expiry_class        u8
-options             u8
+depth               u8
 reply_public_key    32 bytes
 field_length        canonical VarUInt
 discovery_field      field_length bytes

@@ -58,7 +58,10 @@ This cannot be settled here: error identifiers reach the wire through
 and wiring them up changes what a node reports. Both are v1.6 decisions.
 
 **Recommendation: in v1.6, either emit them or delete them. Do not leave a
-declared taxonomy unhonoured.**
+declared taxonomy unhonoured.** — **done**, by emitting them. No registry
+change was needed: the identifiers stay local, since Core section 8 requires
+externally uniform failure behaviour and `RendezvousResult.status` remains the
+only place one crosses a link.
 
 ### 3. `MessageType::Abort` — Defer to v1.6
 
@@ -72,7 +75,13 @@ distinct from an orderly one, which would need distinct handling and a reason
 code — or it should be merged into `CANCEL`. Today it is a synonym.
 
 **Recommendation: merge into `CANCEL` in the next wire revision unless a
-distinct semantic is defined and implemented.**
+distinct semantic is defined and implemented.** — **superseded, and this
+finding was wrong.** Checking the spec before acting on it shows the condition
+is met: `messages-v1.5.md` separates CANCEL as advisory, CLOSE as orderly, and
+ABORT as failure teardown, and E1 has a relay that cannot reserve capacity
+release what it holds by abort. ABORT is not a synonym by design; it was a
+synonym because it was never implemented. It now is, and a relay that cannot
+honour a COMMIT returns it instead of dropping the message.
 
 ### 4. `expiry_class` — Defer to v1.6, and it is the most interesting one
 
@@ -112,7 +121,9 @@ options.saturating_add(1)`). The field is needed; the name suggests a bitfield
 and mismatches every use. This is a documentation defect that will mislead a
 second implementer.
 
-**Recommendation: rename to `depth` in the next registry revision.**
+**Recommendation: rename to `depth` in the next registry revision.** —
+**done**, and no registry revision was needed: `options` was never a registry
+key, only a struct field and a spec table row. The byte layout is unchanged.
 
 ### 6. Fixed-T2 ACK and retransmit reserves — Keep
 
@@ -165,19 +176,26 @@ known bugs.
 | # | Candidate | Verdict |
 |---|---|---|
 | 1 | `state_machine::Action` | Remove now |
-| 2 | Five never-emitted error identifiers | Defer, v1.6 registry decision |
-| 3 | `MessageType::Abort` | Defer, merge into `CANCEL` unless distinguished |
+| 2 | Five never-emitted error identifiers | **Done** — emitted, locally |
+| 3 | `MessageType::Abort` | **Done** — implemented; the finding was wrong |
 | 4 | `expiry_class` | **Done** — pinned to 1, registry 1.5.2 |
-| 5 | `Discover.options` | Rename to `depth` |
+| 5 | `Discover.options` | **Done** — renamed |
 | 6 | Fixed-T2 reserves | Keep |
 | 7 | `Phase` / `Event` variants | Keep |
 | 8 | `RemoteInputDrops` labels | Keep |
 | 9 | Relay `reverse` / `incoming` maps | **Done** — one `labels` map |
 
-Three are now done: the `Action` enum, the relay map consolidation, and the
-`expiry_class` pin, the last at the cost of a registry revision to 1.5.2 and a
-regenerated corpus. Three remain deferred because they are wire decisions with
-no forced timing — the unemitted error identifiers, `ABORT` as a synonym for
-`CANCEL`, and renaming `options` to `depth`. That they are wire decisions is
-the honest reason a frozen profile accumulates surface, and the reason to take
-them deliberately rather than by default.
+All nine are now settled. Six changed the code; three were Keep verdicts
+confirmed rather than assumed.
+
+The three deferred as "wire decisions needing a v1.6 revision" turned out not
+to need one. Emitting the error identifiers keeps them local, implementing
+ABORT uses a code point that already exists, and `options` was never a registry
+key. Only the `expiry_class` pin cost a revision, to 1.5.2, and only because
+tightening validation rejects encodings the old reference accepted.
+
+The lesson worth keeping is that "this needs a wire revision" was an assumption
+about the *deletion* branch of each finding. Two of the three were better
+served by the other branch — honour it, implement it — and those cost nothing.
+A review that only asks what to remove will misjudge which things are surface
+and which are unfinished.

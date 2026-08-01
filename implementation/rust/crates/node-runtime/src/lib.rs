@@ -1362,7 +1362,7 @@ mod tests {
                     hop_remaining: 4,
                     fanout_class: 1,
                     expiry_class: 1,
-                    options: 0,
+                    depth: 0,
                     reply_public_key: [4_u8; 32],
                     discovery_field: vec![5_u8; 32],
                 }),

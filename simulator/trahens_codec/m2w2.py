@@ -110,7 +110,9 @@ class DiscoverRecord:
     hop_remaining: int
     fanout_class: int
     expiry_class: int
-    options: int
+    # Hop depth travelled so far. Named `options` until August 2026, which
+    # suggested a bitfield and matched no use. The byte layout is unchanged.
+    depth: int
     reply_public_key: bytes
     eligibility_capsule: bytes | URECiphertext
     crypto_suite_id: bytes = C1_SUITE_ID
@@ -458,8 +460,8 @@ def encode_discover(record: DiscoverRecord) -> bytes:
         raise CodecError("fanout_class is out of range")
     if record.expiry_class != LIMIT_EXPIRY_CLASS_P1:
         raise CodecError("expiry_class is not the P1 class")
-    if not 0 <= record.options <= 255:
-        raise CodecError("options is out of range")
+    if not 0 <= record.depth <= 255:
+        raise CodecError("depth is out of range")
     try:
         r255.require_point(record.reply_public_key, allow_identity=False)
         capsule = _encode_eligibility_capsule(record.crypto_suite_id, record.eligibility_capsule)
@@ -467,7 +469,7 @@ def encode_discover(record: DiscoverRecord) -> bytes:
         raise CodecError("invalid DISCOVER cryptographic field") from exc
     body = (
         record.branch_token
-        + bytes([record.hop_remaining, record.fanout_class, record.expiry_class, record.options])
+        + bytes([record.hop_remaining, record.fanout_class, record.expiry_class, record.depth])
         + record.reply_public_key
         + encode_varuint(len(capsule))
         + capsule
@@ -540,7 +542,7 @@ def decode_message(
         cursor = 0
         token = _require_token(body[cursor : cursor + TOKEN_BYTES], "branch token")
         cursor += TOKEN_BYTES
-        hop_remaining, fanout_class, expiry_class, options = body[cursor : cursor + 4]
+        hop_remaining, fanout_class, expiry_class, depth = body[cursor : cursor + 4]
         cursor += 4
         if fanout_class == 0 or expiry_class != LIMIT_EXPIRY_CLASS_P1:
             raise CodecError("invalid DISCOVER bounds")
@@ -559,7 +561,7 @@ def decode_message(
             hop_remaining=hop_remaining,
             fanout_class=fanout_class,
             expiry_class=expiry_class,
-            options=options,
+            depth=depth,
             reply_public_key=reply_public,
             eligibility_capsule=capsule,
             crypto_suite_id=suite_id,

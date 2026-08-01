@@ -458,7 +458,7 @@ class _T1PathSimulator:
                 hop_remaining=hop_remaining,
                 fanout_class=1,
                 expiry_class=1,
-                options=0,
+                depth=0,
                 reply_public_key=r255.scalarmult_base(reply_secret),
                 eligibility_capsule=self._token(R1_DISCOVERY_NONCE_BYTES),
                 crypto_suite_id=R1_SUITE_ID,

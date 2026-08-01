@@ -38,7 +38,7 @@ class T1CodecTests(unittest.TestCase):
                 hop_remaining=4,
                 fanout_class=2,
                 expiry_class=1,
-                options=0,
+                depth=0,
                 reply_public_key=r255.scalarmult_base(
                     r255.scalar_from_label(b"t1-codec-reply")
                 ),

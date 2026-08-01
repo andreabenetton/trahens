@@ -46,13 +46,13 @@ branch_token:16
 hop_remaining:u8
 fanout_class:u8
 expiry_class:u8
-options:u8          # P1 relay depth on forwarded messages
+depth:u8            # P1 relay depth on forwarded messages
 reply_public_key:32
 field_length:minimal-varuint
 r1_discovery_nonce:32
 ```
 
-Branch token, reply public key, and discovery nonce MUST be non-zero/canonical. `options` MUST NOT exceed the candidate-layer limit.
+Branch token, reply public key, and discovery nonce MUST be non-zero/canonical. `depth` MUST NOT exceed the candidate-layer limit.
 
 ## CANDIDATE body
 

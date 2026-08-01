@@ -729,7 +729,7 @@ class _LifecycleSimulator:
                 hop_remaining=hop_remaining,
                 fanout_class=fanout_class,
                 expiry_class=1,
-                options=0,
+                depth=0,
                 reply_public_key=reply_public_key,
                 eligibility_capsule=eligibility_capsule,
                 crypto_suite_id=self.crypto_suite_id,

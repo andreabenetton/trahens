@@ -71,7 +71,10 @@ pub struct Discover {
     pub hop_remaining: u8,
     pub fanout_class: u8,
     pub expiry_class: u8,
-    pub options: u8,
+    /// Hop depth travelled so far. Named `options` until August 2026, which
+    /// suggested a bitfield and matched no use: a relay reads it, adds one,
+    /// and passes it to its children. The byte layout is unchanged.
+    pub depth: u8,
     pub reply_public_key: [u8; 32],
     pub discovery_field: Vec<u8>,
 }
@@ -230,7 +233,7 @@ pub fn encode(envelope: &Envelope) -> Result<Vec<u8>, CodecError> {
                 message.hop_remaining,
                 message.fanout_class,
                 message.expiry_class,
-                message.options,
+                message.depth,
             ]);
             body.extend_from_slice(&message.reply_public_key);
             encode_varuint(message.discovery_field.len() as u32, &mut body);
@@ -326,7 +329,7 @@ pub fn decode(input: &[u8]) -> Result<Envelope, CodecError> {
             let hop_remaining = *body.get(at).ok_or(CodecError::Malformed)?;
             let fanout_class = *body.get(at + 1).ok_or(CodecError::Malformed)?;
             let expiry_class = *body.get(at + 2).ok_or(CodecError::Malformed)?;
-            let options = *body.get(at + 3).ok_or(CodecError::Malformed)?;
+            let depth = *body.get(at + 3).ok_or(CodecError::Malformed)?;
             at += 4;
             let reply_public_key = take_array::<32>(body, &mut at)?;
             let field_len =
@@ -349,7 +352,7 @@ pub fn decode(input: &[u8]) -> Result<Envelope, CodecError> {
                 hop_remaining,
                 fanout_class,
                 expiry_class,
-                options,
+                depth,
                 reply_public_key,
                 discovery_field,
             })
@@ -721,7 +724,7 @@ mod tests {
                 hop_remaining: 12,
                 fanout_class: 1,
                 expiry_class: 1,
-                options: 0,
+                depth: 0,
                 reply_public_key: hex_point(),
                 discovery_field: vec![3; 32],
             }),

@@ -126,7 +126,7 @@ def encoding_rows(max_relay_wrappers: int = 16) -> list[EncodingRow]:
             hop_remaining=4,
             fanout_class=3,
             expiry_class=1,
-            options=0,
+            depth=0,
             reply_public_key=r255.scalarmult_base(
                 r255.scalar_from_label(b"m1-w2-discover-reply")
             ),
