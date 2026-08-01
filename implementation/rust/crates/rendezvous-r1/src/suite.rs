@@ -50,7 +50,20 @@ pub trait EligibilitySuite {
     fn transform(&self, field: &[u8]) -> Result<Vec<u8>, EligibilityFailure>;
 
     /// Decide whether a field is well formed for this role.
+    ///
+    /// Well-formedness only. A recipient additionally asks
+    /// [`Self::is_eligible`], because "this field is malformed" and "this
+    /// discovery is not for me" are different outcomes that an operator needs
+    /// to tell apart, even though both are dropped identically on the wire.
     fn accepts(&self, role: Role, field: &[u8]) -> bool;
+
+    /// Decide whether a well-formed field addresses this recipient.
+    ///
+    /// R1 carries no endpoint material, so every well-formed field is
+    /// eligible and the default says so. C1 decrypts.
+    fn is_eligible(&self, _field: &[u8]) -> bool {
+        true
+    }
 }
 
 /// R1: the active P1 provider. The discovery field is a fresh 32-byte nonce
@@ -178,17 +191,22 @@ impl EligibilitySuite for C1Suite {
         let Ok(capsule) = c1::UreCiphertext::decode(field) else {
             return false;
         };
-        match role {
-            // A relay learns nothing and decides nothing: it checks the shape
-            // and rerandomises. That is the property C1 exists for.
-            Role::Relay => true,
-            // The recipient is the only party that can tell whether a
-            // discovery is for it, and it does so by decrypting.
-            Role::Gateway => self
-                .recipient_secret
-                .as_ref()
-                .is_some_and(|secret| c1::ure_is_eligible(&secret.0, &capsule)),
-        }
+        // Shape only, for every role: a relay learns nothing and decides
+        // nothing, which is the property C1 exists for, and a recipient's
+        // decision belongs to is_eligible.
+        let _ = (role, capsule);
+        true
+    }
+
+    fn is_eligible(&self, field: &[u8]) -> bool {
+        let Ok(capsule) = c1::UreCiphertext::decode(field) else {
+            return false;
+        };
+        // A recipient without a key is never eligible rather than always
+        // eligible: absence must not read as acceptance.
+        self.recipient_secret
+            .as_ref()
+            .is_some_and(|secret| c1::ure_is_eligible(&secret.0, &capsule))
     }
 }
 
@@ -361,28 +379,37 @@ mod boundary_tests {
         let theirs = c1::build_endpoint_keys(b"someone-else")?;
         let field = C1Suite::initiator(mine.eligibility_public).initial()?;
 
+        // Shape and eligibility are separate questions, so an operator can
+        // tell a malformed capsule from one simply not addressed here.
         let recipient = C1Suite::recipient(SecretBytes(mine.eligibility_secret.0));
-        assert!(recipient.accepts(Role::Gateway, &field), "addressed to me");
+        assert!(recipient.accepts(Role::Gateway, &field), "well formed");
+        assert!(recipient.is_eligible(&field), "addressed to me");
 
         let other = C1Suite::recipient(SecretBytes(theirs.eligibility_secret.0));
+        assert!(other.accepts(Role::Gateway, &field), "still well formed");
         assert!(
-            !other.accepts(Role::Gateway, &field),
+            !other.is_eligible(&field),
             "a gateway that is not the recipient declines"
         );
 
-        // A relay accepts the shape and cannot decide, which is the property
-        // that keeps the eligibility target hidden from the path.
+        // A relay forwards and cannot decide, which is what keeps the
+        // eligibility target hidden from the path.
         assert!(C1Suite::relay().accepts(Role::Relay, &field));
         assert!(
-            !C1Suite::relay().accepts(Role::Gateway, &field),
+            !C1Suite::relay().is_eligible(&field),
             "no key, never eligible: absence must not read as acceptance"
         );
 
         // Rerandomising at a hop does not change who it is for.
         let hopped = C1Suite::relay().transform(&field)?;
         assert_ne!(hopped, field, "no two hops carry the same bytes");
-        assert!(recipient.accepts(Role::Gateway, &hopped));
-        assert!(!other.accepts(Role::Gateway, &hopped));
+        assert!(recipient.is_eligible(&hopped));
+        assert!(!other.is_eligible(&hopped));
+
+        // R1 carries no endpoint material, so every well-formed field is
+        // eligible and the default reflects that rather than pretending to
+        // decide.
+        assert!(R1Suite.is_eligible(&R1Suite.initial()?));
         Ok(())
     }
 }

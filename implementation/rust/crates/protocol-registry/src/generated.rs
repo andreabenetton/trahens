@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Generated from spec/protocol-registry-v1.6.json; do not edit.
-pub const REGISTRY_VERSION: &str = "1.6.0";
+pub const REGISTRY_VERSION: &str = "1.6.1";
 
 pub const VERSION: u8 = 1;
 pub const PRIVACY_PROFILE_U1: u8 = 1;
@@ -60,6 +60,7 @@ pub const ERROR_CAPABILITY_INVALID: u16 = 10;
 pub const ERROR_TIMEOUT: u16 = 11;
 pub const ERROR_CANCELLED: u16 = 12;
 pub const ERROR_INTERNAL: u16 = 13;
+pub const ERROR_NOT_ELIGIBLE: u16 = 14;
 
 pub const BYTES_SUITE_ID: usize = 2;
 pub const BYTES_BRANCH_TOKEN: usize = 16;

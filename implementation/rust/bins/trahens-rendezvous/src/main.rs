@@ -13,8 +13,8 @@ use node_runtime::{
 };
 use protocol_registry::{
     ERROR_AUTHENTICATION_FAILED, ERROR_CANCELLED, ERROR_CAPABILITY_INVALID, ERROR_INTERNAL,
-    ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
-    LIMIT_CAPABILITY_TTL_MS, LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE, SUITE_R1,
+    ERROR_MALFORMED, ERROR_NOT_ELIGIBLE, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION,
+    ERROR_TIMEOUT, LIMIT_CAPABILITY_TTL_MS, LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE, SUITE_R1,
 };
 use rendezvous_r1::suite::{require_provider, C1Suite, EligibilitySuite, Profile, R1Suite, Role};
 use rendezvous_r1::Registry;
@@ -257,6 +257,13 @@ fn run() -> Result<(), Box<dyn Error>> {
                     // decides here whether the discovery is for this gateway.
                     if !eligibility.accepts(Role::Gateway, &discover.eligibility_field) {
                         drops.record("rendezvous", ERROR_MALFORMED, "eligibility_field");
+                        continue;
+                    }
+                    // A well-formed field that is not addressed here is a
+                    // different outcome from a malformed one, and the registry
+                    // names it. Both are dropped identically on the wire.
+                    if !eligibility.is_eligible(&discover.eligibility_field) {
+                        drops.record("rendezvous", ERROR_NOT_ELIGIBLE, "not_the_recipient");
                         continue;
                     }
                     let routing_nonce = discover.routing_nonce;

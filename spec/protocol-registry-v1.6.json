@@ -1,5 +1,5 @@
 {
-  "registry_version": "1.6.0",
+  "registry_version": "1.6.1",
   "status": "frozen-p1",
   "byte_order": "big",
   "protocol": {
@@ -67,7 +67,8 @@
     "capability_invalid": 10,
     "timeout": 11,
     "cancelled": 12,
-    "internal": 13
+    "internal": 13,
+    "not_eligible": 14
   },
   "widths_bytes": {
     "suite_id": 2,

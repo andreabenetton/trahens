@@ -1,6 +1,6 @@
 {
   "schema": "trahens-p1-conformance-v1",
-  "registry_version": "1.6.0",
+  "registry_version": "1.6.1",
   "generator_independence": "manual encoder reads only protocol-registry-v1.6.json",
   "vectors": [
     {

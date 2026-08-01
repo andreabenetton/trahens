@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Generated from spec/protocol-registry-v1.6.json; do not edit."""
 
-REGISTRY_VERSION = '1.6.0'
+REGISTRY_VERSION = '1.6.1'
 BYTE_ORDER = 'big'
 
 VERSION = 1
@@ -62,6 +62,7 @@ ERROR_CAPABILITY_INVALID = 10
 ERROR_TIMEOUT = 11
 ERROR_CANCELLED = 12
 ERROR_INTERNAL = 13
+ERROR_NOT_ELIGIBLE = 14
 
 BYTES_SUITE_ID = 2
 BYTES_BRANCH_TOKEN = 16
