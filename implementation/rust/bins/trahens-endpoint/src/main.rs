@@ -703,6 +703,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     let cleanup_ms = cleanup_started
         .map(|started| started.elapsed().as_millis().try_into().unwrap_or(u64::MAX))
         .unwrap_or(0);
+    // Read before shutdown, which consumes the handle.
+    let lifecycle_lost = link.lifecycle_lost();
     link.shutdown()?;
     let metrics = collect_stopped(&event_receiver, peer_id);
     write_link_metrics(
@@ -732,6 +734,12 @@ fn run() -> Result<(), Box<dyn Error>> {
         // A terminal NO_CANDIDATE is an ordinary outcome, not a fault: every
         // branch has been cancelled or expired and state is reclaimed.
         return Err("discovery terminated with NO_CANDIDATE".into());
+    }
+    if lifecycle_lost {
+        return Err(format!(
+            "a link event was lost, so this run's view of the link is incomplete; status={ERROR_INTERNAL}"
+        )
+        .into());
     }
     if transport_failed {
         return Err(format!("T1 retry budget exhausted; status={ERROR_TIMEOUT}").into());

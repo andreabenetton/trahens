@@ -571,6 +571,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     routes.clear();
     selectors.clear();
     states.reclaim_all(Event::Timeout, clock.now_ms());
+    let lifecycle_lost = link.lifecycle_lost();
     link.shutdown()?;
     let metrics = collect_stopped(&event_receiver, peer_id);
     let cleanup_ms = cleanup_started
@@ -594,6 +595,9 @@ fn run() -> Result<(), Box<dyn Error>> {
             ("redemption_latency_us", redemption_latency_ms.to_string()),
         ],
     );
+    if lifecycle_lost {
+        return Err("a link event was lost; this gateway's view of the link is incomplete".into());
+    }
     if transport_failed {
         return Err(format!("T1 retry budget exhausted; status={ERROR_TIMEOUT}").into());
     }

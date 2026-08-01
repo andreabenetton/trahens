@@ -147,7 +147,13 @@ for ((i=0; i<NODES-1; i++)); do
   ip -n "${NAMES[$((i+1))]}" link set "$right" mtu "$MTU" up
   for side in "${NAMES[$i]}:$left" "${NAMES[$((i+1))]}:$right"; do
     ns=${side%%:*}; dev=${side#*:}
-    if [[ -n "$BURST_LOSS" ]]; then
+    # A burst channel severe enough to exhaust a retry budget is a near-total
+    # outage, and netem drops on egress before tcpdump's tap sees the packet.
+    # Applying it to every link therefore leaves every capture empty and the
+    # 1,052-byte record assertion with nothing to check. Scope it to the
+    # gateway-facing link: one sender still starves, and every other link
+    # keeps emitting on schedule so the captures stay meaningful.
+    if [[ -n "$BURST_LOSS" && $i -eq $((NODES-2)) ]]; then
       ip netns exec "$ns" tc qdisc add dev "$dev" root netem \
         loss gemodel "${BURST_LOSS%,*}%" "${BURST_LOSS#*,}%" \
         delay "$DELAY" "$JITTER" duplicate "${DUPLICATE}%" reorder "${REORDER}%"

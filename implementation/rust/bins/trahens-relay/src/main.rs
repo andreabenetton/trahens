@@ -993,6 +993,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
     states.reclaim_all(Event::Timeout, clock.now_ms());
     let link_count = downstream.len() + 1;
+    // Read before shutdown, which consumes each handle.
+    let lifecycle_lost =
+        upstream.lifecycle_lost() || downstream.iter().any(|(_, link)| link.lifecycle_lost());
     upstream.shutdown()?;
     for (_, link) in downstream {
         link.shutdown()?;
@@ -1021,6 +1024,12 @@ fn run() -> Result<(), Box<dyn Error>> {
             ("id", node_id.to_string()),
         ],
     );
+    if lifecycle_lost {
+        return Err(format!(
+            "relay {node_id} lost a link event; its view of the link is incomplete"
+        )
+        .into());
+    }
     if let Some(peer_id) = transport_failed {
         // State is already reclaimed and metrics are written; the non-zero
         // exit reports the outcome without stranding remote state.

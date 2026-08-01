@@ -16,7 +16,7 @@ use scheduling_t2::{FixedSchedule, QueueBudget, Reservation, ScheduleMetrics, Sl
 use std::collections::{HashMap, VecDeque};
 use std::io::ErrorKind;
 use std::net::{SocketAddr, UdpSocket};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver as ChannelReceiver, SyncSender, TryRecvError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -97,6 +97,9 @@ enum LinkCommand {
 pub struct LinkHandle {
     peer_id: u32,
     commands: SyncSender<LinkCommand>,
+    /// Set by the worker when it could not hand over a lifecycle event and
+    /// stopped rather than continue with a hole in the link's history.
+    lifecycle_lost: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
 }
 
@@ -124,6 +127,17 @@ impl LinkHandle {
 
     pub fn peer_id(&self) -> u32 {
         self.peer_id
+    }
+
+    /// True when this link stopped because a lifecycle event could not be
+    /// delivered. The event itself is gone, so this is the only record that
+    /// the node's view of the link is incomplete: callers must treat the run
+    /// as failed rather than trust what they did receive.
+    ///
+    /// Read it before [`Self::shutdown`], which consumes the handle.
+    #[must_use]
+    pub fn lifecycle_lost(&self) -> bool {
+        self.lifecycle_lost.load(Ordering::Acquire)
     }
 }
 
@@ -302,6 +316,8 @@ pub fn spawn_link(
     let receive_key = directional_key(&config.base_key, config.peer_id, config.local_id)?;
     let (command_sender, command_receiver) = mpsc::sync_channel(FIXED_T2_QUEUE_CELLS_PER_PEER);
     let peer_id = config.peer_id;
+    let lifecycle_lost = Arc::new(AtomicBool::new(false));
+    let worker_lifecycle_lost = Arc::clone(&lifecycle_lost);
     let worker = thread::Builder::new()
         .name(format!(
             "trahens-link-{}-{}",
@@ -316,11 +332,13 @@ pub fn spawn_link(
                 command_receiver,
                 events,
                 budget,
+                worker_lifecycle_lost,
             )
         })?;
     Ok(LinkHandle {
         peer_id,
         commands: command_sender,
+        lifecycle_lost,
         worker: Some(worker),
     })
 }
@@ -373,14 +391,16 @@ fn with_ack_delay(frame: Frame, held_ms: u64) -> Frame {
 /// emission loop and stay lossy.
 struct EventSink {
     events: SyncSender<LinkEvent>,
+    lifecycle_lost: Arc<AtomicBool>,
     dropped: u64,
     telemetry_dropped: u64,
 }
 
 impl EventSink {
-    fn new(events: SyncSender<LinkEvent>) -> Self {
+    fn new(events: SyncSender<LinkEvent>, lifecycle_lost: Arc<AtomicBool>) -> Self {
         Self {
             events,
+            lifecycle_lost,
             dropped: 0,
             telemetry_dropped: 0,
         }
@@ -389,14 +409,24 @@ impl EventSink {
     /// Hand over an event that changes behaviour, waiting if the reader is
     /// behind. The wait is bounded so a worker can never deadlock against a
     /// main thread that is already inside shutdown and joining.
-    fn deliver(&mut self, mut event: LinkEvent) {
-        // One fixed-T2 epoch of patience, in millisecond steps. Bounded rather
-        // than blocking: SyncSender::send_timeout is still unstable, and an
-        // unbounded send would let a worker deadlock against a main thread
-        // that is already inside shutdown and joining.
+    /// Returns false when the event could not be handed over, which is a
+    /// terminal condition for the link.
+    ///
+    /// One fixed-T2 epoch of patience, in millisecond steps. Bounded rather
+    /// than blocking: `SyncSender::send_timeout` is still unstable, and an
+    /// unbounded send would let a worker deadlock against a main thread that
+    /// is already inside shutdown and joining.
+    ///
+    /// Failing here means the reader has not drained a 4,096-entry channel for
+    /// a fifth of a second, so it is wedged rather than merely busy. Counting
+    /// the loss and carrying on would leave the node acting on a link history
+    /// it never received; stopping the link is the fail-closed outcome, and
+    /// `lifecycle_lost` carries that out of band because the channel that
+    /// would have reported it is precisely the one that failed.
+    fn deliver(&mut self, mut event: LinkEvent) -> bool {
         for _ in 0..FIXED_T2_EPOCH_MS {
             match self.events.try_send(event) {
-                Ok(()) => return,
+                Ok(()) => return true,
                 Err(mpsc::TrySendError::Full(returned)) => {
                     event = returned;
                     thread::sleep(Duration::from_millis(1));
@@ -405,9 +435,16 @@ impl EventSink {
             }
         }
         self.dropped = self.dropped.saturating_add(1);
+        self.lifecycle_lost.store(true, Ordering::Release);
+        false
     }
 
     /// Hand over an observability event, or discard it.
+    /// True once a lifecycle event has been lost.
+    fn failed(&self) -> bool {
+        self.lifecycle_lost.load(Ordering::Acquire)
+    }
+
     fn report(&mut self, event: LinkEvent) {
         if self.events.try_send(event).is_err() {
             self.telemetry_dropped = self.telemetry_dropped.saturating_add(1);
@@ -423,8 +460,9 @@ fn run_link(
     commands: ChannelReceiver<LinkCommand>,
     events: SyncSender<LinkEvent>,
     node_budget: NodeQueueBudget,
+    lifecycle_lost: Arc<AtomicBool>,
 ) {
-    let mut sink = EventSink::new(events);
+    let mut sink = EventSink::new(events, lifecycle_lost);
     let origin = Instant::now();
     let mut schedule = FixedSchedule::new(origin);
     // Randomized but bounded to the low 32 bits: the start stays
@@ -455,6 +493,14 @@ fn run_link(
     let mut retransmit_slots = 0_usize;
 
     while running {
+        // Fail closed: a lost lifecycle event means this link's history has a
+        // hole in it, so the link stops rather than carrying on. The handle's
+        // lifecycle_lost flag carries that to the node, because the channel
+        // that would have reported it is the one that failed.
+        if sink.failed() {
+            running = false;
+            break;
+        }
         loop {
             match commands.try_recv() {
                 Ok(LinkCommand::Send(envelope)) => {
@@ -1256,6 +1302,47 @@ mod tests {
         };
         assert_eq!(ack_transmission_id(&data), ack_transmission_id(&ack));
         assert_ne!(ack_transmission_id(&chaff), ack_transmission_id(&ack));
+    }
+
+    #[test]
+    fn an_undeliverable_lifecycle_event_fails_the_link_closed() {
+        // A reader that has not drained a 4,096-entry channel for a fifth of a
+        // second is wedged, not busy. Counting the loss and carrying on would
+        // leave the node acting on a link history it never received, so the
+        // link stops and says so out of band: the channel that would have
+        // carried the report is the one that failed.
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let lost = Arc::new(AtomicBool::new(false));
+        let mut sink = EventSink::new(sender, Arc::clone(&lost));
+
+        assert!(
+            sink.deliver(LinkEvent::TransmissionFailed { peer_id: 1 }),
+            "the first event fits"
+        );
+        assert!(!sink.failed());
+
+        // The channel is now full and nothing is reading it.
+        assert!(!sink.deliver(LinkEvent::TransmissionFailed { peer_id: 1 }));
+        assert!(sink.failed(), "the worker stops on the next iteration");
+        assert!(lost.load(Ordering::Acquire), "and the handle can see it");
+        assert_eq!(sink.dropped, 1);
+
+        // Telemetry is lossy by design and never sets the terminal flag.
+        let mut telemetry = EventSink::new(
+            {
+                let (full, _keep) = mpsc::sync_channel(0);
+                full
+            },
+            Arc::new(AtomicBool::new(false)),
+        );
+        telemetry.report(LinkEvent::SecurityEvent {
+            peer_id: 1,
+            error_id: ERROR_MALFORMED,
+            detail: "test",
+        });
+        assert_eq!(telemetry.telemetry_dropped, 1);
+        assert!(!telemetry.failed(), "reporting never fails the link");
+        drop(receiver);
     }
 
     #[test]
