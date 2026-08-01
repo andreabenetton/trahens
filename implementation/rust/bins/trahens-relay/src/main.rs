@@ -22,12 +22,12 @@ use trahens_crypto::{
     blind_public, initialize, random_bytes, random_nonzero_16, random_scalar, SecretBytes,
 };
 
-/// One forwarded child of a branch. Core v1.5 section 5 requires every child
+/// One forwarded child of a branch. Core v1.6 requires every child
 /// to receive independently replaced context, so each carries its own label,
-/// blinding factor, and discovery nonce.
+/// blinding factor, and routing nonce.
 ///
 /// Both 32-byte fields are key material and neither may be copied casually.
-/// The blinding factor derives the child's reply key. The discovery nonce
+/// The blinding factor derives the child's reply key. The routing nonce
 /// became a key when offer labels started being derived from it: anyone
 /// holding it can compute the labels a child will answer on, so it is what
 /// keeps successive labels unlinkable to an observer. It is confidential to
@@ -55,7 +55,7 @@ enum LabelBinding {
     /// answers control on. Resolves to the branch and no further.
     Branch { parent_label: [u8; 16] },
     /// A label reserved for one of a child's offers, derived from the
-    /// discovery nonce that child was given so both ends compute the same
+    /// routing nonce that child was given so both ends compute the same
     /// sequence without it appearing as a pattern on the wire. Resolves to the
     /// branch and to which child, which is what makes a COMMIT selective. A
     /// sliding window keeps live state small while the total per child stays
@@ -117,7 +117,7 @@ struct RelayRoute {
 /// never needs key material. Copying this out of the route table lets the
 /// borrow end before the table is mutated, which is what the old
 /// `RelayRoute::clone` was for — except that clone also duplicated every
-/// blinding factor and discovery nonce, once per control message.
+/// blinding factor and routing nonce, once per control message.
 #[derive(Clone)]
 struct RouteView {
     parent_label: [u8; 16],
@@ -155,7 +155,7 @@ impl RelayRoute {
 
 /// Failure teardown returned along the reverse path.
 ///
-/// `messages-v1.5.md` separates three teardowns: CANCEL is advisory, CLOSE is
+/// `messages-v1.6.md` separates three teardowns: CANCEL is advisory, CLOSE is
 /// orderly, and ABORT is failure. E1 section 12 has a relay that cannot
 /// reserve route capacity, or cannot find its tentative state, release what it
 /// holds by abort. Dropping such a COMMIT silently, as this did, leaves the
@@ -322,9 +322,10 @@ fn run() -> Result<(), Box<dyn Error>> {
         budget.clone(),
     )?;
     // Children are numbered: --downstream-id / -bind / -peer / -key describe
-    // child 0, and --downstream-id-N and friends describe child N. Core v1.5
-    // section 5 requires every forwarded child to get independently replaced
-    // context, so each child has its own link, label, and blinding factor.
+    // child 0, and --downstream-id-N and friends describe child N. Core v1.6
+    // requires independently replaced routing context for every forwarded child,
+    // so each child has its own link, label, routing nonce, and reply-key
+    // blinding factor.
     let mut downstream: Vec<(u32, node_runtime::LinkHandle)> = Vec::new();
     for child in 0..LIMIT_MAX_FANOUT_CLASS {
         let suffix = if child == 0 {
@@ -367,9 +368,10 @@ fn run() -> Result<(), Box<dyn Error>> {
     // from. This is what lets a COMMIT name one chain out of several.
     let mut tentatives: HashMap<[u8; 16], TentativeOffer> = HashMap::new();
     let mut drops = RemoteInputDrops::new();
-    // Checked rather than assumed: a research-only provider on the wire would
-    // otherwise be a silent misconfiguration, with the run still looking
-    // healthy. See ADR 0038 for why C1 is not one of the options.
+    // Admission is enforced before expensive cryptographic work or route-state
+    // allocation. The eligibility provider was already checked above: R1 is
+    // mandatory, while C1 is permitted only through the explicit experimental
+    // profile.
     let mut admission = IngressAdmission::new();
     let clock = Clock::start();
     let deadline = clock.now_ms().saturating_add(timeout_ms);
@@ -1171,7 +1173,7 @@ mod tests {
 
     #[test]
     fn an_abort_is_a_bare_failure_teardown() {
-        // messages-v1.5.md separates three teardowns and ABORT is the failure
+        // messages-v1.6.md separates three teardowns and ABORT is the failure
         // one. A relay that cannot honour a COMMIT sends it instead of
         // dropping the message, which used to leave the initiator waiting out
         // a deadline for a route that had already failed.
@@ -1195,7 +1197,7 @@ mod tests {
     fn a_route_view_carries_no_key_material() -> Result<(), Box<dyn Error>> {
         // Control forwarding needs labels and link indices, never secrets.
         // Cloning the whole route to get them duplicated every blinding factor
-        // and discovery nonce once per control message, and those copies were
+        // and routing nonce once per control message, and those copies were
         // never wiped. The view is what control paths take instead.
         let parent = [0x61; 16];
         let route = RelayRoute {
