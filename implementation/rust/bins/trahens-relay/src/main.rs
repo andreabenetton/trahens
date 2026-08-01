@@ -12,13 +12,15 @@ use protocol_registry::{
     ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION,
     ERROR_TIMEOUT, LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_MAX_FANOUT_CLASS, SUITE_R1,
 };
-use rendezvous_r1::suite::{require_network_provider, EligibilitySuite, R1Suite};
+use rendezvous_r1::suite::{require_network_provider, EligibilitySuite, R1Suite, Role};
 use state_machine::{Event, IngressAdmission, Phase, RouteTable};
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
-use trahens_crypto::{blind_public, initialize, random_nonzero_16, random_scalar, SecretBytes};
+use trahens_crypto::{
+    blind_public, initialize, random_bytes, random_nonzero_16, random_scalar, SecretBytes,
+};
 
 /// One forwarded child of a branch. Core v1.5 section 5 requires every child
 /// to receive independently replaced context, so each carries its own label,
@@ -37,7 +39,7 @@ struct RelayChild {
     link_index: usize,
     child_label: [u8; 16],
     blinding_factor: SecretBytes<32>,
-    child_discovery_nonce: SecretBytes<32>,
+    child_routing_nonce: SecretBytes<32>,
 }
 
 /// What a label this relay knows resolves to.
@@ -89,7 +91,7 @@ struct TentativeOffer {
     child_selector: [u8; 16],
 }
 
-/// Not `Clone`: it owns `parent_discovery_nonce`, which derives the labels
+/// Not `Clone`: it owns `parent_routing_nonce`, which derives the labels
 /// this relay answers its own parent on, and every child's key material.
 struct RelayRoute {
     parent_label: [u8; 16],
@@ -105,7 +107,7 @@ struct RelayRoute {
     offers_forwarded: u16,
     incoming_reply_public: [u8; 32],
     depth: u8,
-    parent_discovery_nonce: SecretBytes<32>,
+    parent_routing_nonce: SecretBytes<32>,
     generation: u32,
 }
 
@@ -423,12 +425,14 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                     let fanout = usize::from(discover.fanout_class)
                         .clamp(1, downstream.len().min(LIMIT_MAX_FANOUT_CLASS));
-                    let Ok(parent_discovery_nonce) =
-                        <[u8; 32]>::try_from(discover.discovery_field.as_slice())
-                    else {
-                        drops.record("relay", ERROR_MALFORMED, "discover_nonce_length");
+                    // The eligibility field is the suite's business and may be
+                    // any width the suite defines; routing no longer depends on
+                    // it, so a relay does not parse it.
+                    if !eligibility.accepts(Role::Relay, &discover.eligibility_field) {
+                        drops.record("relay", ERROR_MALFORMED, "eligibility_field");
                         continue;
-                    };
+                    }
+                    let parent_routing_nonce = discover.routing_nonce;
                     let depth = discover.depth.saturating_add(1);
                     let expires_at_ms = clock
                         .now_ms()
@@ -454,18 +458,20 @@ fn run() -> Result<(), Box<dyn Error>> {
                             break;
                         };
                         let child_label = random_nonzero_16()?;
-                        // eligibility-suite-interface-v1.md: lifecycle code
-                        // depends on the suite interface, not a concrete
-                        // scheme, and each child gets its own fresh field.
-                        let Ok(child_field) = eligibility.transform(&discover.discovery_field)
-                        else {
-                            drops.record("relay", ERROR_MALFORMED, "discovery_field_transform");
+                        // Two independent replacements per child, which is the
+                        // whole point of the v1.6 split. The routing nonce is
+                        // fresh randomness and carries the chain binding and
+                        // this child's offer labels; the eligibility field is
+                        // whatever the suite makes of its parent, which for R1
+                        // is a fresh nonce and for C1 a rerandomised capsule.
+                        let child_routing_nonce = random_bytes::<32>()?;
+                        if child_routing_nonce == [0_u8; 32] {
+                            drops.record("relay", ERROR_INTERNAL, "routing_nonce_zero");
                             break;
-                        };
-                        let Ok(child_discovery_nonce) =
-                            <[u8; 32]>::try_from(child_field.as_slice())
+                        }
+                        let Ok(child_field) = eligibility.transform(&discover.eligibility_field)
                         else {
-                            drops.record("relay", ERROR_INTERNAL, "discovery_field_width");
+                            drops.record("relay", ERROR_MALFORMED, "eligibility_field_transform");
                             break;
                         };
                         labels.insert(
@@ -483,7 +489,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 expiry_class: discover.expiry_class,
                                 depth,
                                 reply_public_key: child_public,
-                                discovery_field: child_discovery_nonce.to_vec(),
+                                routing_nonce: child_routing_nonce,
+                                eligibility_field: child_field,
                             }),
                         });
                         if forwarded.is_err() {
@@ -499,7 +506,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         // just received, so an offer arriving under one of them
                         // resolves to this branch and this child.
                         for index in 0..OFFER_LABEL_WINDOW {
-                            let label = offer_label(&child_discovery_nonce, index)?;
+                            let label = offer_label(&child_routing_nonce, index)?;
                             labels.insert(
                                 label,
                                 LabelBinding::Offer {
@@ -513,7 +520,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             link_index,
                             child_label,
                             blinding_factor: SecretBytes(factor),
-                            child_discovery_nonce: SecretBytes(child_discovery_nonce),
+                            child_routing_nonce: SecretBytes(child_routing_nonce),
                         });
                     }
                     if children.is_empty() {
@@ -538,7 +545,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             offers_forwarded: 0,
                             incoming_reply_public: discover.reply_public_key,
                             depth,
-                            parent_discovery_nonce: SecretBytes(parent_discovery_nonce),
+                            parent_routing_nonce: SecretBytes(parent_routing_nonce),
                             generation: 0,
                         },
                     );
@@ -829,8 +836,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                             child.blinding_factor.0,
                             child.child_label,
                             route.parent_label,
-                            route.parent_discovery_nonce.0,
-                            child.child_discovery_nonce.0,
+                            route.parent_routing_nonce.0,
+                            child.child_routing_nonce.0,
                             candidate.candidate_blob,
                         ) else {
                             drops.record("relay", ERROR_MALFORMED, "candidate_blob_wrap");
@@ -855,7 +862,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         continue;
                     };
                     let Ok(tentative) =
-                        offer_label(&entry.parent_discovery_nonce.0, entry.offers_forwarded)
+                        offer_label(&entry.parent_routing_nonce.0, entry.offers_forwarded)
                     else {
                         drops.record("relay", ERROR_RESOURCE_EXHAUSTED, "offer_response_limit");
                         continue;
@@ -865,7 +872,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     // has a reserved label.
                     let next_slot = slot_index.saturating_add(OFFER_LABEL_WINDOW);
                     let next_label = entry.children.get(child_index).and_then(|child| {
-                        offer_label(&child.child_discovery_nonce.0, next_slot).ok()
+                        offer_label(&child.child_routing_nonce.0, next_slot).ok()
                     });
                     tentatives.insert(
                         tentative,
@@ -1164,13 +1171,13 @@ mod tests {
                     link_index: 2,
                     child_label: [0x62; 16],
                     blinding_factor: SecretBytes([9; 32]),
-                    child_discovery_nonce: SecretBytes([8; 32]),
+                    child_routing_nonce: SecretBytes([8; 32]),
                 },
                 RelayChild {
                     link_index: 5,
                     child_label: [0x63; 16],
                     blinding_factor: SecretBytes([7; 32]),
-                    child_discovery_nonce: SecretBytes([6; 32]),
+                    child_routing_nonce: SecretBytes([6; 32]),
                 },
             ],
             committed_child: Some(1),
@@ -1178,7 +1185,7 @@ mod tests {
             offers_forwarded: 2,
             incoming_reply_public: [1; 32],
             depth: 3,
-            parent_discovery_nonce: SecretBytes([5; 32]),
+            parent_routing_nonce: SecretBytes([5; 32]),
             generation: 0,
         };
 
@@ -1196,11 +1203,11 @@ mod tests {
 
         // The labels a child may answer on come from its nonce, so the nonce
         // is a key: knowing it is enough to compute them.
-        let expected = offer_label(&route.children[0].child_discovery_nonce.0, 0)?;
+        let expected = offer_label(&route.children[0].child_routing_nonce.0, 0)?;
         assert_ne!(expected, [0_u8; 16]);
         assert_ne!(
             expected,
-            offer_label(&route.children[1].child_discovery_nonce.0, 0)?,
+            offer_label(&route.children[1].child_routing_nonce.0, 0)?,
             "different children never share a label"
         );
         Ok(())
@@ -1362,14 +1369,14 @@ mod tests {
                     link_index: 0,
                     child_label: child,
                     blinding_factor: SecretBytes([7; 32]),
-                    child_discovery_nonce: SecretBytes([0; 32]),
+                    child_routing_nonce: SecretBytes([0; 32]),
                 }],
                 committed_child: None,
                 committed_selector: None,
                 offers_forwarded: 0,
                 incoming_reply_public: [0; 32],
                 depth: 1,
-                parent_discovery_nonce: SecretBytes([0; 32]),
+                parent_routing_nonce: SecretBytes([0; 32]),
                 generation: 1,
             },
         );
@@ -1409,7 +1416,7 @@ mod tests {
                 link_index: index,
                 child_label: [index as u8 + 1; 16],
                 blinding_factor: SecretBytes([7; 32]),
-                child_discovery_nonce: SecretBytes([0; 32]),
+                child_routing_nonce: SecretBytes([0; 32]),
             })
             .collect();
         for child in &children {
@@ -1430,7 +1437,7 @@ mod tests {
                 offers_forwarded: 0,
                 incoming_reply_public: [0; 32],
                 depth: 1,
-                parent_discovery_nonce: SecretBytes([0; 32]),
+                parent_routing_nonce: SecretBytes([0; 32]),
                 generation: 1,
             },
         );
@@ -1479,14 +1486,14 @@ mod tests {
                         link_index: 0,
                         child_label: child,
                         blinding_factor: SecretBytes([7; 32]),
-                        child_discovery_nonce: SecretBytes([0; 32]),
+                        child_routing_nonce: SecretBytes([0; 32]),
                     }],
                     committed_child: None,
                     committed_selector: None,
                     offers_forwarded: 0,
                     incoming_reply_public: [0; 32],
                     depth: 1,
-                    parent_discovery_nonce: SecretBytes([0; 32]),
+                    parent_routing_nonce: SecretBytes([0; 32]),
                     generation: 0,
                 },
             );

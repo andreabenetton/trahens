@@ -15,6 +15,7 @@ use protocol_registry::{
     ERROR_INTERNAL, ERROR_STATE_VIOLATION, ERROR_TIMEOUT, LIMIT_CAPABILITY_TTL_MS,
     LIMIT_ROUTE_TTL_MS, SUITE_R1,
 };
+use rendezvous_r1::suite::{require_network_provider, EligibilitySuite, R1Suite};
 use state_machine::{Event, RouteTable};
 use std::error::Error;
 use std::sync::mpsc::RecvTimeoutError;
@@ -109,7 +110,7 @@ struct Ring {
 struct RingContext {
     ring: usize,
     branch_token: [u8; 16],
-    discovery_nonce: [u8; 32],
+    routing_nonce: [u8; 32],
 }
 
 /// A candidate offer held until its ring window closes.
@@ -196,6 +197,11 @@ fn run() -> Result<(), Box<dyn Error>> {
         budget.clone(),
     )?;
 
+    // The initiator produces the eligibility field, so it selects a provider
+    // exactly as a relay does.
+    let eligibility = R1Suite;
+    require_network_provider(&eligibility)
+        .map_err(|_| "eligibility provider is not permitted on the network")?;
     let root_secret = SecretBytes(random_scalar()?);
     let reply_public_key = scalar_base(&root_secret.0)?;
     let rings = parse_rings(
@@ -232,10 +238,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         let now_ms = clock.now_ms();
         let ring = rings[index];
         let branch_token = random_nonzero_16()?;
-        let discovery_nonce = random_bytes::<32>()?;
-        if discovery_nonce == [0_u8; 32] {
-            return Err("random discovery nonce was zero".into());
+        // Two independent values since v1.6: the routing nonce binds the chain
+        // and derives this branch's offer labels, and the eligibility field is
+        // whatever the selected suite produces.
+        let routing_nonce = random_bytes::<32>()?;
+        if routing_nonce == [0_u8; 32] {
+            return Err("random routing nonce was zero".into());
         }
+        let eligibility_field = eligibility.initial()?;
         state.begin(
             branch_token,
             peer_id,
@@ -251,13 +261,14 @@ fn run() -> Result<(), Box<dyn Error>> {
                 expiry_class: 1,
                 depth: 0,
                 reply_public_key,
-                discovery_field: discovery_nonce.to_vec(),
+                routing_nonce,
+                eligibility_field,
             }),
         })?;
         contexts.push(RingContext {
             ring: index,
             branch_token,
-            discovery_nonce,
+            routing_nonce,
         });
         structured_event(
             "endpoint",
@@ -458,7 +469,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             &candidate_blob,
                             layer_count,
                             &expected_gateway_public,
-                            &context.discovery_nonce,
+                            &context.routing_nonce,
                             unix_time_ms(),
                         )
                         .ok()

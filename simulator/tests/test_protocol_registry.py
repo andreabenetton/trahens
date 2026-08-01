@@ -18,7 +18,7 @@ class ProtocolRegistryTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.repository = Path(__file__).resolve().parents[2]
         cls.source = json.loads(
-            (cls.repository / "spec" / "protocol-registry-v1.5.json").read_text(
+            (cls.repository / "spec" / "protocol-registry-v1.6.json").read_text(
                 encoding="utf-8"
             )
         )
@@ -76,7 +76,7 @@ class ProtocolRegistryTests(unittest.TestCase):
                 / "protocol-registry"
                 / "src"
                 / "generated.rs",
-                "markdown": self.repository / "spec" / "protocol-registry-v1.5.md",
+                "markdown": self.repository / "spec" / "protocol-registry-v1.6.md",
             }
             for name, generated in outputs.items():
                 self.assertEqual(

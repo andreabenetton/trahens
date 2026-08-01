@@ -59,7 +59,7 @@ pub struct OpenedOffer {
     pub gateway_pseudonym: [u8; 16],
     pub route_secret: SecretBytes<32>,
     pub commit_challenge: SecretBytes<32>,
-    pub discovery_nonce: [u8; 32],
+    pub routing_nonce: [u8; 32],
     /// Token the innermost relay used towards the gateway. Diagnostic only:
     /// control is addressed with the tentative selector each relay mints per
     /// returned offer, which is what disambiguates a fanned-out branch.
@@ -80,17 +80,20 @@ pub const OFFER_LABEL_WINDOW: u16 = 4;
 /// parent-facing label to a child-facing one, and receive COMMIT on that
 /// parent-facing label. For the parent to resolve a label it did not mint, the
 /// two ends need a shared secret to derive it from, and they already have
-/// one: the discovery nonce the parent independently replaced for this child
-/// and sent in the DISCOVER. Deriving from it keeps successive labels
-/// unlinkable to anyone who has not seen the nonce, which a counter or an XOR
-/// of the branch token would not.
-pub fn offer_label(discovery_nonce: &[u8; 32], index: u16) -> Result<[u8; 16], P1Error> {
+/// one: the routing nonce the parent independently replaced for this child and
+/// sent in the DISCOVER. Deriving from it keeps successive labels unlinkable to
+/// anyone who has not seen the nonce, which a counter or an XOR of the branch
+/// token would not.
+///
+/// Since v1.6 this is the routing nonce rather than the eligibility field, so
+/// the derivation is unchanged whatever suite the link runs.
+pub fn offer_label(routing_nonce: &[u8; 32], index: u16) -> Result<[u8; 16], P1Error> {
     if usize::from(index) >= LIMIT_MAX_CANDIDATE_RESPONSES_PER_DISCOVERY {
         return Err(P1Error::TooManyLayers);
     }
     let mut input = b"Trahens-P1-offer-label-v1".to_vec();
     input.extend_from_slice(&index.to_be_bytes());
-    let full = hmac_sha256(discovery_nonce, &input).map_err(|_| P1Error::InvalidOffer)?;
+    let full = hmac_sha256(routing_nonce, &input).map_err(|_| P1Error::InvalidOffer)?;
     let mut label = [0_u8; 16];
     label.copy_from_slice(&full[..16]);
     // A zero label is not a valid token anywhere in M2.
@@ -113,7 +116,7 @@ fn offer_transcript(
     gateway_pseudonym: &[u8; 16],
     route_secret: &[u8; 32],
     commit_challenge: &[u8; 32],
-    discovery_nonce: &[u8; 32],
+    routing_nonce: &[u8; 32],
     signing_public: &[u8; 32],
 ) -> Result<Vec<u8>, P1Error> {
     let mut output = b"Trahens-P1-gateway-offer-v1".to_vec();
@@ -122,7 +125,7 @@ fn offer_transcript(
     append_field(&mut output, gateway_pseudonym)?;
     append_field(&mut output, route_secret)?;
     append_field(&mut output, commit_challenge)?;
-    append_field(&mut output, discovery_nonce)?;
+    append_field(&mut output, routing_nonce)?;
     append_field(&mut output, signing_public)?;
     Ok(output)
 }
@@ -143,7 +146,7 @@ pub fn seal_gateway_offer(
     gateway_pseudonym: [u8; 16],
     route_secret: [u8; 32],
     commit_challenge: [u8; 32],
-    discovery_nonce: [u8; 32],
+    routing_nonce: [u8; 32],
     signing_public: [u8; 32],
     signing_secret: &SecretBytes<64>,
 ) -> Result<Vec<u8>, P1Error> {
@@ -153,7 +156,7 @@ pub fn seal_gateway_offer(
         &gateway_pseudonym,
         &route_secret,
         &commit_challenge,
-        &discovery_nonce,
+        &routing_nonce,
         &signing_public,
     )?;
     let signature_result = sign(signing_secret, &transcript);
@@ -165,7 +168,7 @@ pub fn seal_gateway_offer(
         gateway_pseudonym,
         route_secret,
         commit_challenge,
-        discovery_nonce,
+        routing_nonce,
         signing_public,
         signature,
     })?;
@@ -181,8 +184,8 @@ pub fn wrap_candidate(
     blinding_factor: [u8; 32],
     child_candidate_token: [u8; 16],
     forward_label: [u8; 16],
-    parent_discovery_nonce: [u8; 32],
-    child_discovery_nonce: [u8; 32],
+    parent_routing_nonce: [u8; 32],
+    child_routing_nonce: [u8; 32],
     child_blob: Vec<u8>,
 ) -> Result<Vec<u8>, P1Error> {
     if layer_index == 0 || usize::from(layer_index) > LIMIT_MAX_CANDIDATE_LAYERS {
@@ -192,8 +195,8 @@ pub fn wrap_candidate(
         blinding_factor,
         child_candidate_token,
         forward_label,
-        parent_discovery_nonce,
-        child_discovery_nonce,
+        parent_routing_nonce,
+        child_routing_nonce,
         child_blob,
     })?;
     let (aad, info) = candidate_context(layer_index);
@@ -207,7 +210,7 @@ pub fn open_candidate_chain(
     candidate_blob: &[u8],
     advertised_layers: u8,
     expected_gateway_public: &[u8; 32],
-    expected_discovery_nonce: &[u8; 32],
+    expected_routing_nonce: &[u8; 32],
     now_ms: u64,
 ) -> Result<OpenedOffer, P1Error> {
     if advertised_layers == 0 || usize::from(advertised_layers) > LIMIT_MAX_CANDIDATE_LAYERS + 1 {
@@ -217,7 +220,7 @@ pub fn open_candidate_chain(
     let mut blob = candidate_blob.to_vec();
     let mut gateway_candidate_token = None;
     let mut relay_layers = 0_usize;
-    let mut expected_nonce = *expected_discovery_nonce;
+    let mut expected_nonce = *expected_routing_nonce;
 
     loop {
         let layer_index = if relay_layers + 1 == usize::from(advertised_layers) {
@@ -236,13 +239,13 @@ pub fn open_candidate_chain(
                 gateway_pseudonym,
                 route_secret,
                 commit_challenge,
-                discovery_nonce,
+                routing_nonce,
                 signing_public,
                 signature,
             } => {
                 if relay_layers + 1 != usize::from(advertised_layers)
                     || signing_public != *expected_gateway_public
-                    || discovery_nonce != expected_nonce
+                    || routing_nonce != expected_nonce
                     || now_ms >= expires_at_ms
                 {
                     return Err(P1Error::InvalidOffer);
@@ -253,7 +256,7 @@ pub fn open_candidate_chain(
                     &gateway_pseudonym,
                     &route_secret,
                     &commit_challenge,
-                    &discovery_nonce,
+                    &routing_nonce,
                     &signing_public,
                 )?;
                 let verification = verify(&signing_public, &transcript, &signature);
@@ -265,7 +268,7 @@ pub fn open_candidate_chain(
                     gateway_pseudonym,
                     route_secret: SecretBytes(route_secret),
                     commit_challenge: SecretBytes(commit_challenge),
-                    discovery_nonce,
+                    routing_nonce,
                     gateway_candidate_token,
                     layer_count: relay_layers + 1,
                 });
@@ -274,18 +277,18 @@ pub fn open_candidate_chain(
                 blinding_factor,
                 child_candidate_token,
                 forward_label: _,
-                parent_discovery_nonce,
-                child_discovery_nonce,
+                parent_routing_nonce,
+                child_routing_nonce,
                 child_blob,
             } => {
                 relay_layers = relay_layers.saturating_add(1);
                 if relay_layers > LIMIT_MAX_CANDIDATE_LAYERS {
                     return Err(P1Error::TooManyLayers);
                 }
-                if parent_discovery_nonce != expected_nonce {
+                if parent_routing_nonce != expected_nonce {
                     return Err(P1Error::InvalidOffer);
                 }
-                expected_nonce = child_discovery_nonce;
+                expected_nonce = child_routing_nonce;
                 gateway_candidate_token = Some(child_candidate_token);
                 secret = SecretBytes(blind_secret(&secret.0, &blinding_factor)?);
                 blob = child_blob;

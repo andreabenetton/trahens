@@ -730,6 +730,7 @@ class _LifecycleSimulator:
                 fanout_class=fanout_class,
                 expiry_class=1,
                 depth=0,
+                routing_nonce=bytes(range(1, 33)),
                 reply_public_key=reply_public_key,
                 eligibility_capsule=eligibility_capsule,
                 crypto_suite_id=self.crypto_suite_id,

@@ -114,6 +114,10 @@ class DiscoverRecord:
     # suggested a bitfield and matched no use. The byte layout is unchanged.
     depth: int
     reply_public_key: bytes
+    # Suite-independent since v1.6: binds this hop's link in the candidate
+    # chain and keys the per-offer labels, so a suite may choose its own
+    # eligibility width without touching route discovery.
+    routing_nonce: bytes
     eligibility_capsule: bytes | URECiphertext
     crypto_suite_id: bytes = C1_SUITE_ID
 
@@ -467,10 +471,13 @@ def encode_discover(record: DiscoverRecord) -> bytes:
         capsule = _encode_eligibility_capsule(record.crypto_suite_id, record.eligibility_capsule)
     except (r255.RistrettoError, ValueError) as exc:
         raise CodecError("invalid DISCOVER cryptographic field") from exc
+    if len(record.routing_nonce) != 32 or record.routing_nonce == bytes(32):
+        raise CodecError("routing_nonce must be 32 non-zero bytes")
     body = (
         record.branch_token
         + bytes([record.hop_remaining, record.fanout_class, record.expiry_class, record.depth])
         + record.reply_public_key
+        + record.routing_nonce
         + encode_varuint(len(capsule))
         + capsule
     )
@@ -536,7 +543,7 @@ def decode_message(
             raise CodecError("CHAFF body must be empty")
         return message_type
     if message_type is MessageType.DISCOVER:
-        minimum = TOKEN_BYTES + 4 + r255.POINT_BYTES + 1
+        minimum = TOKEN_BYTES + 4 + r255.POINT_BYTES + 32 + 1
         if len(body) < minimum:
             raise CodecError("truncated DISCOVER body")
         cursor = 0
@@ -548,6 +555,10 @@ def decode_message(
             raise CodecError("invalid DISCOVER bounds")
         reply_public = body[cursor : cursor + r255.POINT_BYTES]
         cursor += r255.POINT_BYTES
+        routing_nonce = body[cursor : cursor + 32]
+        cursor += 32
+        if routing_nonce == bytes(32):
+            raise CodecError("routing_nonce must be non-zero")
         capsule_length, cursor = decode_varuint(body, cursor, maximum=MAX_LOGICAL_MESSAGE_BYTES)
         if cursor + capsule_length != len(body):
             raise CodecError("eligibility capsule length mismatch")
@@ -563,6 +574,7 @@ def decode_message(
             expiry_class=expiry_class,
             depth=depth,
             reply_public_key=reply_public,
+            routing_nonce=routing_nonce,
             eligibility_capsule=capsule,
             crypto_suite_id=suite_id,
         )

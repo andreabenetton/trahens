@@ -76,7 +76,18 @@ pub struct Discover {
     /// and passes it to its children. The byte layout is unchanged.
     pub depth: u8,
     pub reply_public_key: [u8; 32],
-    pub discovery_field: Vec<u8>,
+    /// Suite-independent routing nonce, replaced per hop.
+    ///
+    /// It binds this hop's link in the returned candidate chain and is the key
+    /// per-offer labels are derived from (ADR 0039). Separating it from the
+    /// eligibility field is what lets a suite choose its own field width
+    /// without changing route discovery: before v1.6 one 32-byte value did
+    /// both jobs, so every suite had to be 32 bytes.
+    pub routing_nonce: [u8; 32],
+    /// The active suite's eligibility field. R1 carries a 32-byte nonce, C1 v2
+    /// a 128-byte capsule, symbolic C2 640 bytes; `message-codec-m2.md` fixes
+    /// each width and the suite parses it.
+    pub eligibility_field: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -220,14 +231,18 @@ pub fn encode(envelope: &Envelope) -> Result<Vec<u8>, CodecError> {
             {
                 return Err(CodecError::Malformed);
             }
+            if !nonzero(&message.routing_nonce) {
+                return Err(CodecError::Malformed);
+            }
             if !canonical_reply_field(
                 envelope.suite_id,
                 &message.reply_public_key,
-                &message.discovery_field,
+                &message.eligibility_field,
             ) {
                 return Err(CodecError::Malformed);
             }
-            let mut body = Vec::with_capacity(69 + message.discovery_field.len());
+            let mut body =
+                Vec::with_capacity(69 + BYTES_ROUTING_NONCE + message.eligibility_field.len());
             body.extend_from_slice(&message.branch_token);
             body.extend_from_slice(&[
                 message.hop_remaining,
@@ -236,8 +251,9 @@ pub fn encode(envelope: &Envelope) -> Result<Vec<u8>, CodecError> {
                 message.depth,
             ]);
             body.extend_from_slice(&message.reply_public_key);
-            encode_varuint(message.discovery_field.len() as u32, &mut body);
-            body.extend_from_slice(&message.discovery_field);
+            body.extend_from_slice(&message.routing_nonce);
+            encode_varuint(message.eligibility_field.len() as u32, &mut body);
+            body.extend_from_slice(&message.eligibility_field);
             (MessageType::Discover, body)
         }
         Message::Candidate(message) => {
@@ -332,6 +348,7 @@ pub fn decode(input: &[u8]) -> Result<Envelope, CodecError> {
             let depth = *body.get(at + 3).ok_or(CodecError::Malformed)?;
             at += 4;
             let reply_public_key = take_array::<32>(body, &mut at)?;
+            let routing_nonce = take_array::<32>(body, &mut at)?;
             let field_len =
                 decode_varuint(body, &mut at, LIMIT_MAX_LOGICAL_MESSAGE_BYTES as u32)? as usize;
             let field_end = at.checked_add(field_len).ok_or(CodecError::Malformed)?;
@@ -340,11 +357,12 @@ pub fn decode(input: &[u8]) -> Result<Envelope, CodecError> {
                 || fanout_class == 0
                 || !p1_expiry_class(expiry_class)
                 || !nonzero(&reply_public_key)
+                || !nonzero(&routing_nonce)
             {
                 return Err(CodecError::Malformed);
             }
-            let discovery_field = body[at..field_end].to_vec();
-            if !canonical_reply_field(suite, &reply_public_key, &discovery_field) {
+            let eligibility_field = body[at..field_end].to_vec();
+            if !canonical_reply_field(suite, &reply_public_key, &eligibility_field) {
                 return Err(CodecError::Malformed);
             }
             Message::Discover(Discover {
@@ -354,7 +372,8 @@ pub fn decode(input: &[u8]) -> Result<Envelope, CodecError> {
                 expiry_class,
                 depth,
                 reply_public_key,
-                discovery_field,
+                routing_nonce,
+                eligibility_field,
             })
         }
         MessageType::Candidate => {
@@ -419,7 +438,7 @@ pub enum P1Payload {
         gateway_pseudonym: [u8; 16],
         route_secret: [u8; 32],
         commit_challenge: [u8; 32],
-        discovery_nonce: [u8; 32],
+        routing_nonce: [u8; 32],
         signing_public: [u8; 32],
         signature: [u8; 64],
     },
@@ -427,8 +446,8 @@ pub enum P1Payload {
         blinding_factor: [u8; 32],
         child_candidate_token: [u8; 16],
         forward_label: [u8; 16],
-        parent_discovery_nonce: [u8; 32],
-        child_discovery_nonce: [u8; 32],
+        parent_routing_nonce: [u8; 32],
+        child_routing_nonce: [u8; 32],
         child_blob: Vec<u8>,
     },
     Commit {
@@ -467,14 +486,14 @@ pub fn encode_p1(payload: &P1Payload) -> Result<Vec<u8>, CodecError> {
             gateway_pseudonym,
             route_secret,
             commit_challenge,
-            discovery_nonce,
+            routing_nonce,
             signing_public,
             signature,
         } => {
             if !nonzero(gateway_pseudonym)
                 || !nonzero(route_secret)
                 || !nonzero(commit_challenge)
-                || !nonzero(discovery_nonce)
+                || !nonzero(routing_nonce)
             {
                 return Err(CodecError::Malformed);
             }
@@ -484,7 +503,7 @@ pub fn encode_p1(payload: &P1Payload) -> Result<Vec<u8>, CodecError> {
             output.extend_from_slice(gateway_pseudonym);
             output.extend_from_slice(route_secret);
             output.extend_from_slice(commit_challenge);
-            output.extend_from_slice(discovery_nonce);
+            output.extend_from_slice(routing_nonce);
             output.extend_from_slice(signing_public);
             output.extend_from_slice(signature);
         }
@@ -492,15 +511,15 @@ pub fn encode_p1(payload: &P1Payload) -> Result<Vec<u8>, CodecError> {
             blinding_factor,
             child_candidate_token,
             forward_label,
-            parent_discovery_nonce,
-            child_discovery_nonce,
+            parent_routing_nonce,
+            child_routing_nonce,
             child_blob,
         } => {
             if !nonzero(blinding_factor)
                 || !nonzero(child_candidate_token)
                 || !nonzero(forward_label)
-                || !nonzero(parent_discovery_nonce)
-                || !nonzero(child_discovery_nonce)
+                || !nonzero(parent_routing_nonce)
+                || !nonzero(child_routing_nonce)
                 || child_blob.is_empty()
                 || child_blob.len() > u16::MAX as usize
             {
@@ -510,8 +529,8 @@ pub fn encode_p1(payload: &P1Payload) -> Result<Vec<u8>, CodecError> {
             output.extend_from_slice(blinding_factor);
             output.extend_from_slice(child_candidate_token);
             output.extend_from_slice(forward_label);
-            output.extend_from_slice(parent_discovery_nonce);
-            output.extend_from_slice(child_discovery_nonce);
+            output.extend_from_slice(parent_routing_nonce);
+            output.extend_from_slice(child_routing_nonce);
             output.extend_from_slice(&(child_blob.len() as u16).to_be_bytes());
             output.extend_from_slice(child_blob);
         }
@@ -580,13 +599,13 @@ pub fn decode_p1(input: &[u8]) -> Result<P1Payload, CodecError> {
             let gateway_pseudonym = take_array::<16>(input, &mut cursor)?;
             let route_secret = take_array::<32>(input, &mut cursor)?;
             let commit_challenge = take_array::<32>(input, &mut cursor)?;
-            let discovery_nonce = take_array::<32>(input, &mut cursor)?;
+            let routing_nonce = take_array::<32>(input, &mut cursor)?;
             let signing_public = take_array::<32>(input, &mut cursor)?;
             let signature = take_array::<64>(input, &mut cursor)?;
             if !nonzero(&gateway_pseudonym)
                 || !nonzero(&route_secret)
                 || !nonzero(&commit_challenge)
-                || !nonzero(&discovery_nonce)
+                || !nonzero(&routing_nonce)
             {
                 return Err(CodecError::Malformed);
             }
@@ -596,7 +615,7 @@ pub fn decode_p1(input: &[u8]) -> Result<P1Payload, CodecError> {
                 gateway_pseudonym,
                 route_secret,
                 commit_challenge,
-                discovery_nonce,
+                routing_nonce,
                 signing_public,
                 signature,
             }
@@ -605,8 +624,8 @@ pub fn decode_p1(input: &[u8]) -> Result<P1Payload, CodecError> {
             let blinding_factor = take_array::<32>(input, &mut cursor)?;
             let child_candidate_token = take_array::<16>(input, &mut cursor)?;
             let forward_label = take_array::<16>(input, &mut cursor)?;
-            let parent_discovery_nonce = take_array::<32>(input, &mut cursor)?;
-            let child_discovery_nonce = take_array::<32>(input, &mut cursor)?;
+            let parent_routing_nonce = take_array::<32>(input, &mut cursor)?;
+            let child_routing_nonce = take_array::<32>(input, &mut cursor)?;
             let child_len = u16::from_be_bytes(take_array::<2>(input, &mut cursor)?) as usize;
             let end = cursor.checked_add(child_len).ok_or(CodecError::Malformed)?;
             if end != input.len()
@@ -614,8 +633,8 @@ pub fn decode_p1(input: &[u8]) -> Result<P1Payload, CodecError> {
                 || !nonzero(&blinding_factor)
                 || !nonzero(&child_candidate_token)
                 || !nonzero(&forward_label)
-                || !nonzero(&parent_discovery_nonce)
-                || !nonzero(&child_discovery_nonce)
+                || !nonzero(&parent_routing_nonce)
+                || !nonzero(&child_routing_nonce)
             {
                 return Err(CodecError::Malformed);
             }
@@ -624,8 +643,8 @@ pub fn decode_p1(input: &[u8]) -> Result<P1Payload, CodecError> {
                 blinding_factor,
                 child_candidate_token,
                 forward_label,
-                parent_discovery_nonce,
-                child_discovery_nonce,
+                parent_routing_nonce,
+                child_routing_nonce,
                 child_blob: input[end - child_len..end].to_vec(),
             }
         }
@@ -726,7 +745,8 @@ mod tests {
                 expiry_class: 1,
                 depth: 0,
                 reply_public_key: hex_point(),
-                discovery_field: vec![3; 32],
+                routing_nonce: [4; 32],
+                eligibility_field: vec![3; 32],
             }),
         };
         assert_eq!(decode(&encode(&message)?)?, message);

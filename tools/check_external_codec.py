@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CORPUS = ROOT / "spec/p1-conformance-corpus-v1.5.bin"
+CORPUS = ROOT / "spec/p1-conformance-corpus-v1.6.bin"
 
 
 def vectors(path: Path) -> list[tuple[bool, str, bytes]]:

@@ -12,7 +12,7 @@ import struct
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REGISTRY = ROOT / "spec/protocol-registry-v1.5.json"
+REGISTRY = ROOT / "spec/protocol-registry-v1.6.json"
 
 
 def varuint(value: int) -> bytes:
@@ -49,9 +49,18 @@ def build_vectors(reg: dict) -> list[dict]:
     candidate_blob = bytes(range(97, 161))
     vectors: list[dict] = []
 
+    # v1.6 split the suite-independent routing nonce out of the eligibility
+    # field. One generator emits either profile so both vector sets stay
+    # reproducible from their own registry.
+    routing = bytes(range(161, 193)) if "routing_nonce" in reg["widths_bytes"] else b""
     bodies: dict[str, bytes] = {
         "CHAFF": b"",
-        "DISCOVER": token + bytes([12, 1, 1, 0]) + reply + varuint(len(nonce)) + nonce,
+        "DISCOVER": token
+        + bytes([12, 1, 1, 0])
+        + reply
+        + routing
+        + varuint(len(nonce))
+        + nonce,
         "CANDIDATE": token + bytes([1, 2]) + varuint(len(candidate_blob)) + candidate_blob,
     }
     for name in [
@@ -72,7 +81,12 @@ def build_vectors(reg: dict) -> list[dict]:
     # an encoded message to find the byte.
     other = reg["limits"]["expiry_class_p1"] + 1
     bad_expiry: dict[str, bytes] = {
-        "DISCOVER": token + bytes([12, 1, other, 0]) + reply + varuint(len(nonce)) + nonce,
+        "DISCOVER": token
+        + bytes([12, 1, other, 0])
+        + reply
+        + routing
+        + varuint(len(nonce))
+        + nonce,
         "CANDIDATE": token + bytes([other, 2]) + varuint(len(candidate_blob)) + candidate_blob,
     }
     for name in [
@@ -140,15 +154,16 @@ def write_corpus(path: Path, vectors: list[dict]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--json-output", type=Path, default=ROOT / "spec/p1-conformance-vectors-v1.5.json")
-    parser.add_argument("--corpus-output", type=Path, default=ROOT / "spec/p1-conformance-corpus-v1.5.bin")
+    parser.add_argument("--registry", type=Path, default=REGISTRY)
+    parser.add_argument("--json-output", type=Path, default=ROOT / "spec/p1-conformance-vectors-v1.6.json")
+    parser.add_argument("--corpus-output", type=Path, default=ROOT / "spec/p1-conformance-corpus-v1.6.bin")
     args = parser.parse_args()
-    reg = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    reg = json.loads(args.registry.read_text(encoding="utf-8"))
     vectors = build_vectors(reg)
     document = {
         "schema": "trahens-p1-conformance-v1",
         "registry_version": reg["registry_version"],
-        "generator_independence": "manual encoder reads only protocol-registry-v1.5.json",
+        "generator_independence": f"manual encoder reads only {args.registry.name}",
         "vectors": vectors,
         "field_protection": reg["field_protection"],
     }

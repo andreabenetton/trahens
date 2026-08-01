@@ -40,8 +40,9 @@ fanout_class        u8
 expiry_class        u8
 depth               u8
 reply_public_key    32 bytes
+routing_nonce       32 bytes
 field_length        canonical VarUInt
-discovery_field      field_length bytes
+eligibility_field    field_length bytes
 ```
 
 `expiry_class` MUST equal `limits.expiry_class_p1`, which is 1. P1 defines one
@@ -51,7 +52,13 @@ decoder MUST reject any other value as malformed rather than accept and ignore
 it. A future revision that defines a second class must also define what it
 changes.
 
-The suite determines the field parser:
+`routing_nonce` MUST be 32 non-zero bytes and is replaced independently at
+every hop. It is suite-independent: route discovery binds it into the returned
+candidate chain and derives per-offer labels from it, so a suite may choose any
+eligibility width without changing route discovery. Before v1.6 one value did
+both jobs, which forced every suite to be 32 bytes (ADR 0040).
+
+The suite determines the eligibility field parser:
 
 - R1 (`0x0101`, active): exactly 32 non-zero bytes representing a non-semantic service-query nonce;
 - C1 v2 (`0x0003`, research only; `0x0001` is retired): exactly 128 bytes and four canonical non-identity `ristretto255` encodings;

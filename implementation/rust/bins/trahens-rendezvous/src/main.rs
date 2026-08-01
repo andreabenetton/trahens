@@ -16,6 +16,7 @@ use protocol_registry::{
     ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
     LIMIT_CAPABILITY_TTL_MS, LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE, SUITE_R1,
 };
+use rendezvous_r1::suite::{require_network_provider, EligibilitySuite, R1Suite, Role};
 use rendezvous_r1::Registry;
 use state_machine::{Event, Phase, RouteTable};
 use std::collections::HashMap;
@@ -159,6 +160,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     // same pseudonym in every candidate. It is a property of the
     // registration, not of an individual route.
     let gateway_pseudonym = random_nonzero_16()?;
+    let eligibility = R1Suite;
+    require_network_provider(&eligibility)
+        .map_err(|_| "eligibility provider is not permitted on the network")?;
     let mut registry = Registry::default();
     registry.register(
         gateway_id,
@@ -222,14 +226,15 @@ fn run() -> Result<(), Box<dyn Error>> {
                         drops.record("rendezvous", ERROR_STATE_VIOLATION, "discover_duplicate");
                         continue;
                     }
-                    // A malformed discovery field is remote input: it costs
-                    // this DISCOVER, never the gateway.
-                    let Ok(discovery_nonce) =
-                        <[u8; 32]>::try_from(discover.discovery_field.as_slice())
-                    else {
-                        drops.record("rendezvous", ERROR_MALFORMED, "discover_nonce_length");
+                    // The eligibility field is the suite's to judge. R1 accepts
+                    // any well-formed field, so on the mandatory path this is a
+                    // shape check; a suite with real eligibility semantics
+                    // decides here whether the discovery is for this gateway.
+                    if !eligibility.accepts(Role::Gateway, &discover.eligibility_field) {
+                        drops.record("rendezvous", ERROR_MALFORMED, "eligibility_field");
                         continue;
-                    };
+                    }
+                    let routing_nonce = discover.routing_nonce;
                     // Randomness is a local subsystem: if it fails the process
                     // cannot serve anyone and stopping is correct.
                     let route_secret = random_bytes::<32>()?;
@@ -255,7 +260,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         pseudonym,
                         route_secret,
                         challenge,
-                        discovery_nonce,
+                        routing_nonce,
                         signing_public,
                         &signing_secret,
                     ) else {
@@ -266,7 +271,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     // the discovery nonce this gateway was given, so the
                     // adjacent relay can resolve it to the branch it belongs
                     // to while telling it apart from any sibling's offer.
-                    let Ok(selector) = offer_label(&discovery_nonce, 0) else {
+                    let Ok(selector) = offer_label(&routing_nonce, 0) else {
                         drops.record("rendezvous", ERROR_INTERNAL, "offer_label_derivation");
                         continue;
                     };

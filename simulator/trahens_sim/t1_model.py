@@ -459,6 +459,7 @@ class _T1PathSimulator:
                 fanout_class=1,
                 expiry_class=1,
                 depth=0,
+                routing_nonce=bytes(range(1, 33)),
                 reply_public_key=r255.scalarmult_base(reply_secret),
                 eligibility_capsule=self._token(R1_DISCOVERY_NONCE_BYTES),
                 crypto_suite_id=R1_SUITE_ID,

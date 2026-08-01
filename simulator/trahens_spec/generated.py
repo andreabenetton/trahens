@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Generated from spec/protocol-registry-v1.5.json; do not edit."""
+"""Generated from spec/protocol-registry-v1.6.json; do not edit."""
 
-REGISTRY_VERSION = '1.5.2'
+REGISTRY_VERSION = '1.6.0'
 BYTE_ORDER = 'big'
 
 VERSION = 1
@@ -65,6 +65,7 @@ ERROR_INTERNAL = 13
 
 BYTES_SUITE_ID = 2
 BYTES_BRANCH_TOKEN = 16
+BYTES_ROUTING_NONCE = 32
 BYTES_CANDIDATE_TOKEN = 16
 BYTES_LOCAL_LABEL = 16
 BYTES_TRANSMISSION_ID = 16

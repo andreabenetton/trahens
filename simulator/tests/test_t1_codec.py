@@ -39,6 +39,7 @@ class T1CodecTests(unittest.TestCase):
                 fanout_class=2,
                 expiry_class=1,
                 depth=0,
+                routing_nonce=bytes(range(1, 33)),
                 reply_public_key=r255.scalarmult_base(
                     r255.scalar_from_label(b"t1-codec-reply")
                 ),
