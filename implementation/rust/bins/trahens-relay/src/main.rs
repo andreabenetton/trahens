@@ -12,7 +12,7 @@ use protocol_registry::{
     ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION,
     ERROR_TIMEOUT, LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_MAX_FANOUT_CLASS, SUITE_R1,
 };
-use rendezvous_r1::suite::{EligibilitySuite, R1Suite};
+use rendezvous_r1::suite::{require_network_provider, EligibilitySuite, R1Suite};
 use state_machine::{Event, IngressAdmission, Phase, RouteTable};
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
@@ -299,7 +299,12 @@ fn run() -> Result<(), Box<dyn Error>> {
     // Label a child may answer on -> which branch and child it belongs to.
     let mut incoming: HashMap<[u8; 16], IncomingOffer> = HashMap::new();
     let mut drops = RemoteInputDrops::new();
+    // Checked rather than assumed: a research-only provider on the wire would
+    // otherwise be a silent misconfiguration, with the run still looking
+    // healthy. See ADR 0038 for why C1 is not one of the options.
     let eligibility = R1Suite;
+    require_network_provider(&eligibility)
+        .map_err(|_| "eligibility provider is not permitted on the network")?;
     let mut admission = IngressAdmission::new();
     let clock = Clock::start();
     let deadline = clock.now_ms().saturating_add(timeout_ms);

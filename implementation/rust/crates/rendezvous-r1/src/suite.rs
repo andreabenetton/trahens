@@ -139,6 +139,29 @@ impl EligibilitySuite for C1Suite {
     }
 }
 
+/// Refuse a provider that must not drive a live node.
+///
+/// The check is deliberately at the provider, not at the call site: nothing
+/// else stops a node being wired to a research-only suite, and the failure
+/// would be silent — research crypto on the wire, with the run still looking
+/// healthy. Selecting one is a configuration error, so it fails at startup.
+///
+/// C1 is refused on three independent grounds, any one of which is decisive:
+/// it declares itself not network enabled (ADR 0038 decision 1), its suite
+/// identifier is not selectable for production, and its discovery field is a
+/// 128-byte URE capsule where the P1 chain carries a 32-byte nonce end to end.
+/// The last is structural: offer labels are derived from a 32-byte nonce and
+/// the candidate chain compares 32-byte nonces at every layer, so C1 on the
+/// P1 wire would be a different protocol, not a configuration of this one.
+pub fn require_network_provider<S: EligibilitySuite + ?Sized>(
+    suite: &S,
+) -> Result<(), EligibilityFailure> {
+    if !suite.network_enabled() || !suite_is_selectable_for_production(suite.suite_id()) {
+        return Err(EligibilityFailure);
+    }
+    Ok(())
+}
+
 /// True when a suite identifier may appear on the network.
 ///
 /// The symbolic C2 suite is research-only but has a defined parser
@@ -203,5 +226,43 @@ mod tests {
         assert!(!suite_is_selectable_for_production(SUITE_C2_SYMBOLIC));
         assert!(suite_is_rejected(SUITE_C2_K2_DISABLED));
         assert!(!suite_is_rejected(SUITE_R1));
+    }
+}
+
+#[cfg(test)]
+mod boundary_tests {
+    use super::*;
+
+    #[test]
+    fn only_a_network_enabled_provider_may_drive_a_node() {
+        // R1 is the mandatory P1 provider.
+        assert!(require_network_provider(&R1Suite).is_ok());
+
+        // C1 is refused, and on grounds that do not depend on each other.
+        assert!(require_network_provider(&C1Suite).is_err());
+        assert!(!C1Suite.network_enabled(), "declares itself research-only");
+        assert!(
+            !suite_is_selectable_for_production(C1Suite.suite_id()),
+            "its identifier is not selectable for production"
+        );
+    }
+
+    #[test]
+    fn the_c1_discovery_field_does_not_fit_the_p1_chain() -> Result<(), EligibilityFailure> {
+        // The structural half of the boundary, which no flag could turn off:
+        // P1 carries a 32-byte discovery nonce at every hop, derives offer
+        // labels from it, and compares it layer by layer in the candidate
+        // chain. C1's field is a four-point URE capsule.
+        let r1 = R1Suite.initial()?;
+        let c1 = C1Suite.initial()?;
+        assert_eq!(r1.len(), 32, "P1 carries a 32-byte nonce");
+        assert_eq!(c1.len(), 128, "C1 carries a four-point capsule");
+        assert_ne!(r1.len(), c1.len());
+
+        // Both still round-trip through their own transform, which is what
+        // the library exists to check.
+        assert_eq!(R1Suite.transform(&r1)?.len(), r1.len());
+        assert_eq!(C1Suite.transform(&c1)?.len(), c1.len());
+        Ok(())
     }
 }

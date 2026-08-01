@@ -42,10 +42,24 @@ These are recorded rather than claimed as passing.
    outside it. On the default path every link still reports zero SCHEDULE
    cells, zero rate changes, and a valid fixed trace. Weighted DRR remains
    library-only: the fixed profile has one DATA class to serve.
-2. **C1 is library-only.** The URE capsule, endpoint identity, and eligibility
-   provider exist so the published C1 vectors can be checked from Rust and so
-   the suite interface has a second provider. C1 remains network-disabled per
-   ADR 0038 and is never emitted on the P1 wire.
+2. **C1 is library-only by decision, and the boundary is now enforced.** The
+   URE capsule, endpoint identity, and eligibility provider exist so the
+   published C1 vectors can be checked from Rust and so the suite interface has
+   a second provider.
+
+   C1 is not a configuration of the P1 path that has been left switched off; it
+   could not be switched on. Three independent grounds each settle it: the
+   provider declares itself not network enabled (ADR 0038 decision 1), its
+   suite identifier is not selectable for production, and its discovery field
+   is a 128-byte URE capsule where P1 carries a 32-byte nonce end to end —
+   offer labels are derived from that nonce and the candidate chain compares it
+   layer by layer, so C1 on the P1 wire would be a different protocol rather
+   than a differently configured one.
+
+   What has changed is that a node now checks its provider at startup instead
+   of relying on the one call site being written correctly, so wiring a
+   research-only suite fails loudly rather than putting research crypto on the
+   wire while the run still looks healthy.
 
 ## Closed since the first revision
 
