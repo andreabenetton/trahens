@@ -55,7 +55,7 @@
   citecolor=accent,
   pdftitle={Trahens: A Privacy-Enabled Route Discovery Protocol},
   pdfauthor={Andrea Benetton},
-  pdfsubject={Trahens Core v1.4.1 protocol draft with U1, E1, R1, M2, W2, T1, T2, T3, T4, and the non-normative D1 directory strawman}
+  pdfsubject={Trahens Core v1.6 protocol draft with U1, E1, R1, M2, W2, T1, T2, T3, T4, and the non-normative D1 directory strawman}
 }
 
 \setstretch{1.045}
@@ -75,7 +75,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small\color{accent}Trah\={e}ns Protocol}
-\fancyhead[R]{\small\color{accenttwo}Core v1.4.1 -- 30 July 2026}
+\fancyhead[R]{\small\color{accenttwo}Core v1.6 -- 1 August 2026}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.35pt}
 \renewcommand{\headrule}{\hbox to\headwidth{\color{rulegray}\leaders\hrule height \headrulewidth\hfill}}
@@ -134,7 +134,7 @@
 
 \title{\vspace{-1.2em}\ProtoName\\[0.25em]\Large A Privacy-Enabled Route Discovery Protocol}
 \author{Andrea Benetton\\BlueTeam O\"U, Tallinn, Estonia\\\texttt{andrea.benetton@blueteam.ee}}
-\date{Core v1.4.1 protocol draft -- 30 July 2026}
+\date{Core v1.6 protocol draft -- 1 August 2026}
 
 \begin{document}
 \maketitle
@@ -147,7 +147,7 @@
 \begin{abstract}
 Route discovery can reveal endpoint relationships, local topology, and stable correlation handles before a protected data path exists. \ProtoName{} is a privacy-enabled control-plane protocol that explores a bounded graph, returns authenticated gateway candidates through nested reverse encryption, and installs hop-local bidirectional forwarding state without transmitting a complete route or a network-wide discovery identifier.
 
-The active design separates endpoint rendezvous from route discovery. A destination creates random, short-lived, single-use capabilities and registers their commitments at selected rendezvous gateways. An authorized initiator is assumed to obtain a descriptor containing the capability and acceptable short-lived gateway pseudonyms through a mechanism outside Core. The non-normative \Done{} profile sketches private-information-retrieval and oblivious-relay variants, but no complete directory design is active. Forward \textsc{Discover} messages contain only a non-semantic service-query nonce. Every honest relay replaces that nonce, the adjacent branch token, the reply public key, the logical-message representation, the link-local transmission identifier, the padding, and the link ciphertext. A gateway returns its pseudonym inside an authenticated end-to-end candidate. The initiator selects a candidate, completes \textsc{Commit} and \textsc{Ready}, and only then sends the rendezvous capability through the active route. Atomic redemption prevents a second successful use.
+The active design separates endpoint rendezvous from route discovery. A destination creates random, short-lived, single-use capabilities and registers their commitments at selected rendezvous gateways. An authorized initiator is assumed to obtain a descriptor containing the capability and acceptable short-lived gateway pseudonyms through a mechanism outside Core. The non-normative \Done{} profile sketches private-information-retrieval and oblivious-relay variants, but no complete directory design is active. Forward \textsc{Discover} messages contain a non-semantic routing nonce and one suite-sized eligibility field, which under the mandatory suite is a second non-semantic nonce. Every honest relay replaces both, the adjacent branch token, the reply public key, the logical-message representation, the link-local transmission identifier, the padding, and the link ciphertext. A gateway returns its pseudonym inside an authenticated end-to-end candidate. The initiator selects a candidate, completes \textsc{Commit} and \textsc{Ready}, and only then sends the rendezvous capability through the active route. Atomic redemption prevents a second successful use.
 
 The protocol binds nine active or analysis profiles and records one non-normative directory strawman. \Uone{} defines per-hop replacement and conditional batch-local unlinkability. \Eone{} defines half-open deadlines, equal-time precedence, candidate windows, delayed responses, cancellation races, tentative state, \textsc{Commit}, \textsc{Ready}, and local expiry. \Rone{} specifies generic gateway discovery, post-activation redemption, and explicit trust boundaries. \Done{} makes the missing descriptor-distribution assumptions explicit without claiming a complete solution. \Mtwo{} gives each logical control operation one canonical variable-length encoding without semantic padding. \Wtwo{} defines canonical fragmentation into payloads of at most 992 bytes and bounded out-of-order reassembly. \Tone{} places those fragments in fixed 1,052-byte authenticated \textsc{Data}, \textsc{Ack}, or \textsc{Chaff} cells, applies cumulative selective acknowledgements, estimates a bounded hop-local retransmission timer, and retransmits only missing fragments with fresh link ciphertexts. \Ttwo{} defines fixed, quantized-adaptive, and work-conserving release modes, encrypted schedule negotiation, finite rate menus, hysteresis, weighted deficit-round-robin service, and fail-closed overload behavior. \Tthree{} defines an equal-bandwidth traffic-analysis experiment over multiple observable links, including correlated background traffic, observation-window scaling, a transparent route classifier, transition-boundary measurements, and bounded active demand probes. \Tfour{} converts those schedules into per-cell events with finite serializers, jitter, shared bottlenecks, heterogeneous observer clocks, route churn, partial observation, open-world unknown routes, and bounded selective-delay experiments.
 
@@ -186,7 +186,7 @@ The protocol makes the following contributions.
   \item It defines branch-local discovery without a network-wide discovery identifier or a transmitted source route.
   \item It removes endpoint-specific cryptographic material from active forward discovery.
   \item It defines a one-time rendezvous capability that is revealed only after authenticated route activation.
-  \item It replaces each adjacent branch token, query nonce, reply key, message identifier, padding region, and link ciphertext at every honest forwarding step.
+  \item It replaces each adjacent branch token, routing nonce, eligibility field, reply key, message identifier, padding region, and link ciphertext at every honest forwarding step.
   \item It returns candidates through a nested reverse-encryption chain that permits the initiator to reconstruct the reply-key sequence without exposing it to relays.
   \item It separates tentative route creation from explicit \textsc{Commit} and \textsc{Ready} authorization.
   \item It separates canonical variable-length messages, canonical fragmentation, and fixed-size encrypted transport cells.
@@ -326,7 +326,7 @@ Property & Status & Basis or missing dependency \\
 \midrule
 Fixed cell length & Specified and tested & Every active \Tone{}/\Ttwo{} record is 1,052 bytes. \\
 Canonical message encoding & Specified and tested & Minimal lengths, exact containment, no trailing bytes, deterministic fragmentation. \\
-Endpoint-independent \textsc{Discover} field & Specified and tested & The \Rone{} service-query nonce is random, non-semantic, and replaced at every honest child transform. \\
+Endpoint-independent \textsc{Discover} field & Specified and tested & The routing nonce is random, non-semantic, and replaced at every honest child transform, whatever suite is selected; under mandatory \Rone{} the eligibility field is a second such nonce. \\
 Passive structural unlinkability & Structural claim & Per-hop replacement of branch tokens, nonces, reply keys, transmission identifiers, padding, and link ciphertext. \\
 Hop-local loss recovery & Model-supported claim & Cumulative selective ACKs, bounded retries, finite cleanup, and fresh ciphertext for every emission. \\
 Fixed-schedule trace shape & Conditional model-supported claim & Same slot times, cell lengths, and per-direction counts during a pre-existing non-overloaded schedule epoch. \\
@@ -385,7 +385,8 @@ $D,Q,G,S,R$ & role & Destination, directory, gateway, initiator, and ordinary re
 $\tau$ & rendezvous secret & Uniform non-zero 32-byte single-use capability. \\
 $h_\tau$ & gateway record & $\Hash(\text{domain}\concat\tau)$, stored instead of $\tau$. \\
 $\mathsf{RDesc}$ & private descriptor & Capability, expiry, acceptable gateway pseudonyms, and endpoint authentication material. \\
-$\nu_i$ & query nonce & Non-semantic 32-byte value on branch hop $i$, replaced at each honest child transform. \\
+$\nu_i$ & routing nonce & Non-semantic 32-byte value on branch hop $i$, replaced with fresh randomness at each honest child transform; binds the candidate chain and keys per-offer labels. \\
+$\eta_i$ & eligibility field & Suite-sized value on branch hop $i$, transformed by the active suite at each honest child transform. \\
 $\pi_G$ & gateway pseudonym & Short-lived identifier returned only inside the protected candidate payload. \\
 $\Group,q,B,\Identity$ & reply group & Prime-order \code{ristretto255} group, order, generator, and identity. \\
 $(x_i,X_i=x_iB)$ & reply key & Ephemeral branch reply secret and public key at depth $i$. \\
@@ -477,11 +478,17 @@ Removing endpoint-specific cryptography from \textsc{Discover} does not remove t
 
 \subsection{Discovery field}
 
-An \Rone{} \textsc{Discover} message contains a service-query nonce
+A \textsc{Discover} message carries two independent per-hop values, separated in Core v1.6. The first is a suite-independent \emph{routing nonce}
 \begin{equation}
-\nu_i\in\{0,1\}^{256}\setminus\{0^{256}\}.
+\nu_i\in\{0,1\}^{256}\setminus\{0^{256}\},
 \end{equation}
-The nonce carries no endpoint key, address, capability, commitment, or selector. Every honest relay samples an independent value $\nu_{i+1}$ for each forwarded child. A gateway responds because it locally provides the rendezvous service, not because the nonce matches an endpoint record.
+which binds this hop's link in the returned candidate chain and is the key from which per-offer labels are derived. The second is the active suite's \emph{eligibility field} $\eta_i$, whose width the suite fixes: \Rone{} carries a fresh $256$-bit nonce, C1~v2 a $1024$-bit universal-re-encryption capsule.
+
+Earlier revisions used one $256$-bit value for both purposes. That coupling was not a property of the encoding --- the \Mtwo{} envelope has always length-prefixed the eligibility field and fixed a width per suite --- but of the route-discovery semantics above it, which read the same value they handed to the suite. Consequently every suite was forced to be $256$ bits wide, and a suite whose field is a capsule could not be selected at all. Separating the two makes the eligibility width a suite choice and leaves route discovery unchanged, at the cost of $32$ bytes in \textsc{Discover}.
+
+Neither value carries an endpoint key, address, capability, commitment, or selector under \Rone{}. Every honest relay samples an independent $\nu_{i+1}$ for each forwarded child and separately asks the suite to transform $\eta_i$; the two replacements are independent, and what ``transform'' means is the suite's to define. A gateway responds because it locally provides the rendezvous service, not because either value matches an endpoint record.
+
+The propositions below are stated for the routing nonce. Under \Rone{} they apply verbatim to the eligibility field, because that field is also a freshly sampled independent nonce. Under a suite whose field is endpoint-specific by construction, such as C1, they do not: there the field is intended to be meaningful to exactly one recipient, and Section~\ref{sec:researchcrypto} treats what that costs and provides.
 
 \begin{proposition}[Endpoint independence of the forward field]
 Assume the random generator is independent of the destination descriptor. For any two descriptors $r_0,r_1$ and any fixed public branch parameters,
@@ -583,7 +590,7 @@ Under atomic lookup-and-delete semantics, at most one concurrent request for one
 
 \subsection{Local discovery state}
 
-The initiator maintains an application request, private descriptor, expanding-ring schedule, cumulative budget, candidate set, and selection deadline. These values are local. The relay-visible object is a branch context bound to one ingress peer, one branch token, one incoming reply public key, one service-query nonce, finite expiry, and bounded child mappings.
+The initiator maintains an application request, private descriptor, expanding-ring schedule, cumulative budget, candidate set, and selection deadline. These values are local. The relay-visible object is a branch context bound to one ingress peer, one branch token, one incoming reply public key, one routing nonce, one eligibility field, finite expiry, and bounded child mappings.
 
 The absence of a global attempt identifier prevents network-wide equality tests but also prevents perfect duplicate suppression when independently transformed branches converge. The resource model therefore treats each branch context as separately chargeable.
 
@@ -592,7 +599,7 @@ The absence of a global attempt identifier prevents network-wide equality tests 
 
 \subsection{Initiator behavior}
 
-The initiator performs bounded expanding-ring discovery. The ring schedule, candidate threshold, retry policy, and cumulative budget remain local. For each selected first-hop peer, it creates an independent branch token $\beta_0$, reply key pair $(x_0,X_0)$, and service-query nonce $\nu_0$.
+The initiator performs bounded expanding-ring discovery. The ring schedule, candidate threshold, retry policy, and cumulative budget remain local. For each selected first-hop peer, it creates an independent branch token $\beta_0$, reply key pair $(x_0,X_0)$, routing nonce $\nu_0$, and initial eligibility field $\eta_0$ obtained from the selected suite.
 
 \begin{algorithm}[ht]
 \caption{Initiator creates one first-hop branch}
@@ -602,7 +609,8 @@ The initiator performs bounded expanding-ring discovery. The ring schedule, cand
 \State $\beta_0\sample\{0,1\}^{128}\setminus\{0^{128}\}$
 \State $x_0\sample\Zq\setminus\{0\}$; $X_0\gets x_0B$
 \State $\nu_0\sample\{0,1\}^{256}\setminus\{0^{256}\}$
-\State $m\gets\mathsf{Discover}(\beta_0,X_0,\nu_0,d_{\max},\mathcal B.\mathsf{propagation})$
+\State $\eta_0\gets\mathsf{Initial}()$ \Comment{suite-sized; a second nonce under \Rone{}}
+\State $m\gets\mathsf{Discover}(\beta_0,X_0,\nu_0,\eta_0,d_{\max},\mathcal B.\mathsf{propagation})$
 \State $M\gets\Encode_{\Mtwo}(m,\code{0101})$
 \State send $\mathsf{W2FragmentAndSeal}(p,M)$
 \State record $(p,\beta_0,x_0,t_e)$ in local discovery state
@@ -637,14 +645,15 @@ For each admitted child, an honest relay creates a representation independent of
 \caption{Relay forwards one admitted \Rone{} child branch}
 \label{alg:forwardchild}
 \begin{algorithmic}[1]
-\Require decoded branch $(\beta_i,X_i,\nu_i,d)$ and child peer $c$
+\Require decoded branch $(\beta_i,X_i,\nu_i,\eta_i,d)$ and child peer $c$
 \State enforce branch, peer, node, cell, byte, work, and time limits
 \State $\beta_{i+1}\sample\{0,1\}^{128}\setminus\{0^{128}\}$
 \State $b_i\sample\Zq\setminus\{0\}$
 \State $X_{i+1}\gets b_iX_i$
-\State $\nu_{i+1}\sample\{0,1\}^{256}\setminus\{0^{256}\}$
-\State store child mapping $(\beta_i,c,\beta_{i+1},b_i,X_i,X_{i+1},t_e)$
-\State $m'\gets\mathsf{Discover}(\beta_{i+1},X_{i+1},\nu_{i+1},d-1,\ldots)$
+\State $\nu_{i+1}\sample\{0,1\}^{256}\setminus\{0^{256}\}$ \Comment{routing: fresh randomness}
+\State $\eta_{i+1}\gets\mathsf{Transform}(\eta_i)$ \Comment{eligibility: the suite decides}
+\State store child mapping $(\beta_i,c,\beta_{i+1},b_i,X_i,X_{i+1},\nu_{i+1},t_e)$
+\State $m'\gets\mathsf{Discover}(\beta_{i+1},X_{i+1},\nu_{i+1},\eta_{i+1},d-1,\ldots)$
 \State $M'\gets\Encode_{\Mtwo}(m',\code{0101})$
 \State $\mu'\sample\{0,1\}^{128}\setminus\{0^{128}\}$
 \State fragment $M'$ canonically and emit fresh \Wtwo{} cells to $c$
@@ -656,11 +665,11 @@ For each admitted child, an honest relay creates a representation independent of
 A relay rejects exact reuse of a live ingress token from the same peer and link epoch. It does not assume that two different tokens identify different logical discoveries. Immediate edge reversal is prohibited, and a relay MAY use bounded adjacent-local loop hints that do not cross a link boundary. Every accepted context is independently limited and expires locally.
 
 \begin{proposition}[No explicit cross-hop equality handle]
-In the active \Rone{} forward transform, the outgoing branch token, service nonce, reply public key, logical-message bytes, local wire message identifier, padding, AEAD nonce, and ciphertext differ from the incoming representation except with negligible collision probability.
+In the mandatory \Rone{} forward transform, the outgoing branch token, routing nonce, eligibility field, reply public key, logical-message bytes, local wire message identifier, padding, AEAD nonce, and ciphertext differ from the incoming representation except with negligible collision probability.
 \end{proposition}
 
 \begin{proof}
-Tokens, nonces, message identifiers, padding, and link nonces are freshly sampled. The reply key is multiplied by an independently sampled non-zero scalar. In the prime-order group this makes the outgoing public key uniform over non-identity elements for any fixed non-identity input. The logical message is reconstructed and fragmented under a new local identifier. Adjacent-link ciphertext is produced under the outgoing link key. The only intentionally preserved values are bounded semantic controls such as remaining hop limit and profile identifiers.
+Tokens, routing nonces, message identifiers, padding, and link nonces are freshly sampled, and the \Rone{} eligibility field is freshly sampled by the same argument. Under an experimental suite the eligibility field is transformed rather than resampled, and this proposition then holds for every listed value except that field, whose indistinguishability is the selected suite's obligation --- which is precisely what the C1 ratio-tag experiment of \cref{sec:researchcrypto} shows C1 does not discharge against an active adversary. The reply key is multiplied by an independently sampled non-zero scalar. In the prime-order group this makes the outgoing public key uniform over non-identity elements for any fixed non-identity input. The logical message is reconstructed and fragmented under a new local identifier. Adjacent-link ciphertext is produced under the outgoing link key. The only intentionally preserved values are bounded semantic controls such as remaining hop limit and profile identifiers.
 \end{proof}
 
 \section{Candidate return and route activation}
@@ -684,7 +693,9 @@ At relay $n_i$, the reverse layer contains the stored blinding factor, adjacent 
 L_i=(b_i,\lambda_i^{\rightarrow},\lambda_i^{\leftarrow},
 \gamma_i,t_e,C_{i+1}).
 \end{equation}
-The relay seals $L_i$ to $X_i$ and forwards the resulting capsule to its parent under a fresh reverse token.
+The relay seals $L_i$ to $X_i$ and forwards the resulting capsule to its parent under a fresh reverse token. The adjacent labels include the parent and child \emph{routing} nonces, which are $256$ bits whatever suite the link runs; a candidate layer therefore does not grow with the eligibility width, which is what makes a wide-field suite affordable rather than merely expressible.
+
+The chain binds routing nonces and does not cover the eligibility field. That is a deliberate narrowing relative to earlier revisions, where one value served both purposes and binding it bound both. It is defensible because the eligibility field is hop-local, replaced or rerandomized at every hop, and integrity-protected by \Wtwo{} on the single adjacent link it crosses, while the chain exists to prove that a candidate returned along the branch the initiator opened --- which the routing nonce still proves. A suite whose eligibility field requires end-to-end authenticity must supply its own binding rather than inheriting one.
 
 \subsection{Initiator opening}
 
@@ -784,7 +795,7 @@ M=\mathsf{version}\concat\mathsf{type}\concat\mathsf{suite}
 \end{equation}
 Version, type, and suite are fixed width. Variable lengths use minimal unsigned base-128 LEB128. A decoder rejects overlong encodings, unterminated values, trailing bytes, inconsistent nested lengths, and suite-specific field lengths outside their bounds.
 
-The active suite identifier is \code{0101}. In an \Rone{} \textsc{Discover}, the suite-specific field is exactly 32 bytes and contains $\nu_i$. The raw capability $\tau$, its hash, gateway pseudonym, endpoint handle, and destination authentication material are prohibited from this message class.
+The mandatory suite identifier is \code{0101}. Every \textsc{Discover} carries a 32-byte routing nonce independent of suite, followed by a length-prefixed eligibility field whose width the encoded suite fixes: 32 bytes for \Rone{}, 128 for C1~v2. A decoder that admits a suite MUST require exactly that suite's width, so the length prefix records the width rather than granting freedom in it. The raw capability $\tau$, its hash, gateway pseudonym, endpoint handle, and destination authentication material are prohibited from this message class.
 
 \subsection{W2 payload and fixed-cell requirement}
 
@@ -1414,7 +1425,11 @@ Link keys are distinct from reply and signing keys. Each directional link epoch 
 
 The repository retains a GJJS-style universal-re-encryption capsule as a negative control~\cite{gjjs}. Its components can be rerandomized without a recipient key, but a compromised relay can multiply selected components by a related factor. The ratio between those components survives the honest rerandomization relation and is recognizable by a colluding downstream relay. This experiment demonstrates why byte-level freshness and passive rerandomization correctness do not imply resistance to active cross-hop tags, consistent with the stronger security distinctions discussed by Banfi, Maurer, and Ritsch~\cite{ure2023}.
 
-C1 is not network enabled and MUST NOT be cited as evidence for active unlinkability.
+That experiment stands unchanged, and C1 MUST NOT be cited as evidence for active unlinkability: the ratio tag is exactly a demonstration that it does not provide it.
+
+What has changed in Core v1.6 is availability, not evidence. C1~v2 is now selectable as an experimental eligibility profile and is implemented end to end: an initiator encrypts an eligibility marker to a recipient key, every relay rerandomizes the capsule without learning anything, and only the recipient can decide that a discovery is addressed to it. Reaching it requires an explicit experimental profile as well as an explicit suite; the mandatory profile admits \Rone{} alone, and the retired C1~v1 and the disabled $k{=}2$ audit suite are refused on every profile.
+
+The two statements are compatible and must be read together. C1 provides recipient-decidable eligibility against a passive path, which is a real property and is exercised by two network arms --- one where the gateway is the intended recipient and serves the route, one where it is not and declines. It does not provide active unlinkability, because the ratio tag survives an honest rerandomization. Making a research suite reachable under an explicit profile is not the same as promoting it, and no claim in this paper rests on it.
 
 \subsection{Receiver-anonymous rerandomizable RCCA target}
 
@@ -1447,20 +1462,24 @@ Dowling et al. define updatable and randomizable signatures and public-key encry
 
 \subsection{Gate decision}
 
-Because no reviewed concrete endpoint-specific primitive currently satisfies the complete protocol interface, the active design adopts \Rone{}. This is a security-engineering decision rather than a claim that rendezvous capabilities dominate receiver-anonymous rerandomizable encryption. It trades a difficult cryptographic dependency for a directory-and-gateway trust boundary that can be specified, measured, and replaced independently.
+Because no reviewed concrete endpoint-specific primitive currently satisfies the complete protocol interface, the mandatory design adopts \Rone{}. This is a security-engineering decision rather than a claim that rendezvous capabilities dominate receiver-anonymous rerandomizable encryption. It trades a difficult cryptographic dependency for a directory-and-gateway trust boundary that can be specified, measured, and replaced independently.
+
+The gate is a decision about what an interoperable implementation must speak, not about what the protocol can express. Core v1.6 keeps the endpoint-specific path reachable behind an explicit experimental profile, so a suite that later clears review can be selected without another route-discovery revision --- the previous coupling of nonce to eligibility field meant any such suite required one. That is the practical value of the separation: it converts ``blocked pending a primitive'' into ``selectable pending a review''.
 
 \section{Security analysis}
 \label{sec:security}
 
 \subsection{Endpoint material absent from discovery}
 
-The active \textsc{Discover} grammar contains no $\tau$, $h_\tau$, destination address, destination key, gateway pseudonym, or endpoint handle. The suite-specific field is the random non-semantic nonce $\nu_i$. A byte-search conformance test verifies that an issued capability does not occur in the encoded discovery message.
+The active \textsc{Discover} grammar contains no $\tau$, $h_\tau$, destination address, destination key, gateway pseudonym, or endpoint handle. The routing nonce $\nu_i$ is non-semantic by construction, and under the mandatory \Rone{} suite the eligibility field $\eta_i$ is a second independent nonce, so neither field carries endpoint material. A byte-search conformance test verifies that an issued capability does not occur in the encoded discovery message.
+
+The claim is scoped to the mandatory profile, and the separation of the two fields is what lets it be scoped rather than global. Under an experimental endpoint-specific suite the eligibility field is meaningful to its intended recipient by design; the routing nonce remains non-semantic regardless of suite, so the route-discovery half of the property is unconditional and only the eligibility half depends on which suite is selected. Before v1.6 no such scoping was possible, because one value served both roles.
 
 This property is stronger than merely encrypting a destination selector against passive observation: compromised ordinary relays also receive no endpoint-specific selector from the protocol. They may still infer destination information from topology, timing, gateway choice, or external knowledge.
 
 \subsection{Per-hop replacement argument}
 
-At an honest relay, all adjacent capabilities and wire representations are replaced. The initiator must reconstruct the reply-key sequence, but one honest multiplicative blinding factor makes the outgoing public point exactly uniform over non-identity elements. This removes the public key itself as an equality handle. It does not prove that the encapsulated point and ciphertext are key-private, nor that the full nested composition resists malicious algebraic tags. Candidate authentication and failure normalization limit accepted modifications, while the explicit active-tag experiment focuses on the discovery field.
+At an honest relay, all adjacent capabilities and wire representations are replaced. The initiator must reconstruct the reply-key sequence, but one honest multiplicative blinding factor makes the outgoing public point exactly uniform over non-identity elements. This removes the public key itself as an equality handle. It does not prove that the encapsulated point and ciphertext are key-private, nor that the full nested composition resists malicious algebraic tags. Candidate authentication and failure normalization limit accepted modifications, while the explicit active-tag experiment focuses on the eligibility field.
 
 \subsection{Capability confidentiality and replay}
 
@@ -1870,7 +1889,7 @@ The \Rone{} marker is erased by honest replacement, so the downstream colluder r
 
 \subsection{Capability conformance}
 
-Tests establish that the raw capability does not occur in encoded \textsc{Discover} bytes; every relay replacement changes the query nonce; the correct gateway redeems once; replay, expiry, wrong gateway, duplicate registration, and the all-zero token fail; and failed redemption does not preserve a live record beyond the defined deadline. A tracked deterministic vector set binds the suite identifier, service-class label, three successive nonce replacements, capability commitment, gateway-local registry hash, successful first redemption, and rejected wrong-gateway, replay, and expiry cases.
+Tests establish that the raw capability does not occur in encoded \textsc{Discover} bytes; every relay replacement changes both the routing nonce and the eligibility field; the correct gateway redeems once; replay, expiry, wrong gateway, duplicate registration, and the all-zero token fail; and failed redemption does not preserve a live record beyond the defined deadline. A tracked deterministic vector set binds the suite identifier, service-class label, three successive nonce replacements, capability commitment, gateway-local registry hash, successful first redemption, and rejected wrong-gateway, replay, and expiry cases.
 
 \section{Limitations and open problems}
 \label{sec:limitations}
@@ -1902,6 +1921,51 @@ The active reply, signature, and link profiles are classical. Cryptographic agil
 \subsection{Network economics and policy}
 
 The protocol does not define transit incentives, inter-domain policy, Sybil resistance, gateway admission, reputation, or abuse adjudication. These concerns can dominate deployment viability even when the control-plane mechanics are sound.
+
+\section{Reference implementation and measured behaviour}
+\label{sec:reference}
+
+The mandatory profile is implemented as three separately started user-space processes --- initiator endpoint, relay, and rendezvous gateway --- communicating over UDP with fixed-length \Tone{} records. The implementation is the reason several statements in this paper are testable rather than merely specified, and it is the source of the numbers below. It is a research prototype: it is not hardened, not audited, and carries no production claim.
+
+All numeric identifiers, field widths, and limits are generated from one machine-readable registry, which also generates the corresponding constants for the independent reference model and the human-readable registry document. A repository check regenerates all three and compares them byte for byte, so a constant cannot drift between the specification and either implementation. The canonical and malformed conformance corpus is produced by a separate encoder that reads only the registry, so a decoder bug and an encoder bug cannot cancel.
+
+\subsection{Emulated-network measurements}
+
+Each process runs in its own Linux network namespace joined by virtual links, with kernel-level control of loss, delay, jitter, duplication, reordering, and MTU. \cref{tab:loadsweep} reports a sweep over path length and independent loss, three repetitions per cell, on one host; these are emulation results on a single kernel, not deployment measurements, and are not byte-reproducible on another machine.
+
+\begin{table}[ht]
+\centering
+\caption{Fixed-\Ttwo{} prototype behaviour over path length and loss (3 runs per row; worst value reported)}
+\label{tab:loadsweep}
+\begin{tabularx}{\textwidth}{@{}rrrrrrX@{}}
+\toprule
+Relays & Loss & Setup (ms) & RSS (KiB) & Chaff:real & Jitter (\textmu s) & Fixed trace \\
+\midrule
+0  & 0\% & 104  & 4{,}116 & 2.3  & 1{,}845 & valid \\
+0  & 5\% & 84   & 4{,}188 & 2.4  & 1{,}643 & valid \\
+2  & 0\% & 217  & 4{,}192 & 5.0  & 1{,}647 & valid \\
+2  & 5\% & 430  & 4{,}180 & 8.4  & 1{,}315 & valid \\
+5  & 0\% & 416  & 4{,}208 & 8.5  & 2{,}172 & valid \\
+5  & 5\% & 603  & 4{,}256 & 10.3 & 2{,}062 & valid \\
+12 & 0\% & 941  & 4{,}208 & 15.3 & 1{,}084 & valid \\
+12 & 5\% & 1{,}634 & 4{,}220 & 19.9 & 1{,}248 & valid \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Three observations are worth separating from the table, because each corresponds to a claim made earlier in this document.
+
+Resident memory is flat. Across all 24 runs it spans 3{,}960--4{,}256\,KiB, a 7.5\% spread with no trend in path length: the twelve-relay rows are not the largest. That is the expected consequence of the bounded-state requirements of \cref{app:normative}: every context is finite and locally expiring, so path length adds messages rather than per-node state. A design in which relays retained route-global state would not produce this row.
+
+The chaff-to-real ratio grows roughly linearly with path length, from 2.3 to 19.9. This is the cost of the conditional fixed-epoch shape and is stated here as a cost, not amortised into an average. A constant cadence is paid for per link, and a longer path buys the same per-link property more times.
+
+No run missed a declared slot, and worst-case emission jitter stayed near 2\,ms against a slot of 12.5\,ms, so the fixed-trace predicate held in every run. The predicate is a check that the emitted trace matched the declared schedule for that interval; it is not a claim that the trace is unlinkable, and \cref{sec:security} bounds what a valid fixed trace does and does not provide. When the adaptive profile is selected the harness refuses to evaluate the predicate at all, because a claim about a constant cadence is not meaningful for a schedule that is permitted to change.
+
+\subsection{Profile gating in the implementation}
+
+The mandatory profile admits \Rone{} alone. Selecting C1~v2 or adaptive \Ttwo{} requires explicitly requesting an experimental profile, and each has its own continuous-integration job with its own assertions rather than sharing the mandatory ones. Retired and disabled suite identifiers are refused on every profile, and the two experimental paths are exercised by arms that assert what they claim: for C1, one run in which the gateway is the intended recipient and serves the route, and one in which it is not and declines with the eligibility-specific identifier rather than the generic malformed-message one.
+
+Separating those identifiers matters for the reasons of \cref{sec:security}: a node that is not the intended recipient and a node that received a malformed message are different events for an operator and identical on the wire, and conflating them in the implementation would have made the second indistinguishable from a bug.
 
 \section{Implementation and review strategy}
 \label{sec:implementation}
@@ -1948,8 +2012,10 @@ An implementation claiming \Uone{}, \Eone{}, \Rone{}, \Mtwo{}, \Wtwo{}, \Tone{},
 
 \begin{enumerate}
   \item omit endpoint capabilities, endpoint keys, endpoint addresses, descriptor commitments, gateway pseudonyms, global discovery identifiers, and complete routes from \textsc{Discover};
-  \item encode the active suite as \code{0101} and require exactly one non-zero 32-byte service-query nonce;
-  \item replace branch token, query nonce, reply public key, logical-message encoding, wire message identifier, padding, and link ciphertext for every forwarded child;
+  \item encode the mandatory suite as \code{0101}, carry exactly one non-zero 32-byte routing nonce, and carry an eligibility field of exactly the width the encoded suite fixes;
+  \item reject any suite the active profile does not admit, including retired \code{0001}, symbolic \code{0002}, and disabled \code{7f02} on every profile, and every suite but \code{0101} on the mandatory profile;
+  \item replace branch token, routing nonce, eligibility field, reply public key, logical-message encoding, wire message identifier, padding, and link ciphertext for every forwarded child, drawing the routing nonce and the eligibility field independently;
+  \item bind each link of the returned candidate chain with parent and child routing nonces, and derive per-offer labels from the child routing nonce so that selecting one candidate releases its siblings;
   \item use an independent root reply key for every first-hop branch and update child keys as $X_{i+1}=b_iX_i$ for independently sampled non-zero $b_i$;
   \item recover reverse-layer secrets as $x_{i+1}=b_ix_i\bmod q$ and reject zero factors, identity keys, and non-canonical encodings;
   \item derive each reply-layer AEAD key and nonce with one HKDF-Extract and one 44-byte HKDF-Expand, and expose no deterministic-ephemeral input in the production API;
@@ -1992,13 +2058,13 @@ An implementation claiming \Uone{}, \Eone{}, \Rone{}, \Mtwo{}, \Wtwo{}, \Tone{},
 \toprule
 Operation & Direction & Principal purpose \\
 \midrule
-\textsc{Discover} & outward & Create branch state; carries token, reply key, non-semantic query nonce, and bounded propagation controls. \\
+\textsc{Discover} & outward & Create branch state; carries token, reply key, non-semantic routing nonce, suite-sized eligibility field, and bounded propagation controls. \\
 \textsc{Candidate} & inward & Return nested authenticated gateway offer and install tentative route labels. \\
 \textsc{Commit} & outward & Select one candidate, prove commit challenge, and reserve route capacity. \\
 \textsc{Ready} & inward & Confirm gateway activation and authorize route use. \\
 \textsc{Rendezvous-Open} & outward over active route & Redeem one-time endpoint capability and start local gateway rendezvous. \\
 \textsc{Cancel} & outward/inward advisory & Reclaim unselected tentative state early. \\
-\textsc{Abort} & either direction advisory & Reclaim failed pending state early. \\
+\textsc{Abort} & either direction & Tear down state after a failure, distinguished from advisory \textsc{Cancel} and orderly \textsc{Close}. \\
 \textsc{Close} & either direction advisory & Reclaim active route early. \\
 \bottomrule
 \end{tabularx}
@@ -2031,8 +2097,9 @@ Frame & Acknowledged & Principal purpose \\
 \toprule
 Provider & Suite & Network status & Purpose \\
 \midrule
-R1 rendezvous capability & \code{0101} & Active experimental & Generic gateway discovery; endpoint capability after \textsc{Ready}. \\
-C1 URE negative control & \code{0001} & Research only & Reproduce persistent algebraic ratio tagging. \\
+R1 rendezvous capability & \code{0101} & Mandatory & Generic gateway discovery; endpoint capability after \textsc{Ready}. \\
+C1 v2 URE eligibility & \code{0003} & Experimental profile & Recipient-decidable eligibility under passive rerandomization; also the active-tag negative control. \\
+C1 v1 & \code{0001} & Retired; rejected & Superseded encoding; refused on every profile. \\
 C2 symbolic oracle & \code{0002} & Research only & Exercise ideal replay-equivalence and mutation-rejection placement. \\
 C2 $k=2$ transcription & \code{7f02} & Disabled & Reproduce the project transcription and interpretation audit; fail closed. \\
 \bottomrule
