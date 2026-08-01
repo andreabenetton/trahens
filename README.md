@@ -2,6 +2,8 @@
 
 Trahens is a research protocol for privacy-enabled route discovery in decentralized and path-aware networks. The repository develops a bounded, executable control-plane core before attempting a complete routing architecture.
 
+More precisely, and this is the description to use in preference to any shorter one: **Trahens is a privacy-oriented rendezvous route-discovery and control-plane protocol, not a complete anonymous communication network.** It is not a replacement for Tor, I2P, or a mixnet, and it does not compete with them: those systems assume an IP substrate and a public relay directory, and they carry anonymity claims Trahens does not make. What Trahens contributes is the control plane — bounded discovery, hop-local state, and capability-based rendezvous — with endpoint anonymity still depending on a private directory that does not yet exist.
+
 ## Status
 
 The active specification is **Trahens Core v1.5**, the frozen P1 interoperability revision composed of:
