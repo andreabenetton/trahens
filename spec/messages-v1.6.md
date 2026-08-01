@@ -89,4 +89,4 @@ The message type remains outside the end-to-end ciphertext but inside W2 link en
 
 The stable payload tags are generated from the registry. Canonical layouts are implemented in `codec-m2`; fields are fixed-width except DATA and nested child blobs, which use minimal varuint lengths. Decoding MUST consume the entire payload and MUST reject unknown tags.
 
-Relay candidate layers carry both parent and child discovery nonces. These fields are not exposed to the relay's non-adjacent observers; they let the endpoint verify that every hop performed nonce replacement rather than preserving a stable nonce.
+Relay candidate layers carry both parent and child routing nonces. These fields are not exposed to the relay's non-adjacent observers; they let the endpoint verify that every hop performed nonce replacement rather than preserving a stable nonce. They are 32 bytes whatever the active suite, so a candidate layer does not grow with the eligibility width.

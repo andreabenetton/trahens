@@ -17,7 +17,25 @@ The P1 acceptance checklist is normative in `spec/p1-prototype-profile-v1.5.md`.
 
 Every one of those now executes. `docs/p1-acceptance-evidence.md` maps each gate line to the job or harness arm that runs it.
 
-Three items were recorded there as open gaps and are no longer. Off-route subtree cancellation under relay fan-out is implemented and asserted by a CI arm: each returned offer travels under a label derived from the child discovery nonce, so `COMMIT` names one chain and the relay releases the siblings (ADR 0039). Adaptive T2 is implemented and negotiates on a live link, but stays off by default and out of CI, because the P1 fixed-trace claim is a claim about a constant cadence. C1 was never a gap in the same sense: its discovery field is a 128-byte URE capsule where P1 carries a 32-byte nonce end to end, so it is a different protocol rather than this one with a switch turned off, and the boundary is now enforced at node startup instead of by convention.
+Three items were recorded there as open gaps and are no longer.
+
+Off-route subtree cancellation under relay fan-out is implemented and asserted
+by a CI arm: each returned offer travels under a label derived from the child
+routing nonce, so `COMMIT` names one chain and the relay releases the siblings
+(ADR 0039).
+
+Adaptive T2 negotiates on a live link. It is off by default and never runs in
+the mandatory jobs, because the fixed-trace claim is a claim about a constant
+cadence — but it has its own CI job with adaptation-specific assertions, and
+the harness refuses to assert the fixed trace when it is selected.
+
+C1 is selectable on the experimental profile and wired end to end. It was
+previously recorded here as unreachable by construction, on the reasoning that
+its 128-byte capsule could not fit a protocol carrying a 32-byte nonce. That
+reasoning was wrong twice over: M2 always encoded variable-width eligibility
+fields, and the nonce was never carried end to end — every hop replaces it,
+which is the U1 property. What actually blocked C1 was that one 32-byte value
+served three purposes at once, and v1.6 separated them (ADR 0040).
 
 What remains open is what the gate never covered: a second independent implementation, an independent cryptographic review of the reply-path composition, a private directory, and measurement on real networks rather than one kernel's namespaces. Those are v1.6 to v1.8 below, and no further mandatory mechanism should be added before them.
 

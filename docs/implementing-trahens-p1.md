@@ -129,7 +129,7 @@ invariant, or a cryptographic subsystem failure is fatal.
 
 Read `docs/adr/0039-offer-label-derivation.md` before implementing a relay with
 more than one child. Each returned offer travels under a label derived from the
-child discovery nonce, so a `COMMIT` names one chain rather than a branch. The
+child routing nonce, so a `COMMIT` names one chain rather than a branch. The
 nonce is key material as a result: confidential to its hop, never reused.
 
 ## Corpus format
