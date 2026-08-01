@@ -31,6 +31,13 @@ pub struct ScheduleMetrics {
     pub missed_slots: u64,
     /// Worst single overrun observed, in milliseconds.
     pub worst_lateness_ms: u64,
+    /// Worst overrun *within* one slot interval, in microseconds.
+    ///
+    /// Reported separately because it is the part `fixed_trace_valid` does not
+    /// judge: an emission 3ms after its instant still occupies its own slot,
+    /// so the trace keeps its declared shape, but it is not a claim that every
+    /// cell left at its exact scheduled microsecond.
+    pub worst_jitter_us: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -68,6 +75,12 @@ impl FixedSchedule {
     /// resynchronised instead of absorbed.
     pub fn advance_at(&mut self, class: SlotClass, now: Instant) {
         let lateness = now.saturating_duration_since(self.next);
+        if lateness < self.interval {
+            // Inside the tolerance: the cell still occupies its own slot, so
+            // the trace shape holds. Record how close it came anyway.
+            let jitter_us = lateness.as_micros().try_into().unwrap_or(u64::MAX);
+            self.metrics.worst_jitter_us = self.metrics.worst_jitter_us.max(jitter_us);
+        }
         if lateness >= self.interval {
             let missed = (lateness.as_micros() / self.interval.as_micros().max(1)) as u64;
             self.metrics.late_slots = self.metrics.late_slots.saturating_add(1);
@@ -81,11 +94,24 @@ impl FixedSchedule {
         self.advance(class);
     }
 
-    /// True while every slot was released at its declared position, which is
-    /// the condition the fixed-trace claim depends on.
+    /// True while every slot position was occupied by exactly one emission.
+    ///
+    /// This is a claim about slot occupancy, with one slot interval as the
+    /// stated tolerance: it says no slot position passed empty and none was
+    /// filled late enough to displace its successor. It is deliberately not a
+    /// claim that every cell left at its exact scheduled instant — sub-slot
+    /// lateness is real and is reported separately as
+    /// [`ScheduleMetrics::worst_jitter_us`], so a reader can judge the timing
+    /// against a tighter tolerance if a later profile needs one.
     #[must_use]
     pub fn fixed_trace_valid(&self) -> bool {
         self.metrics.missed_slots == 0
+    }
+
+    /// One slot interval: the tolerance [`Self::fixed_trace_valid`] applies.
+    #[must_use]
+    pub fn trace_tolerance(&self) -> Duration {
+        self.interval
     }
 
     pub fn advance(&mut self, class: SlotClass) {
@@ -125,11 +151,25 @@ mod tests {
         schedule.advance_at(SlotClass::NewData, origin);
         assert!(schedule.fixed_trace_valid());
         assert_eq!(schedule.metrics().late_slots, 0);
+        assert_eq!(schedule.metrics().worst_jitter_us, 0);
+        assert_eq!(schedule.trace_tolerance(), interval);
+
+        // Lateness inside one interval keeps the slot, so the claim holds, but
+        // it is recorded rather than treated as free.
+        let jittered = schedule.next_deadline() + interval / 4;
+        schedule.advance_at(SlotClass::NewData, jittered);
+        assert!(schedule.fixed_trace_valid(), "the slot is still its own");
+        assert_eq!(schedule.metrics().late_slots, 0);
+        assert_eq!(
+            schedule.metrics().worst_jitter_us,
+            (interval / 4).as_micros() as u64,
+            "sub-slot lateness is reported, not hidden"
+        );
 
         // A stall past several slot positions is recorded, not absorbed. The
         // next deadline resynchronises to now, so the runtime does not fire
         // the whole backlog back to back to catch up.
-        let stalled = origin + interval * 5;
+        let stalled = schedule.next_deadline() + interval * 4;
         schedule.advance_at(SlotClass::NewData, stalled);
         assert_eq!(schedule.metrics().late_slots, 1);
         assert_eq!(schedule.metrics().missed_slots, 4);

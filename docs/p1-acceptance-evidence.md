@@ -24,7 +24,7 @@ executes it, so the claim rests on execution rather than on source presence.
 | packet captures contain only 1,052-byte W2 records | `tools/check_pcap_cells.py` runs in every arm, including the fan-out topology |
 | a fanned-out branch commits the chain the initiator selected | `linux-interop`, fan-out arm: two gateways answer through one relay, the initiator selects one, and the arm asserts the relay released the other subtree and that its gateway observed the cancellation |
 | Linux CI builds and tests without manual repository edits | all seven jobs green at head |
-| the schedule shape claimed by the fixed profile actually held | every arm reports `fixed_trace_valid` per link, which goes false if any slot was missed |
+| the schedule shape claimed by the fixed profile actually held | every arm reports `fixed_trace_valid` per link. It is a slot-occupancy claim with one slot interval as the stated tolerance: no position passed empty and none was filled late enough to displace its successor. Sub-slot lateness is real and reported separately as `worst_jitter_us`, so a tighter tolerance can be judged from the same run |
 
 ## Known gaps
 
@@ -64,7 +64,8 @@ key material, are recorded in `docs/adr/0039-offer-label-derivation.md`.
 Each node reports, per link: cells and bytes, malformed and replay counts,
 logical messages, transmission failures, dropped and coalesced ACKs, peak queue
 depth, fixed-schedule slot classes and overrun (late slots, missed slots,
-worst lateness, and whether the fixed-trace claim still holds),
+worst lateness, worst sub-slot jitter, and whether the fixed-trace claim still
+holds),
 chaff-to-real ratio, transmissions refused for want of queue cells, dropped
 lifecycle and telemetry events, and the ADR-0020 reassembly counters. Each node additionally reports remote-input drops keyed by
 registry error identifier, peak occupancy of every bounded state class, and

@@ -1139,7 +1139,7 @@ pub fn write_link_metrics(
             output.push_str(",\n");
         }
         output.push_str(&format!(
-            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"queue_cells_rejected\":{},\"events_dropped\":{},\"telemetry_dropped\":{},\"duplicate_fragments\":{},\"capacity_drops\":{},\"metadata_failures\":{},\"peak_reassembly_messages\":{},\"peak_reassembly_bytes\":{},\"chaff_to_real_cell_ratio\":{:.4},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{},\"late_slots\":{},\"missed_slots\":{},\"worst_lateness_ms\":{},\"fixed_trace_valid\":{}}}",
+            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"queue_cells_rejected\":{},\"events_dropped\":{},\"telemetry_dropped\":{},\"duplicate_fragments\":{},\"capacity_drops\":{},\"metadata_failures\":{},\"peak_reassembly_messages\":{},\"peak_reassembly_bytes\":{},\"chaff_to_real_cell_ratio\":{:.4},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{},\"late_slots\":{},\"missed_slots\":{},\"worst_lateness_ms\":{},\"worst_jitter_us\":{},\"fixed_trace_valid\":{}}}",
             metrics.sent_cells,
             metrics.received_cells,
             metrics.malformed_cells,
@@ -1167,6 +1167,7 @@ pub fn write_link_metrics(
             metrics.schedule.late_slots,
             metrics.schedule.missed_slots,
             metrics.schedule.worst_lateness_ms,
+            metrics.schedule.worst_jitter_us,
             metrics.schedule.missed_slots == 0,
         ));
     }
