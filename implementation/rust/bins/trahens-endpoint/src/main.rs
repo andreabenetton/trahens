@@ -15,7 +15,7 @@ use protocol_registry::{
     ERROR_INTERNAL, ERROR_STATE_VIOLATION, ERROR_TIMEOUT, LIMIT_CAPABILITY_TTL_MS,
     LIMIT_ROUTE_TTL_MS, SUITE_R1,
 };
-use rendezvous_r1::suite::{require_network_provider, EligibilitySuite, R1Suite};
+use rendezvous_r1::suite::{require_provider, C1Suite, EligibilitySuite, Profile, R1Suite};
 use state_machine::{Event, RouteTable};
 use std::error::Error;
 use std::sync::mpsc::RecvTimeoutError;
@@ -38,13 +38,14 @@ struct ActiveRoute {
 }
 
 fn control(
+    suite_id: [u8; 2],
     message_type: MessageType,
     label: [u8; 16],
     generation: u32,
     protected_body: Vec<u8>,
 ) -> Envelope {
     Envelope {
-        suite_id: SUITE_R1,
+        suite_id,
         message: Message::Control(Control {
             message_type,
             local_label: label,
@@ -56,6 +57,7 @@ fn control(
 }
 
 fn send_control(
+    suite_id: [u8; 2],
     link: &node_runtime::LinkHandle,
     route: &ActiveRoute,
     message_type: MessageType,
@@ -68,6 +70,7 @@ fn send_control(
         payload,
     )?;
     link.send(control(
+        suite_id,
         message_type,
         route.local_label,
         route.generation,
@@ -199,9 +202,29 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     // The initiator produces the eligibility field, so it selects a provider
     // exactly as a relay does.
-    let eligibility = R1Suite;
-    require_network_provider(&eligibility)
-        .map_err(|_| "eligibility provider is not permitted on the network")?;
+    // Eligibility provider. r1 is the mandatory path; c1 is research and needs
+    // the experimental profile, so selecting it takes two explicit choices.
+    let suite_name = args.optional("eligibility-suite", "r1").to_owned();
+    let profile = if suite_name == "r1" {
+        Profile::Mandatory
+    } else {
+        Profile::Experimental
+    };
+    let eligibility_label = args.optional("eligibility-label", "trahens-c1").to_owned();
+    let eligibility: Box<dyn EligibilitySuite> = match suite_name.as_str() {
+        "r1" => Box::new(R1Suite),
+        "c1" => Box::new(C1Suite::initiator(
+            trahens_crypto::c1::build_endpoint_keys(eligibility_label.as_bytes())?
+                .eligibility_public,
+        )),
+        other => return Err(format!("unknown --eligibility-suite: {other}").into()),
+    };
+    require_provider(profile, eligibility.as_ref())
+        .map_err(|_| "eligibility provider is not permitted on this profile")?;
+    // The envelope names the suite whose eligibility field it carries, which
+    // is what tells a decoder how to parse that field. Routing is
+    // suite-independent since v1.6, so only this follows the selection.
+    let wire_suite = eligibility.suite_id();
     let root_secret = SecretBytes(random_scalar()?);
     let reply_public_key = scalar_base(&root_secret.0)?;
     let rings = parse_rings(
@@ -253,7 +276,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             now_ms.saturating_add(LIMIT_ROUTE_TTL_MS as u64),
         )?;
         link.send(Envelope {
-            suite_id: SUITE_R1,
+            suite_id: wire_suite,
             message: Message::Discover(Discover {
                 branch_token,
                 hop_remaining: ring.depth,
@@ -350,7 +373,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             continue;
                         }
                         link.send(Envelope {
-                            suite_id: SUITE_R1,
+                            suite_id: wire_suite,
                             message: Message::Control(Control {
                                 message_type: MessageType::Cancel,
                                 local_label: context.branch_token,
@@ -384,6 +407,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     let proof =
                         commit_proof(&route.route_secret.0, &route.challenge.0, &route.pseudonym)?;
                     send_control(
+                        wire_suite,
                         &link,
                         &route,
                         MessageType::Commit,
@@ -405,7 +429,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 // selection does for the branches it does not choose.
                 for context in &contexts {
                     link.send(Envelope {
-                        suite_id: SUITE_R1,
+                        suite_id: wire_suite,
                         message: Message::Control(Control {
                             message_type: MessageType::Cancel,
                             local_label: context.branch_token,
@@ -575,6 +599,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 .try_into()
                                 .unwrap_or(u64::MAX);
                             send_control(
+                                wire_suite,
                                 &link,
                                 route,
                                 MessageType::RendezvousOpen,
@@ -598,6 +623,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 redemptions += 1;
                                 structured_event("endpoint", "replaying_capability", &[]);
                                 send_control(
+                                    wire_suite,
                                     &link,
                                     route,
                                     MessageType::RendezvousOpen,
@@ -623,6 +649,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 // Rejection is the expected outcome: close the
                                 // route so every node still reclaims state.
                                 send_control(
+                                    wire_suite,
                                     &link,
                                     route,
                                     MessageType::Close,
@@ -648,6 +675,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     "rendezvous_refused",
                                 );
                                 send_control(
+                                    wire_suite,
                                     &link,
                                     route,
                                     MessageType::Close,
@@ -663,6 +691,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 clock.now_ms(),
                             )?;
                             send_control(
+                                wire_suite,
                                 &link,
                                 route,
                                 MessageType::Data,
@@ -691,6 +720,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             }
                             state.apply(route.state_label, Event::DataAccepted, clock.now_ms())?;
                             send_control(
+                                wire_suite,
                                 &link,
                                 route,
                                 MessageType::Close,
@@ -826,14 +856,14 @@ mod tests {
 
     #[test]
     fn control_envelopes_carry_the_r1_suite() {
-        let envelope = control(MessageType::Discover, [0x05; 16], 3, vec![9, 9]);
+        let envelope = control(SUITE_R1, MessageType::Discover, [0x05; 16], 3, vec![9, 9]);
         assert_eq!(envelope.suite_id, SUITE_R1);
     }
 
     #[test]
     fn control_preserves_its_arguments() {
         let body = vec![4, 5, 6, 7];
-        let envelope = control(MessageType::Commit, [0x0a; 16], 42, body.clone());
+        let envelope = control(SUITE_R1, MessageType::Commit, [0x0a; 16], 42, body.clone());
 
         let Message::Control(built) = envelope.message else {
             panic!("control must produce a control message");
@@ -853,7 +883,7 @@ mod tests {
             MessageType::Commit,
             MessageType::Close,
         ] {
-            let envelope = control(message_type, [0; 16], 0, Vec::new());
+            let envelope = control(SUITE_R1, message_type, [0; 16], 0, Vec::new());
             let Message::Control(built) = envelope.message else {
                 panic!("control must produce a control message");
             };

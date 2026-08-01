@@ -15,10 +15,12 @@
 # an empty-string argument for an empty array, which a node then rejects as an
 # unexpected argument.
 declare -a P1_ADAPTIVE=("${P1_ADAPTIVE[@]:-}")
+declare -a P1_SUITE=("${P1_SUITE[@]:-}")
 declare -a P1_ENDPOINT_EXTRA=("${P1_ENDPOINT_EXTRA[@]:-}")
 # Drop the empty element the line above introduces when the caller left the
 # array unset.
 [[ ${#P1_ADAPTIVE[@]} -eq 1 && -z "${P1_ADAPTIVE[0]}" ]] && P1_ADAPTIVE=()
+[[ ${#P1_SUITE[@]} -eq 1 && -z "${P1_SUITE[0]}" ]] && P1_SUITE=()
 [[ ${#P1_ENDPOINT_EXTRA[@]} -eq 1 && -z "${P1_ENDPOINT_EXTRA[0]}" ]] && P1_ENDPOINT_EXTRA=()
 
 # Per-link base key: link i is keyed by i+1 so no link ever gets the zero key.
@@ -50,6 +52,7 @@ p1_endpoint_args() {
   P1_NODE_ARGS=(
     --id 1 --peer-id 2 --epoch "$EPOCH"
     "${P1_ADAPTIVE[@]}"
+    "${P1_SUITE[@]}"
     --bind "$1" --peer "$2" --key "$(p1_key_for "$3")"
     --gateway-public "$4" --capability "$5"
     "${P1_ENDPOINT_EXTRA[@]}"
@@ -63,6 +66,7 @@ p1_relay_args() {
   P1_NODE_ARGS=(
     --id "$(( $1 + 1 ))" --upstream-id "$1" --downstream-id "$(( $1 + 2 ))" --epoch "$EPOCH"
     "${P1_ADAPTIVE[@]}"
+    "${P1_SUITE[@]}"
     --upstream-bind "$2" --upstream-peer "$3" --upstream-key "$(p1_key_for "$4")"
     --downstream-bind "$5" --downstream-peer "$6" --downstream-key "$(p1_key_for "$7")"
     --timeout-ms "$TIMEOUT_MS" --metrics "$OUTPUT/relay-$1.metrics.json"
@@ -74,6 +78,7 @@ p1_gateway_args() {
   P1_NODE_ARGS=(
     --id "$(( $1 + 1 ))" --peer-id "$1" --gateway-id 7 --epoch "$EPOCH"
     "${P1_ADAPTIVE[@]}"
+    "${P1_SUITE[@]}"
     --bind "$2" --peer "$3" --key "$(p1_key_for "$4")"
     --signing-seed "$SIGNING_SEED"
     --capability "$CAPABILITY" --capability-ttl-ms "$5"

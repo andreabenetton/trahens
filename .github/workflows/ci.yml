@@ -150,6 +150,23 @@ jobs:
             --relays 2 --loss 5 --delay 8ms --jitter 2ms \
             --schedule-profile adaptive \
             --timeout-ms 60000 --output "$GITHUB_WORKSPACE/build/p1-adaptive"
+      # Experimental eligibility profile. C1 replaces the inert R1 nonce with a
+      # universal re-encryption capsule: relays rerandomise it without learning
+      # anything, and only the recipient can tell a discovery is for it. Both
+      # arms matter — the negative one proves the gateway declines rather than
+      # serving everyone.
+      - name: C1 eligibility serves the intended recipient
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 2 --loss 0 --delay 2ms --jitter 0ms \
+            --eligibility-suite c1 \
+            --timeout-ms 45000 --output "$GITHUB_WORKSPACE/build/p1-c1"
+      - name: C1 eligibility declines everyone else
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 2 --loss 0 --delay 2ms --jitter 0ms \
+            --scenario c1-not-eligible \
+            --timeout-ms 20000 --output "$GITHUB_WORKSPACE/build/p1-c1-declined"
       - name: Upload captures and metrics
         if: always()
         uses: actions/upload-artifact@v7

@@ -12,7 +12,7 @@ use protocol_registry::{
     ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION,
     ERROR_TIMEOUT, LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_MAX_FANOUT_CLASS, SUITE_R1,
 };
-use rendezvous_r1::suite::{require_network_provider, EligibilitySuite, R1Suite, Role};
+use rendezvous_r1::suite::{require_provider, C1Suite, EligibilitySuite, Profile, R1Suite, Role};
 use state_machine::{Event, IngressAdmission, Phase, RouteTable};
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
@@ -164,9 +164,9 @@ impl RelayRoute {
 /// The body is empty: the relay holds no route secret for either end, so there
 /// is nothing it could seal, and section 8's uniform failure behaviour means
 /// it must not distinguish why beyond the message type itself.
-fn abort_control(label: [u8; 16], generation: u32) -> Envelope {
+fn abort_control(suite_id: [u8; 2], label: [u8; 16], generation: u32) -> Envelope {
     Envelope {
-        suite_id: SUITE_R1,
+        suite_id,
         message: Message::Control(Control {
             message_type: MessageType::Abort,
             local_label: label,
@@ -177,9 +177,9 @@ fn abort_control(label: [u8; 16], generation: u32) -> Envelope {
     }
 }
 
-fn forward_control(message: Control, label: [u8; 16]) -> Envelope {
+fn forward_control(suite_id: [u8; 2], message: Control, label: [u8; 16]) -> Envelope {
     Envelope {
-        suite_id: SUITE_R1,
+        suite_id,
         message: Message::Control(Control {
             local_label: label,
             ..message
@@ -346,9 +346,27 @@ fn run() -> Result<(), Box<dyn Error>> {
     // Checked rather than assumed: a research-only provider on the wire would
     // otherwise be a silent misconfiguration, with the run still looking
     // healthy. See ADR 0038 for why C1 is not one of the options.
-    let eligibility = R1Suite;
-    require_network_provider(&eligibility)
-        .map_err(|_| "eligibility provider is not permitted on the network")?;
+    // Eligibility provider. r1 is the mandatory path; c1 is research and needs
+    // the experimental profile, so selecting it takes two explicit choices.
+    let suite_name = args.optional("eligibility-suite", "r1").to_owned();
+    let profile = if suite_name == "r1" {
+        Profile::Mandatory
+    } else {
+        Profile::Experimental
+    };
+    let eligibility_label = args.optional("eligibility-label", "trahens-c1").to_owned();
+    let eligibility: Box<dyn EligibilitySuite> = match suite_name.as_str() {
+        "r1" => Box::new(R1Suite),
+        "c1" => Box::new(C1Suite::relay()),
+        other => return Err(format!("unknown --eligibility-suite: {other}").into()),
+    };
+    let _ = &eligibility_label;
+    require_provider(profile, eligibility.as_ref())
+        .map_err(|_| "eligibility provider is not permitted on this profile")?;
+    // The envelope names the suite whose eligibility field it carries, which
+    // is what tells a decoder how to parse that field. Routing is
+    // suite-independent since v1.6, so only this follows the selection.
+    let wire_suite = eligibility.suite_id();
     let mut admission = IngressAdmission::new();
     let clock = Clock::start();
     let deadline = clock.now_ms().saturating_add(timeout_ms);
@@ -481,7 +499,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             },
                         );
                         let forwarded = downstream[link_index].1.send(Envelope {
-                            suite_id: SUITE_R1,
+                            suite_id: wire_suite,
                             message: Message::Discover(Discover {
                                 branch_token: child_label,
                                 hop_remaining: discover.hop_remaining.saturating_sub(1),
@@ -589,8 +607,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 .is_err()
                             {
                                 drops.record("relay", ERROR_STATE_VIOLATION, "commit_transition");
-                                let _ = upstream
-                                    .send(abort_control(control.local_label, route.generation));
+                                let _ = upstream.send(abort_control(
+                                    wire_suite,
+                                    control.local_label,
+                                    route.generation,
+                                ));
                                 aborts_sent += 1;
                                 continue;
                             }
@@ -599,15 +620,21 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 // to one returned offer does not say which
                                 // child was chosen, so it cannot be forwarded.
                                 drops.record("relay", ERROR_STATE_VIOLATION, "commit_unselective");
-                                let _ = upstream
-                                    .send(abort_control(control.local_label, route.generation));
+                                let _ = upstream.send(abort_control(
+                                    wire_suite,
+                                    control.local_label,
+                                    route.generation,
+                                ));
                                 aborts_sent += 1;
                                 continue;
                             };
                             let Some(child) = route.children.get(offer.child_index) else {
                                 drops.record("relay", ERROR_STATE_VIOLATION, "commit_child_gone");
-                                let _ = upstream
-                                    .send(abort_control(control.local_label, route.generation));
+                                let _ = upstream.send(abort_control(
+                                    wire_suite,
+                                    control.local_label,
+                                    route.generation,
+                                ));
                                 aborts_sent += 1;
                                 continue;
                             };
@@ -619,7 +646,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             }
                             if downstream[child_link]
                                 .1
-                                .send(forward_control(control, offer.child_selector))
+                                .send(forward_control(wire_suite, control, offer.child_selector))
                                 .is_err()
                             {
                                 drops.record(
@@ -642,7 +669,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             for loser in losers {
                                 if let Some(child) = route.children.get(loser.child_index) {
                                     let _ = downstream[child.link_index].1.send(Envelope {
-                                        suite_id: SUITE_R1,
+                                        suite_id: wire_suite,
                                         message: Message::Control(Control {
                                             message_type: MessageType::Cancel,
                                             local_label: loser.child_selector,
@@ -678,7 +705,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 }) {
                                     if downstream[child.link_index]
                                         .1
-                                        .send(forward_control(control, selector))
+                                        .send(forward_control(wire_suite, control, selector))
                                         .is_err()
                                     {
                                         drops.record(
@@ -707,7 +734,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 }) {
                                     if downstream[child.link_index]
                                         .1
-                                        .send(forward_control(control, selector))
+                                        .send(forward_control(wire_suite, control, selector))
                                         .is_err()
                                     {
                                         drops.record(
@@ -736,7 +763,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 if let Some(child) = route.children.get(index) {
                                     if downstream[child.link_index]
                                         .1
-                                        .send(forward_control(control.clone(), selector))
+                                        .send(forward_control(
+                                            wire_suite,
+                                            control.clone(),
+                                            selector,
+                                        ))
                                         .is_err()
                                     {
                                         drops.record(
@@ -897,7 +928,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                     if upstream
                         .send(Envelope {
-                            suite_id: SUITE_R1,
+                            suite_id: wire_suite,
                             message: Message::Candidate(Candidate {
                                 candidate_token: tentative,
                                 expiry_class: candidate.expiry_class,
@@ -937,7 +968,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 continue;
                             }
                             if upstream
-                                .send(forward_control(control, upstream_label))
+                                .send(forward_control(wire_suite, control, upstream_label))
                                 .is_err()
                             {
                                 drops.record(
@@ -960,7 +991,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 continue;
                             }
                             if upstream
-                                .send(forward_control(control, upstream_label))
+                                .send(forward_control(wire_suite, control, upstream_label))
                                 .is_err()
                             {
                                 drops.record(
@@ -977,7 +1008,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 let _ =
                                     states.apply(parent_label, Event::DataAccepted, clock.now_ms());
                                 if upstream
-                                    .send(forward_control(control, upstream_label))
+                                    .send(forward_control(wire_suite, control, upstream_label))
                                     .is_err()
                                 {
                                     drops.record(
@@ -990,7 +1021,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         }
                         MessageType::Close | MessageType::Cancel | MessageType::Abort => {
                             if upstream
-                                .send(forward_control(control.clone(), upstream_label))
+                                .send(forward_control(wire_suite, control.clone(), upstream_label))
                                 .is_err()
                             {
                                 drops.record(
@@ -1141,7 +1172,7 @@ mod tests {
         // one. A relay that cannot honour a COMMIT sends it instead of
         // dropping the message, which used to leave the initiator waiting out
         // a deadline for a route that had already failed.
-        let envelope = abort_control([0x41; 16], 3);
+        let envelope = abort_control(SUITE_R1, [0x41; 16], 3);
         assert_eq!(envelope.suite_id, SUITE_R1);
         let Message::Control(control) = envelope.message else {
             panic!("abort_control must produce a control message");
@@ -1321,7 +1352,7 @@ mod tests {
             protected_body: vec![1, 2, 3],
         };
 
-        let envelope = forward_control(incoming.clone(), [0xbb; 16]);
+        let envelope = forward_control(SUITE_R1, incoming.clone(), [0xbb; 16]);
 
         assert_eq!(envelope.suite_id, SUITE_R1);
         let Message::Control(forwarded) = envelope.message else {
@@ -1346,7 +1377,7 @@ mod tests {
             protected_body: Vec::new(),
         };
 
-        let envelope = forward_control(incoming, [0x22; 16]);
+        let envelope = forward_control(SUITE_R1, incoming, [0x22; 16]);
 
         let Message::Control(forwarded) = envelope.message else {
             panic!("forward_control must produce a control message");

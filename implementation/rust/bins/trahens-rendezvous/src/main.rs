@@ -16,7 +16,7 @@ use protocol_registry::{
     ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
     LIMIT_CAPABILITY_TTL_MS, LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE, SUITE_R1,
 };
-use rendezvous_r1::suite::{require_network_provider, EligibilitySuite, R1Suite, Role};
+use rendezvous_r1::suite::{require_provider, C1Suite, EligibilitySuite, Profile, R1Suite, Role};
 use rendezvous_r1::Registry;
 use state_machine::{Event, Phase, RouteTable};
 use std::collections::HashMap;
@@ -40,13 +40,14 @@ struct GatewayRoute {
 }
 
 fn control(
+    suite_id: [u8; 2],
     message_type: MessageType,
     label: [u8; 16],
     generation: u32,
     protected_body: Vec<u8>,
 ) -> Envelope {
     Envelope {
-        suite_id: SUITE_R1,
+        suite_id,
         message: Message::Control(Control {
             message_type,
             local_label: label,
@@ -58,6 +59,7 @@ fn control(
 }
 
 fn send_control(
+    suite_id: [u8; 2],
     link: &node_runtime::LinkHandle,
     route: &GatewayRoute,
     message_type: MessageType,
@@ -70,6 +72,7 @@ fn send_control(
         payload,
     )?;
     link.send(control(
+        suite_id,
         message_type,
         route.selector,
         route.generation,
@@ -160,9 +163,30 @@ fn run() -> Result<(), Box<dyn Error>> {
     // same pseudonym in every candidate. It is a property of the
     // registration, not of an individual route.
     let gateway_pseudonym = random_nonzero_16()?;
-    let eligibility = R1Suite;
-    require_network_provider(&eligibility)
-        .map_err(|_| "eligibility provider is not permitted on the network")?;
+    // Eligibility provider. r1 is the mandatory path; c1 is research and needs
+    // the experimental profile, so selecting it takes two explicit choices.
+    let suite_name = args.optional("eligibility-suite", "r1").to_owned();
+    let profile = if suite_name == "r1" {
+        Profile::Mandatory
+    } else {
+        Profile::Experimental
+    };
+    let eligibility_label = args.optional("eligibility-label", "trahens-c1").to_owned();
+    let eligibility: Box<dyn EligibilitySuite> = match suite_name.as_str() {
+        "r1" => Box::new(R1Suite),
+        "c1" => Box::new(C1Suite::recipient(SecretBytes(
+            trahens_crypto::c1::build_endpoint_keys(eligibility_label.as_bytes())?
+                .eligibility_secret
+                .0,
+        ))),
+        other => return Err(format!("unknown --eligibility-suite: {other}").into()),
+    };
+    require_provider(profile, eligibility.as_ref())
+        .map_err(|_| "eligibility provider is not permitted on this profile")?;
+    // The envelope names the suite whose eligibility field it carries, which
+    // is what tells a decoder how to parse that field. Routing is
+    // suite-independent since v1.6, so only this follows the selection.
+    let wire_suite = eligibility.suite_id();
     let mut registry = Registry::default();
     registry.register(
         gateway_id,
@@ -317,7 +341,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     );
                     if link
                         .send(Envelope {
-                            suite_id: SUITE_R1,
+                            suite_id: wire_suite,
                             message: Message::Candidate(Candidate {
                                 candidate_token: selector,
                                 expiry_class: discover.expiry_class,
@@ -415,6 +439,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                         &route.pseudonym,
                                     )?;
                                     send_control(
+                                        wire_suite,
                                         &link,
                                         route,
                                         MessageType::Ready,
@@ -494,6 +519,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                         .try_into()
                                         .unwrap_or(u64::MAX);
                                     send_control(
+                                        wire_suite,
                                         &link,
                                         route,
                                         MessageType::RendezvousResult,
@@ -525,6 +551,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                         clock.now_ms(),
                                     )?;
                                     send_control(
+                                        wire_suite,
                                         &link,
                                         route,
                                         MessageType::Data,
@@ -638,7 +665,13 @@ mod tests {
 
     #[test]
     fn control_envelopes_carry_the_r1_suite() {
-        let envelope = control(MessageType::RendezvousResult, [0x07; 16], 2, vec![1]);
+        let envelope = control(
+            SUITE_R1,
+            MessageType::RendezvousResult,
+            [0x07; 16],
+            2,
+            vec![1],
+        );
         assert_eq!(envelope.suite_id, SUITE_R1);
     }
 
@@ -682,7 +715,13 @@ mod tests {
     #[test]
     fn control_preserves_its_arguments() {
         let body = vec![8, 8, 8];
-        let envelope = control(MessageType::RendezvousOpen, [0x0c; 16], 11, body.clone());
+        let envelope = control(
+            SUITE_R1,
+            MessageType::RendezvousOpen,
+            [0x0c; 16],
+            11,
+            body.clone(),
+        );
 
         let Message::Control(built) = envelope.message else {
             panic!("control must produce a control message");

@@ -7,7 +7,7 @@
 //! nothing about which check failed.
 
 use protocol_registry::{SUITE_C1_V2, SUITE_C2_K2_DISABLED, SUITE_R1};
-use trahens_crypto::{c1, random_bytes, CryptoError};
+use trahens_crypto::{c1, random_bytes, CryptoError, SecretBytes};
 
 /// The single externally observable failure class for every suite operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,9 +100,48 @@ impl EligibilitySuite for R1Suite {
     }
 }
 
-/// C1: research-only, never selected on the network (ADR 0038).
-#[derive(Debug, Clone, Copy, Default)]
-pub struct C1Suite;
+/// C1: universal re-encryption, selectable only on the experimental profile.
+///
+/// Unlike R1 the field is not inert: an initiator encrypts an eligibility
+/// marker to a recipient's key, every relay rerandomises the capsule so no two
+/// hops are linkable, and the recipient decides by decrypting. Which of those
+/// three a node does depends on the key material it holds, so the provider
+/// carries it rather than taking it per call.
+#[derive(Default)]
+pub struct C1Suite {
+    /// Key an initiator encrypts to. Absent at a relay, which only
+    /// rerandomises and needs nothing.
+    recipient_public: Option<[u8; 32]>,
+    /// Key a recipient tests with. Absent everywhere else, and a gateway
+    /// without one is never eligible rather than always eligible.
+    recipient_secret: Option<SecretBytes<32>>,
+}
+
+impl C1Suite {
+    /// A relay: rerandomises, holds no keys, decides nothing.
+    #[must_use]
+    pub fn relay() -> Self {
+        Self::default()
+    }
+
+    /// An initiator encrypting to `recipient_public`.
+    #[must_use]
+    pub fn initiator(recipient_public: [u8; 32]) -> Self {
+        Self {
+            recipient_public: Some(recipient_public),
+            recipient_secret: None,
+        }
+    }
+
+    /// A recipient testing capsules with its own secret.
+    #[must_use]
+    pub fn recipient(recipient_secret: SecretBytes<32>) -> Self {
+        Self {
+            recipient_public: None,
+            recipient_secret: Some(recipient_secret),
+        }
+    }
+}
 
 impl EligibilitySuite for C1Suite {
     fn suite_id(&self) -> [u8; 2] {
@@ -114,9 +153,10 @@ impl EligibilitySuite for C1Suite {
     }
 
     fn initial(&self) -> Result<Vec<u8>, EligibilityFailure> {
-        let keys = c1::build_endpoint_keys(b"c1-provider")?;
+        // Only an initiator produces a field, and only to a known recipient.
+        let recipient = self.recipient_public.ok_or(EligibilityFailure)?;
         let capsule = c1::ure_encrypt(
-            &keys.eligibility_public,
+            &recipient,
             None,
             &trahens_crypto::random_scalar()?,
             &trahens_crypto::random_scalar()?,
@@ -134,9 +174,33 @@ impl EligibilitySuite for C1Suite {
         Ok(rerandomized.encode()?.to_vec())
     }
 
-    fn accepts(&self, _role: Role, field: &[u8]) -> bool {
-        c1::UreCiphertext::decode(field).is_ok()
+    fn accepts(&self, role: Role, field: &[u8]) -> bool {
+        let Ok(capsule) = c1::UreCiphertext::decode(field) else {
+            return false;
+        };
+        match role {
+            // A relay learns nothing and decides nothing: it checks the shape
+            // and rerandomises. That is the property C1 exists for.
+            Role::Relay => true,
+            // The recipient is the only party that can tell whether a
+            // discovery is for it, and it does so by decrypting.
+            Role::Gateway => self
+                .recipient_secret
+                .as_ref()
+                .is_some_and(|secret| c1::ure_is_eligible(&secret.0, &capsule)),
+        }
     }
+}
+
+/// Which profile a node is running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Profile {
+    /// The frozen mandatory path. R1 only.
+    Mandatory,
+    /// Research profiles. Admits any suite the registry calls network-valid,
+    /// so C1 v2 is selectable while the retired C1 v1 and the disabled C2 k=2
+    /// audit suite stay refused everywhere.
+    Experimental,
 }
 
 /// Refuse a provider that must not drive a live node.
@@ -146,29 +210,38 @@ impl EligibilitySuite for C1Suite {
 /// would be silent — research crypto on the wire, with the run still looking
 /// healthy. Selecting one is a configuration error, so it fails at startup.
 ///
-/// C1 is refused on three independent grounds, any one of which is decisive:
-/// it declares itself not network enabled (ADR 0038 decision 1), its suite
-/// identifier is not selectable for production, and the P1 semantics above M2
-/// are bound to a 32-byte R1 nonce.
-///
-/// The last is not about encoding. `message-codec-m2.md` already gives
-/// `discovery_field` a length prefix and already fixes R1 at 32 bytes, C1 v2
-/// at 128, and symbolic C2 at 640, so M2 can carry a capsule today. The
-/// obstacle is that one 32-byte value currently does three jobs at once: it is
-/// the eligibility field, it binds each link of the returned candidate chain,
-/// and it is the key the per-offer labels are derived from. It is not carried
-/// end to end — each hop replaces it independently, which is the U1 property —
-/// but every hop's value is 32 bytes and all three jobs assume that.
-///
-/// Separating the routing nonce from the eligibility field is what makes any
-/// suite selectable, and that is a profile revision rather than a flag.
+/// On the mandatory profile C1 is refused because it declares itself not
+/// network enabled and its identifier is not selectable for production. Since
+/// v1.6 that is the whole of it: the routing-nonce split removed the
+/// structural obstacle, so C1 is selectable on the experimental profile
+/// (ADR 0040).
 pub fn require_network_provider<S: EligibilitySuite + ?Sized>(
     suite: &S,
 ) -> Result<(), EligibilityFailure> {
-    if !suite.network_enabled() || !suite_is_selectable_for_production(suite.suite_id()) {
-        return Err(EligibilityFailure);
+    require_provider(Profile::Mandatory, suite)
+}
+
+/// Refuse a provider the given profile does not permit.
+///
+/// The mandatory profile still admits R1 alone. The experimental profile
+/// admits what the registry calls network-valid, which is what makes C1
+/// selectable without making it reachable by accident: selecting it takes an
+/// explicit profile *and* an explicit suite.
+pub fn require_provider<S: EligibilitySuite + ?Sized>(
+    profile: Profile,
+    suite: &S,
+) -> Result<(), EligibilityFailure> {
+    let permitted = match profile {
+        Profile::Mandatory => {
+            suite.network_enabled() && suite_is_selectable_for_production(suite.suite_id())
+        }
+        Profile::Experimental => protocol_registry::suite_is_network_valid(suite.suite_id()),
+    };
+    if permitted {
+        Ok(())
+    } else {
+        Err(EligibilityFailure)
     }
-    Ok(())
 }
 
 /// True when a suite identifier may appear on the network.
@@ -215,11 +288,12 @@ mod tests {
 
     #[test]
     fn c1_is_research_only_and_rerandomizes() -> Result<(), EligibilityFailure> {
-        let suite = C1Suite;
+        let keys = c1::build_endpoint_keys(b"research-only")?;
+        let suite = C1Suite::initiator(keys.eligibility_public);
         assert_eq!(suite.suite_id(), SUITE_C1_V2);
         assert!(
             !suite.network_enabled(),
-            "C1 must never be selected on the network"
+            "C1 is never selected on the mandatory profile"
         );
         let first = suite.initial()?;
         let second = suite.transform(&first)?;
@@ -248,30 +322,67 @@ mod boundary_tests {
         assert!(require_network_provider(&R1Suite).is_ok());
 
         // C1 is refused, and on grounds that do not depend on each other.
-        assert!(require_network_provider(&C1Suite).is_err());
-        assert!(!C1Suite.network_enabled(), "declares itself research-only");
+        assert!(require_network_provider(&C1Suite::relay()).is_err());
         assert!(
-            !suite_is_selectable_for_production(C1Suite.suite_id()),
+            !C1Suite::relay().network_enabled(),
+            "declares itself research-only"
+        );
+        assert!(
+            !suite_is_selectable_for_production(C1Suite::relay().suite_id()),
             "its identifier is not selectable for production"
         );
     }
 
     #[test]
-    fn the_c1_discovery_field_does_not_fit_the_p1_chain() -> Result<(), EligibilityFailure> {
-        // The structural half of the boundary, which no flag could turn off:
-        // P1 carries a 32-byte discovery nonce at every hop, derives offer
-        // labels from it, and compares it layer by layer in the candidate
-        // chain. C1's field is a four-point URE capsule.
+    fn a_wider_eligibility_field_no_longer_blocks_selection() -> Result<(), EligibilityFailure> {
+        // Before v1.6 this width difference was decisive, because one 32-byte
+        // value was both the eligibility field and the routing nonce. Route
+        // discovery now uses a separate nonce, so the widths may differ.
+        let keys = c1::build_endpoint_keys(b"width-check")?;
         let r1 = R1Suite.initial()?;
-        let c1 = C1Suite.initial()?;
-        assert_eq!(r1.len(), 32, "P1 carries a 32-byte nonce");
-        assert_eq!(c1.len(), 128, "C1 carries a four-point capsule");
-        assert_ne!(r1.len(), c1.len());
+        let c1_field = C1Suite::initiator(keys.eligibility_public).initial()?;
+        assert_eq!(r1.len(), 32);
+        assert_eq!(c1_field.len(), 128);
 
-        // Both still round-trip through their own transform, which is what
-        // the library exists to check.
+        // Each suite still round-trips its own transform, and neither accepts
+        // the other's field.
         assert_eq!(R1Suite.transform(&r1)?.len(), r1.len());
-        assert_eq!(C1Suite.transform(&c1)?.len(), c1.len());
+        assert_eq!(C1Suite::relay().transform(&c1_field)?.len(), c1_field.len());
+        assert!(!R1Suite.accepts(Role::Relay, &c1_field));
+        assert!(!C1Suite::relay().accepts(Role::Relay, &r1));
+        Ok(())
+    }
+
+    #[test]
+    fn only_the_recipient_can_tell_a_c1_discovery_is_for_it() -> Result<(), EligibilityFailure> {
+        // This is what C1 is for: a relay forwards and rerandomises without
+        // learning anything, and the recipient decides by decrypting.
+        let mine = c1::build_endpoint_keys(b"intended-recipient")?;
+        let theirs = c1::build_endpoint_keys(b"someone-else")?;
+        let field = C1Suite::initiator(mine.eligibility_public).initial()?;
+
+        let recipient = C1Suite::recipient(SecretBytes(mine.eligibility_secret.0));
+        assert!(recipient.accepts(Role::Gateway, &field), "addressed to me");
+
+        let other = C1Suite::recipient(SecretBytes(theirs.eligibility_secret.0));
+        assert!(
+            !other.accepts(Role::Gateway, &field),
+            "a gateway that is not the recipient declines"
+        );
+
+        // A relay accepts the shape and cannot decide, which is the property
+        // that keeps the eligibility target hidden from the path.
+        assert!(C1Suite::relay().accepts(Role::Relay, &field));
+        assert!(
+            !C1Suite::relay().accepts(Role::Gateway, &field),
+            "no key, never eligible: absence must not read as acceptance"
+        );
+
+        // Rerandomising at a hop does not change who it is for.
+        let hopped = C1Suite::relay().transform(&field)?;
+        assert_ne!(hopped, field, "no two hops carry the same bytes");
+        assert!(recipient.accepts(Role::Gateway, &hopped));
+        assert!(!other.accepts(Role::Gateway, &hopped));
         Ok(())
     }
 }

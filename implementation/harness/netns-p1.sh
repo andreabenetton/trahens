@@ -16,13 +16,15 @@ TIMEOUT_MS=30000
 OUTPUT="${PWD}/build/p1-netns"
 BIN_DIR="${PWD}/implementation/rust/target/release"
 # ok | replay | wrong-capability | expired-capability | no-candidate |
-# transport-failure
+# transport-failure | burst-loss | c1-not-eligible
 SCENARIO=ok
 # Which T2 schedule profile the nodes run. The mandatory arms use fixed and
 # assert the constant cadence they claim; adaptive renegotiates its rate, so
 # this script refuses to assert the fixed trace when it is selected. Neither
 # profile may make the other's claim.
 SCHEDULE_PROFILE=fixed
+ELIGIBILITY_SUITE=r1
+INITIATOR_LABEL=
 # Interoperability mode: run a third-party initiator against our relays and
 # gateway. The foreign command receives exactly the arguments our own endpoint
 # does, so the CLI contract is the only thing it has to match beyond the wire.
@@ -43,6 +45,10 @@ while (($#)); do
     --bin-dir) BIN_DIR="$2"; shift 2 ;;
     --scenario) SCENARIO="$2"; shift 2 ;;
     --schedule-profile) SCHEDULE_PROFILE="$2"; shift 2 ;;
+    --eligibility-suite) ELIGIBILITY_SUITE="$2"; shift 2 ;;
+    # The initiator addresses its capsule to this label's key; giving the
+    # initiator a different one from the gateway is the negative arm.
+    --initiator-label) INITIATOR_LABEL="$2"; shift 2 ;;
     --external-endpoint) EXTERNAL_ENDPOINT="$2"; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -116,6 +122,14 @@ case "$SCENARIO" in
     ENDPOINT_EXTRA=(--rings "16:20000")
     EXPECT_ENDPOINT_FAILURE=1
     EXPECT_RETRY_EXHAUSTION=1 ;;
+  c1-not-eligible)
+    # The initiator addresses its capsule to a key the gateway does not hold,
+    # so the gateway decrypts it, finds it is not the recipient, and declines.
+    # Discovery then exhausts its schedule. This is the property C1 exists for:
+    # only the recipient can tell, and the relays in between cannot.
+    ELIGIBILITY_SUITE=c1
+    INITIATOR_LABEL="not-this-gateway"
+    EXPECT_ENDPOINT_FAILURE=1 ;;
   transport-failure)
     # The far link blackholes after setup begins, so a sender exhausts its T1
     # retry budget. The gate requires that path to reclaim all remote state.
@@ -211,6 +225,7 @@ EPOCH=1
 # Shared with multihost-p1.sh so the two harnesses cannot drift into testing
 # different protocols.
 P1_ADAPTIVE=(--schedule-profile "$SCHEDULE_PROFILE")
+P1_SUITE=(--eligibility-suite "$ELIGIBILITY_SUITE")
 P1_ENDPOINT_EXTRA=("${ENDPOINT_EXTRA[@]}")
 # shellcheck source=implementation/harness/p1-node-args.sh
 source "$ROOT/implementation/harness/p1-node-args.sh"
@@ -254,6 +269,9 @@ if [[ -n "$EXTERNAL_ENDPOINT" ]]; then
   echo "interop: initiator is external: ${ENDPOINT_CMD[*]}"
 else
   ENDPOINT_CMD=("$BIN_DIR/trahens-endpoint")
+fi
+if [[ -n "$INITIATOR_LABEL" ]]; then
+  P1_SUITE+=(--eligibility-label "$INITIATOR_LABEL")
 fi
 p1_endpoint_args "10.200.0.1:${PORT}" "10.200.0.2:${PORT}" 0 \
   "$GATEWAY_PUBLIC" "$ENDPOINT_CAPABILITY"
