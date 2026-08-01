@@ -1,21 +1,29 @@
 name: Apply v1.6 source comment corrections
 
 on:
-  push:
-    branches:
-      - main
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/fix-v16-source-comments' &&
+      github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: main
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Correct stale active-profile comments
         shell: bash
@@ -78,9 +86,10 @@ jobs:
           path.write_text(text, encoding="utf-8")
           PY
 
+          git checkout origin/main -- .github/workflows/apply-v16-comment-fix.yml
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add implementation/rust/bins/trahens-relay/src/main.rs
+          git add implementation/rust/bins/trahens-relay/src/main.rs .github/workflows/apply-v16-comment-fix.yml
           git commit -m "Align relay comments with Core v1.6"
-          git push origin HEAD:main
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
