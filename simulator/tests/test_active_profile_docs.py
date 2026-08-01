@@ -62,7 +62,8 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
             "Routing nonce",
             "Eligibility field",
             "network-bootstrap-b1.md",
-            "route bootstrap",
+            "static network configuration",
+            "not autonomous Trahens network",
         ):
             self.assertIn(value, overview)
 
@@ -122,7 +123,7 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
         bootstrap = ROOT / "spec/network-bootstrap-b1.md"
         self.assertTrue(bootstrap.is_file())
 
-        for relative in (
+        directly_linked = (
             "README.md",
             "FORDUMMY.md",
             "ROADMAP.md",
@@ -130,10 +131,14 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
             "spec/core-v1.6.md",
             "spec/p1-prototype-profile-v1.6.md",
             "docs/implementing-trahens-p1.md",
-            "docs/p1-acceptance-evidence.md",
-        ):
+        )
+        for relative in directly_linked:
             with self.subTest(path=relative):
                 self.assertIn("network-bootstrap-b1.md", self.read(relative))
+
+        evidence = self.read("docs/p1-acceptance-evidence.md")
+        self.assertIn("Autonomous network bootstrap", evidence)
+        self.assertIn("future B1 profile", evidence)
 
 
 if __name__ == "__main__":
