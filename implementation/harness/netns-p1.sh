@@ -205,23 +205,20 @@ done
 # rounds on top. A flat window made the five-relay arm marginal: it passes on
 # a quiet machine and reports NO_CANDIDATE on a slower one, which measures the
 # runner rather than recovery. Scenarios that set their own schedule keep it.
-if [[ ${#ENDPOINT_EXTRA[@]} -eq 0 || ! " ${ENDPOINT_EXTRA[*]} " =~ " --rings " ]]; then
-  RING_WINDOW_MS=$(( 1500 + RELAYS * 600 ))
-  ENDPOINT_EXTRA+=(--rings "16:${RING_WINDOW_MS}")
-fi
-
-key_for() { printf '%064x' "$(( $1 + 1 ))"; }
-GATEWAY_PUBLIC=$(python3 - "$SIGNING_SEED" <<'PY'
-import sys
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-seed=bytes.fromhex(sys.argv[1])
-print(Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(
-    serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex())
-PY
-)
 PORT=4242
 EPOCH=1
+# Shared with multihost-p1.sh so the two harnesses cannot drift into testing
+# different protocols.
+P1_ADAPTIVE=("${ADAPTIVE[@]}")
+P1_ENDPOINT_EXTRA=("${ENDPOINT_EXTRA[@]}")
+# shellcheck source=implementation/harness/p1-node-args.sh
+source "$ROOT/implementation/harness/p1-node-args.sh"
+
+if [[ ${#P1_ENDPOINT_EXTRA[@]} -eq 0 || ! " ${P1_ENDPOINT_EXTRA[*]} " =~ " --rings " ]]; then
+  P1_ENDPOINT_EXTRA+=(--rings "16:$(p1_ring_window_ms "$RELAYS")")
+fi
+GATEWAY_PUBLIC=$(p1_gateway_public "$SIGNING_SEED")
+
 
 
 run_node() {
@@ -234,25 +231,18 @@ run_node() {
 }
 
 GIDX=$((NODES-1))
+p1_gateway_args "$GIDX" \
+  "10.200.$((GIDX-1)).2:${PORT}" "10.200.$((GIDX-1)).1:${PORT}" \
+  $((GIDX-1)) "$GATEWAY_TTL_MS"
 run_node "${NAMES[$GIDX]}" rendezvous 7 \
-  "$BIN_DIR/trahens-rendezvous" \
-  --id "$((GIDX+1))" --peer-id "$GIDX" --gateway-id 7 --epoch "$EPOCH" \
-  "${ADAPTIVE[@]}" \
-  --bind "10.200.$((GIDX-1)).2:${PORT}" --peer "10.200.$((GIDX-1)).1:${PORT}" \
-  --key "$(key_for $((GIDX-1)))" --signing-seed "$SIGNING_SEED" \
-  --capability "$CAPABILITY" --capability-ttl-ms "$GATEWAY_TTL_MS" \
-  --timeout-ms "$TIMEOUT_MS" --metrics "$OUTPUT/rendezvous.metrics.json"
+  "$BIN_DIR/trahens-rendezvous" "${P1_NODE_ARGS[@]}"
 
 for ((r=RELAYS; r>=1; r--)); do
+  p1_relay_args "$r" \
+    "10.200.$((r-1)).2:${PORT}" "10.200.$((r-1)).1:${PORT}" $((r-1)) \
+    "10.200.${r}.1:${PORT}" "10.200.${r}.2:${PORT}" "$r"
   run_node "${NAMES[$r]}" "relay-${r}" "$((r-RELAYS/2))" \
-    "$BIN_DIR/trahens-relay" \
-    --id "$((r+1))" --upstream-id "$r" --downstream-id "$((r+2))" --epoch "$EPOCH" \
-    "${ADAPTIVE[@]}" \
-    --upstream-bind "10.200.$((r-1)).2:${PORT}" --upstream-peer "10.200.$((r-1)).1:${PORT}" \
-    --upstream-key "$(key_for $((r-1)))" \
-    --downstream-bind "10.200.${r}.1:${PORT}" --downstream-peer "10.200.${r}.2:${PORT}" \
-    --downstream-key "$(key_for "$r")" --timeout-ms "$TIMEOUT_MS" \
-    --metrics "$OUTPUT/relay-${r}.metrics.json"
+    "$BIN_DIR/trahens-relay" "${P1_NODE_ARGS[@]}"
 done
 
 sleep 0.2
@@ -264,15 +254,10 @@ if [[ -n "$EXTERNAL_ENDPOINT" ]]; then
 else
   ENDPOINT_CMD=("$BIN_DIR/trahens-endpoint")
 fi
+p1_endpoint_args "10.200.0.1:${PORT}" "10.200.0.2:${PORT}" 0 \
+  "$GATEWAY_PUBLIC" "$ENDPOINT_CAPABILITY"
 run_node "${NAMES[0]}" endpoint -7 \
-  "${ENDPOINT_CMD[@]}" \
-  --id 1 --peer-id 2 --epoch "$EPOCH" \
-  "${ADAPTIVE[@]}" \
-  --bind "10.200.0.1:${PORT}" --peer "10.200.0.2:${PORT}" --key "$(key_for 0)" \
-  --gateway-public "$GATEWAY_PUBLIC" --capability "$ENDPOINT_CAPABILITY" \
-  "${ENDPOINT_EXTRA[@]}" \
-  --message "interoperable-p1" --timeout-ms "$TIMEOUT_MS" \
-  --metrics "$OUTPUT/endpoint.metrics.json"
+  "${ENDPOINT_CMD[@]}" "${P1_NODE_ARGS[@]}"
 
 if (( BLACKHOLE_AFTER_MS > 0 )); then
   (
