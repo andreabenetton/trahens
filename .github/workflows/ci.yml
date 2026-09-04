@@ -3,6 +3,16 @@ name: ci
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      upload_captures:
+        description: >-
+          Upload the linux-interop packet captures and metrics as an
+          artifact. Off by default: the captures are large and the job's
+          own assertions, not the pcaps, are what the P1 gate rests on.
+          Turn this on only when a capture is actually going to be read.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -167,12 +177,18 @@ jobs:
             --relays 2 --loss 0 --delay 2ms --jitter 0ms \
             --scenario c1-not-eligible \
             --timeout-ms 20000 --output "$GITHUB_WORKSPACE/build/p1-c1-declined"
+      # Opt-in only. Every assertion above fails the job on its own, so a
+      # red run is already diagnosable from the log; the captures are for
+      # reading a packet trace by hand, which is rare and deliberate.
+      # Re-run this workflow from the Actions tab with upload_captures set
+      # when that is what you want.
       - name: Upload captures and metrics
-        if: always()
+        if: always() && inputs.upload_captures
         uses: actions/upload-artifact@v7
         with:
           name: p1-network-results
           path: build/p1-*
+          retention-days: 5
 
   # The P1 gate requires decoder fuzzing to complete without crash or
   # unbounded allocation. The conformance crate's deterministic mutation smoke
