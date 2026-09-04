@@ -141,5 +141,5 @@ Either fold the cleanup into the same commit as the fix, or add a follow-up comm
 - **Clippy `unwrap_used` and `expect_used` are denied** in Rust. Use `?` or explicit error handling.
 - **`unsafe_op_in_unsafe_fn` is denied** — unsafe blocks must be explicitly marked.
 - Python requires ≥3.11; only `cryptography>=43` is a runtime dependency.
-- `docs/review-log/` is an internal reconstruction — it must not be cited as independent external review. The actual independent review is `docs/external-review-2026-07-30.md`.
+- `docs/review-log/` is an internal reconstruction — it must not be cited as independent external review. The independent reviews are `docs/external-review-2026-07-30.md` (v1.4) and `docs/external-review-2026-09-04.md` (v1.6/P1). `docs/review-verification-2026-09-04.md` is an internal verification pass over the latter's P0 findings and is likewise not independent review.
 - C1 v1 suite `0x0001`, symbolic C2 `0x0002`, and disabled C2 k=2 `0x7f02` must all be rejected by network decoders. The negative-control providers exist only in the simulator for measurement.
