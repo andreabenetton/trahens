@@ -169,9 +169,13 @@ impl Registry {
 
     /// Redeem, additionally requiring the advertised pseudonym to match.
     ///
-    /// A mismatch consumes the record exactly as any other failed redemption
-    /// does, so replay, wrong gateway, wrong pseudonym, and expiry are one
-    /// generic failure from the caller's perspective.
+    /// Every failure returns `None`, so replay, wrong gateway, wrong pseudonym
+    /// and expiry stay one generic outcome to the caller. Only a match consumes
+    /// the record: a wrong pseudonym leaves it live, exactly as a wrong gateway
+    /// already did by addressing a different key. Consuming on mismatch let
+    /// anyone holding the capability but not the pseudonym destroy a live
+    /// registration, and the uniform return value means declining to consume
+    /// tells a prober nothing.
     pub fn redeem_for_pseudonym(
         &mut self,
         gateway_id: u32,
@@ -181,17 +185,16 @@ impl Registry {
     ) -> Result<Option<Vec<u8>>, RendezvousError> {
         let digest = token_hash(&token.0)?;
         let key = (gateway_id, digest);
-        let Some(record) = self.records.remove(&key) else {
+        let Some(record) = self.records.get(&key) else {
             return Ok(None);
         };
-        if record.gateway_pseudonym == *gateway_pseudonym
-            && record.created_at_ms <= now_ms
-            && now_ms < record.expires_at_ms
+        if record.gateway_pseudonym != *gateway_pseudonym
+            || record.created_at_ms > now_ms
+            || now_ms >= record.expires_at_ms
         {
-            Ok(Some(record.endpoint_handle))
-        } else {
-            Ok(None)
+            return Ok(None);
         }
+        Ok(self.records.remove(&key).map(|record| record.endpoint_handle))
     }
 
     pub fn expire(&mut self, now_ms: u64) -> usize {
@@ -337,7 +340,9 @@ mod tests {
         assert_eq!(token_hash(&[0_u8; 32]), Err(RendezvousError::Invalid));
 
         // A wrong advertised pseudonym fails exactly like any other bad
-        // redemption, and still consumes the record.
+        // redemption, but must not consume the record: otherwise anyone holding
+        // the capability without the pseudonym could destroy a live
+        // registration, and the legitimate endpoint would find nothing left.
         let mut registry = Registry::default();
         registry.register(
             gateway_id,
@@ -352,7 +357,17 @@ mod tests {
             None,
             "wrong pseudonym is rejected"
         );
-        assert_eq!(registry.live_records(), 0, "and the record is consumed");
+        assert_eq!(
+            registry.live_records(),
+            1,
+            "and the registration survives for its rightful holder"
+        );
+        assert_eq!(
+            registry.redeem_for_pseudonym(gateway_id, &PSEUDONYM, &token, created + 1)?,
+            Some(b"handle".to_vec()),
+            "which can still redeem it"
+        );
+        assert_eq!(registry.live_records(), 0, "and that consumes it");
         Ok(())
     }
 }
