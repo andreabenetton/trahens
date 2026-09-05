@@ -216,6 +216,31 @@ mod tests {
 
     const PSEUDONYM: [u8; 16] = [0x5a; 16];
 
+    /// R1 is one-time *per gateway*, not globally. A destination may register
+    /// one capability at several gateways, and each registration redeems once.
+    /// Pinned as a test because the paper previously claimed the global
+    /// property: if the semantics are ever changed to global one-shot, this
+    /// fails and the claim has to be revisited deliberately.
+    #[test]
+    fn one_capability_redeems_once_at_each_registered_gateway() -> Result<(), RendezvousError> {
+        let mut registry = Registry::default();
+        let token = SecretBytes([3_u8; 32]);
+        registry.register(1, PSEUDONYM, &token, b"handle".to_vec(), 0, 100)?;
+        registry.register(2, PSEUDONYM, &token, b"handle".to_vec(), 0, 100)?;
+        assert_eq!(registry.live_records(), 2);
+
+        assert_eq!(registry.redeem(1, &token, 1)?, Some(b"handle".to_vec()));
+        assert_eq!(
+            registry.redeem(2, &token, 1)?,
+            Some(b"handle".to_vec()),
+            "the second gateway's registration is independent"
+        );
+        assert_eq!(registry.redeem(1, &token, 1)?, None, "neither redeems twice");
+        assert_eq!(registry.redeem(2, &token, 1)?, None);
+        assert_eq!(registry.live_records(), 0);
+        Ok(())
+    }
+
     #[test]
     fn one_time_wrong_gateway_and_expiry() -> Result<(), RendezvousError> {
         let mut registry = Registry::default();

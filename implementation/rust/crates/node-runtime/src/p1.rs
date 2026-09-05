@@ -509,8 +509,129 @@ impl RouteSequencer {
 mod tests {
     use super::*;
     use trahens_crypto::{
-        blind_public, random_nonzero_16, random_scalar, scalar_base, signing_keypair,
+        blind_public, random_nonzero_16, random_scalar, route_keys, scalar_base, signing_keypair,
     };
+
+    /// The defect this profile exists to fix: a relay that keeps a protected
+    /// body and re-sends it later inside its own fresh transmission. Nothing at
+    /// the link layer can reject that, because the carrying transmission really
+    /// is new, so the route window has to.
+    #[test]
+    fn a_recorded_route_record_cannot_be_replayed() -> Result<(), Box<dyn std::error::Error>> {
+        let keys = route_keys(&[7_u8; 32], &[9_u8; 32])?;
+        let key = keys.direction(RouteDirection::EndpointToGateway);
+        let payload = P1Payload::Close { reason: 0 };
+        let sealed = seal_control(
+            key,
+            RouteDirection::EndpointToGateway,
+            0,
+            MessageType::Close,
+            0,
+            &payload,
+        )?;
+
+        let mut window = RouteReplayWindow::new();
+        let (sequence, _) = open_control(
+            key,
+            RouteDirection::EndpointToGateway,
+            MessageType::Close,
+            0,
+            &sealed,
+        )?;
+        window.admit(sequence)?;
+
+        // The captured bytes still authenticate -- that is the point, the
+        // attacker did not have to forge anything -- so only the window stops
+        // the second delivery.
+        let (replayed, _) = open_control(
+            key,
+            RouteDirection::EndpointToGateway,
+            MessageType::Close,
+            0,
+            &sealed,
+        )?;
+        assert!(
+            window.admit(replayed).is_err(),
+            "a recorded route record must not be delivered twice"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_record_cannot_be_reflected_back_along_the_route(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let keys = route_keys(&[7_u8; 32], &[9_u8; 32])?;
+        let sealed = seal_control(
+            keys.direction(RouteDirection::EndpointToGateway),
+            RouteDirection::EndpointToGateway,
+            0,
+            MessageType::Close,
+            0,
+            &P1Payload::Close { reason: 0 },
+        )?;
+        assert!(
+            open_control(
+                keys.direction(RouteDirection::GatewayToEndpoint),
+                RouteDirection::GatewayToEndpoint,
+                MessageType::Close,
+                0,
+                &sealed,
+            )
+            .is_err(),
+            "a record sealed towards the gateway must not open as one from it"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn route_keys_are_bound_to_the_offer_transcript() -> Result<(), Box<dyn std::error::Error>> {
+        let secret = [7_u8; 32];
+        let chosen = route_keys(&secret, &[9_u8; 32])?;
+        let other = route_keys(&secret, &[10_u8; 32])?;
+        let sealed = seal_control(
+            chosen.direction(RouteDirection::EndpointToGateway),
+            RouteDirection::EndpointToGateway,
+            0,
+            MessageType::Close,
+            0,
+            &P1Payload::Close { reason: 0 },
+        )?;
+        // Same route secret, different selected offer: the channel must not open.
+        assert!(
+            open_control(
+                other.direction(RouteDirection::EndpointToGateway),
+                RouteDirection::EndpointToGateway,
+                MessageType::Close,
+                0,
+                &sealed,
+            )
+            .is_err(),
+            "a route secret must be unusable under any other offer"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn the_route_window_accepts_reordering_but_not_repeats(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut window = RouteReplayWindow::new();
+        window.admit(4)?;
+        window.admit(2)?;
+        window.admit(3)?;
+        assert!(window.admit(2).is_err(), "a repeat is refused");
+
+        // Once the highest accepted sequence is a full window ahead, anything
+        // at or below the floor has aged out and is refused whether or not it
+        // was ever seen.
+        let width = LIMIT_ROUTE_REPLAY_WINDOW as u64;
+        window.admit(1_000)?;
+        assert!(
+            window.admit(1_000 - width).is_err(),
+            "a sequence at the window floor is refused"
+        );
+        window.admit(1_000 - width + 1)?;
+        Ok(())
+    }
 
     #[test]
     fn two_relay_candidate_chain_round_trip() -> Result<(), Box<dyn std::error::Error>> {
