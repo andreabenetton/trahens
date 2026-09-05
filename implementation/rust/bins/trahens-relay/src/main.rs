@@ -64,6 +64,10 @@ enum LabelBinding {
         parent_label: [u8; 16],
         child_index: usize,
         index: u16,
+        /// Set once an offer has been admitted under this label. The binding
+        /// outlives admission because downstream control for the chain arrives
+        /// on the same label, so consumption is marked rather than unbound.
+        consumed: bool,
     },
 }
 
@@ -536,6 +540,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     parent_label: discover.branch_token,
                                     child_index: link_index,
                                     index,
+                                    consumed: false,
                                 },
                             );
                         }
@@ -821,10 +826,20 @@ fn run() -> Result<(), Box<dyn Error>> {
                         parent_label,
                         child_index: slot_child,
                         index: slot_index,
+                        consumed,
                     }) = labels.get(&candidate_token).copied()
                     else {
                         continue;
                     };
+                    // A candidate label is consumed on admission, so a repeat of
+                    // an offer already forwarded is not a new protocol event.
+                    // The duplicate arrives as legitimately new link traffic --
+                    // fresh T1 transmission, fresh W2 sequence, fresh ciphertext
+                    // -- so the link replay window is not what can reject it.
+                    if consumed {
+                        drops.record("relay", ERROR_STATE_VIOLATION, "candidate_replay");
+                        continue;
+                    }
                     if !routes.contains_key(&parent_label) {
                         continue;
                     }
@@ -840,20 +855,20 @@ fn run() -> Result<(), Box<dyn Error>> {
                         );
                         continue;
                     }
-                    // The candidate arrived on one specific child, so it must
-                    // be unwrapped with that child's blinding factor and nonce.
-                    // Those are key material, so they are read through a borrow
-                    // that ends with this block rather than copied out of the
-                    // table with the rest of the route.
                     let child_index = slot_child;
-                    let wrapped = {
+                    // Every cheap check and the response-slot reservation run
+                    // before the nested wrapping below. v1.6 requires quota
+                    // accounting to precede that work, so a child cannot spend
+                    // this relay's public-key operations once its response
+                    // budget is gone.
+                    let tentative = {
                         let Some(route) = routes.get(&parent_label) else {
                             continue;
                         };
-                        let Some(child) = route.children.get(child_index) else {
+                        if route.children.get(child_index).is_none() {
                             drops.record("relay", ERROR_STATE_VIOLATION, "candidate_unknown_child");
                             continue;
-                        };
+                        }
                         // After selection the branch follows one child; an
                         // offer returning through a losing sibling is off
                         // route.
@@ -864,6 +879,31 @@ fn run() -> Result<(), Box<dyn Error>> {
                             drops.record("relay", ERROR_STATE_VIOLATION, "candidate_after_commit");
                             continue;
                         }
+                        // Each returned offer travels upstream under its own
+                        // tentative selector, so a later COMMIT names one chain
+                        // rather than just the branch. Deriving it here is what
+                        // enforces the per-discovery response ceiling.
+                        let Ok(tentative) =
+                            offer_label(&route.parent_routing_nonce.0, route.offers_forwarded)
+                        else {
+                            drops.record("relay", ERROR_RESOURCE_EXHAUSTED, "offer_response_limit");
+                            continue;
+                        };
+                        tentative
+                    };
+                    // The candidate arrived on one specific child, so it must be
+                    // unwrapped with that child's blinding factor and nonce.
+                    // Those are key material, so they are read through a borrow
+                    // that ends with this block rather than copied out of the
+                    // table with the rest of the route.
+                    let wrapped = {
+                        let Some(route) = routes.get(&parent_label) else {
+                            continue;
+                        };
+                        let Some(child) = route.children.get(child_index) else {
+                            drops.record("relay", ERROR_STATE_VIOLATION, "candidate_unknown_child");
+                            continue;
+                        };
                         // The candidate blob is remote input; a wrap failure
                         // drops the candidate rather than terminating the relay.
                         let Ok(wrapped) = wrap_candidate(
@@ -888,19 +928,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                         drops.record("relay", ERROR_STATE_VIOLATION, "candidate_transition");
                         continue;
                     }
-                    // Each returned offer travels upstream under its own
-                    // tentative selector, so a later COMMIT names one chain
-                    // rather than just the branch. The child accepts control
-                    // on the token it used, which is its own selector when the
-                    // child is a relay and its branch token when it is a
-                    // gateway.
+                    // The offer is admitted from here on. The child accepts
+                    // control on the token it used, which is its own selector
+                    // when the child is a relay and its branch token when it is
+                    // a gateway.
                     let Some(entry) = routes.get_mut(&parent_label) else {
-                        continue;
-                    };
-                    let Ok(tentative) =
-                        offer_label(&entry.parent_routing_nonce.0, entry.offers_forwarded)
-                    else {
-                        drops.record("relay", ERROR_RESOURCE_EXHAUSTED, "offer_response_limit");
                         continue;
                     };
                     entry.offers_forwarded = entry.offers_forwarded.saturating_add(1);
@@ -918,6 +950,14 @@ fn run() -> Result<(), Box<dyn Error>> {
                             child_selector: candidate_token,
                         },
                     );
+                    // Consume the answered label so a duplicate of this offer
+                    // resolves to nothing forwardable. The binding itself stays,
+                    // because downstream control for this chain arrives on it.
+                    if let Some(LabelBinding::Offer { consumed, .. }) =
+                        labels.get_mut(&candidate_token)
+                    {
+                        *consumed = true;
+                    }
                     // Downstream control for this chain arrives under the same
                     // label the offer did, which is already bound, so nothing
                     // needs registering for it.
@@ -928,6 +968,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 parent_label,
                                 child_index,
                                 index: next_slot,
+                                consumed: false,
                             },
                         );
                     }
@@ -1265,6 +1306,7 @@ mod tests {
                         parent_label: parent,
                         child_index,
                         index,
+                        consumed: false,
                     },
                 );
             }
