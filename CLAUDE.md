@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Trahens is a research protocol for privacy-enabled route discovery in decentralized path-aware networks. The active profile is **Core v1.6 (P1)**; v1.5 is history and its files are retained only so that profile stays reproducible. It is not a complete endpoint-anonymity system — private directory (D1), global-observer traffic-flow theorems, and production implementations are explicitly out of scope.
+Trahens is a research protocol for privacy-enabled route discovery in decentralized path-aware networks. The active profile is **Core v1.7 (P1)**; v1.5 and v1.6 are history and their files are retained only so those profiles stay reproducible. It is not a complete endpoint-anonymity system — private directory (D1), global-observer traffic-flow theorems, and production implementations are explicitly out of scope.
 
 ## Commands
 
@@ -15,6 +15,8 @@ See the `trahens-commands` skill for build/test/vector-regeneration commands (Py
 ### Layered component model
 
 The protocol is built from named profiles that stack on each other. Working top-down:
+
+- **Route channel (v1.7)** — directional HKDF keys bound to the selected offer transcript, counter nonces, per-direction replay window (`spec/core-v1.7.md` §7.1, ADR 0041)
 
 - **U1** — branch-local unlinkable context replacement (identifiers, nonces, keys replaced per hop)
 - **E1** — deterministic event and route-state lifecycle (TLA+ in `formal/E1Lifecycle.tla`)
@@ -35,15 +37,15 @@ The protocol is built from named profiles that stack on each other. Working top-
 - **C2 k=2 audit (`0x7f02`)** — disabled transcription experiment; full rerandomization fails closed (`simulator/trahens_crypto/c2_klinear.py`).
 - **C1 v1 (`0x0001`)** — retired; MUST be rejected.
 
-Suite IDs and all numeric constants are generated from the single source of truth: `spec/protocol-registry-v1.6.json`. The v1.5 registry is historical and regenerates its own markdown only. Regenerate derived files with `make registry`.
+Suite IDs and all numeric constants are generated from the single source of truth: `spec/protocol-registry-v1.7.json`. The v1.5 and v1.6 registries are historical and regenerate their own markdown only. Regenerate derived files with `make registry`.
 
 ### Repository layout
 
 | Path | Role |
 |---|---|
-| `spec/core-v1.6.md` | Normative semantics and evidence boundary |
-| `spec/protocol-registry-v1.6.json` | Single source of truth for all IDs, widths, and limits |
-| `spec/p1-prototype-profile-v1.6.md` | P1 acceptance gate and claim boundary |
+| `spec/core-v1.7.md` | Normative semantics and evidence boundary |
+| `spec/protocol-registry-v1.7.json` | Single source of truth for all IDs, widths, and limits |
+| `spec/p1-prototype-profile-v1.7.md` | P1 acceptance gate and claim boundary |
 | `simulator/trahens_sim/` | Python deterministic protocol models |
 | `simulator/trahens_crypto/` | Crypto providers (C1, C2-ideal, C2-k2, ristretto, tagging) |
 | `simulator/trahens_codec/` | M2/W2, T1, T2 codecs |
@@ -60,18 +62,20 @@ Suite IDs and all numeric constants are generated from the single source of trut
 
 ### Generated files — never edit directly
 
-Three files are mechanically derived from `spec/protocol-registry-v1.6.json` and must stay in sync:
+Three files are mechanically derived from `spec/protocol-registry-v1.7.json` and must stay in sync:
 
 1. `simulator/trahens_spec/generated.py`
 2. `implementation/rust/crates/protocol-registry/src/generated.rs`
-3. `spec/protocol-registry-v1.6.md`
+3. `spec/protocol-registry-v1.7.md`
 
-After any registry change, run `make registry` and commit all three outputs together.
+After any registry change, run `make registry` and commit all three outputs
+together. The registry is also embedded in the P1 conformance vectors, so a
+registry change needs `make p1-vectors` as well.
 
-`spec/protocol-registry-v1.5.md` is also generated, from the historical v1.5
-registry, and `check_repo.sh` still regenerates and compares it. Do not edit
-either v1.5 artifact: that profile is history and its files exist so it stays
-reproducible.
+`spec/protocol-registry-v1.6.md` and `spec/protocol-registry-v1.5.md` are also
+generated, from their own historical registries, and `check_repo.sh` still
+regenerates and compares both. Do not edit any v1.5 or v1.6 artifact: those
+profiles are history and their files exist so they stay reproducible.
 
 ### `make check` integrity invariants
 
@@ -80,8 +84,8 @@ reproducible.
 - All required files exist and are committed
 - Every vector file matches a fresh generator run (`cmp` on regenerated output)
 - `simulator/trahens_spec/generated.py` and the Rust generated file match `make registry` output
-- **Both** registries regenerate: v1.6 produces the bindings and its markdown, and the historical v1.5 registry still produces its own markdown
-- P1 conformance vectors and corpus match `tools/generate_p1_conformance.py` for both v1.6 and v1.5
+- **All three** registries regenerate: v1.7 produces the bindings and its markdown, and the historical v1.6 and v1.5 registries still produce their own markdown
+- P1 conformance vectors and corpus match `tools/generate_p1_conformance.py` for v1.7, v1.6, and v1.5
 - Bounded state models and anonymity metrics match their generators
 - `paper/rewrite/main.tex` contains no forbidden historical terms (`Nexus`, `2020`, `W1`, `M1`, `Core v0.*`, etc.)
 - Python compiles cleanly; Rust tests pass if `cargo` is available
