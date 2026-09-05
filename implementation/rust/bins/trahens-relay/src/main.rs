@@ -2,7 +2,10 @@
 #![forbid(unsafe_code)]
 
 use codec_m2::{Candidate, Control, Discover, Envelope, Message, MessageType};
-use node_runtime::p1::{offer_label, wrap_candidate, OFFER_LABEL_WINDOW};
+use node_runtime::p1::{
+    admit_candidate, offer_label, wrap_candidate, CandidateArrival, CandidateRefusal,
+    OFFER_LABEL_WINDOW,
+};
 use node_runtime::{
     drain_in_precedence_order, drain_links, event_channel, parse_hex, spawn_link, structured_event,
     write_link_metrics, CliArgs, Clock, LinkConfig, LinkEvent, LinkMetrics, NodeQueueBudget,
@@ -832,15 +835,6 @@ fn run() -> Result<(), Box<dyn Error>> {
                     else {
                         continue;
                     };
-                    // A candidate label is consumed on admission, so a repeat of
-                    // an offer already forwarded is not a new protocol event.
-                    // The duplicate arrives as legitimately new link traffic --
-                    // fresh T1 transmission, fresh W2 sequence, fresh ciphertext
-                    // -- so the link replay window is not what can reject it.
-                    if consumed {
-                        drops.record("relay", ERROR_STATE_VIOLATION, "candidate_replay");
-                        continue;
-                    }
                     if !routes.contains_key(&parent_label) {
                         continue;
                     }
@@ -858,39 +852,41 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                     let child_index = slot_child;
                     // Every cheap check and the response-slot reservation run
-                    // before the nested wrapping below. v1.6 requires quota
-                    // accounting to precede that work, so a child cannot spend
-                    // this relay's public-key operations once its response
-                    // budget is gone.
+                    // before the nested wrapping below, which is what keeps a
+                    // duplicate from costing this relay public-key work once the
+                    // child's response budget is spent.
                     let tentative = {
                         let Some(route) = routes.get(&parent_label) else {
                             continue;
                         };
-                        if route.children.get(child_index).is_none() {
-                            drops.record("relay", ERROR_STATE_VIOLATION, "candidate_unknown_child");
-                            continue;
-                        }
-                        // After selection the branch follows one child; an
-                        // offer returning through a losing sibling is off
-                        // route.
-                        if route
-                            .committed_child
-                            .is_some_and(|chosen| chosen != child_index)
-                        {
-                            drops.record("relay", ERROR_STATE_VIOLATION, "candidate_after_commit");
-                            continue;
-                        }
-                        // Each returned offer travels upstream under its own
-                        // tentative selector, so a later COMMIT names one chain
-                        // rather than just the branch. Deriving it here is what
-                        // enforces the per-discovery response ceiling.
-                        let Ok(tentative) =
-                            offer_label(&route.parent_routing_nonce.0, route.offers_forwarded)
-                        else {
-                            drops.record("relay", ERROR_RESOURCE_EXHAUSTED, "offer_response_limit");
-                            continue;
+                        let arrival = CandidateArrival {
+                            consumed,
+                            child_exists: route.children.get(child_index).is_some(),
+                            committed_child: route.committed_child,
+                            child_index,
+                            offers_forwarded: route.offers_forwarded,
                         };
-                        tentative
+                        match admit_candidate(&arrival, &route.parent_routing_nonce.0) {
+                            Ok(tentative) => tentative,
+                            Err(refusal) => {
+                                let (code, detail) = match refusal {
+                                    CandidateRefusal::Replayed => {
+                                        (ERROR_STATE_VIOLATION, "candidate_replay")
+                                    }
+                                    CandidateRefusal::UnknownChild => {
+                                        (ERROR_STATE_VIOLATION, "candidate_unknown_child")
+                                    }
+                                    CandidateRefusal::OffRoute => {
+                                        (ERROR_STATE_VIOLATION, "candidate_after_commit")
+                                    }
+                                    CandidateRefusal::ResponseLimit => {
+                                        (ERROR_RESOURCE_EXHAUSTED, "offer_response_limit")
+                                    }
+                                };
+                                drops.record("relay", code, detail);
+                                continue;
+                            }
+                        }
                     };
                     // The candidate arrived on one specific child, so it must be
                     // unwrapped with that child's blinding factor and nonce.

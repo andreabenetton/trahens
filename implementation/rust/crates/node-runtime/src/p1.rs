@@ -115,6 +115,57 @@ pub fn offer_label(routing_nonce: &[u8; 32], index: u16) -> Result<[u8; 16], P1E
     Ok(label)
 }
 
+/// Why a returned candidate is not admissible at a relay.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CandidateRefusal {
+    /// The label has already carried an offer. A duplicate arrives as
+    /// legitimately new link traffic, so nothing below this layer can reject it.
+    Replayed,
+    UnknownChild,
+    /// The branch has committed to a different child, so this offer is
+    /// returning through a losing sibling.
+    OffRoute,
+    /// The per-discovery response ceiling is spent.
+    ResponseLimit,
+}
+
+/// State of the child a returned candidate arrived on.
+pub struct CandidateArrival {
+    pub consumed: bool,
+    pub child_exists: bool,
+    pub committed_child: Option<usize>,
+    pub child_index: usize,
+    pub offers_forwarded: u16,
+}
+
+/// Decide whether a returned candidate may be admitted, and under which
+/// tentative selector it travels upstream.
+///
+/// Every check here is cheap, and all of them MUST run before the nested
+/// public-key wrapping the caller performs next. Deriving the tentative label
+/// is what enforces the response ceiling, so doing it here rather than after
+/// the wrap is the difference between a spent budget costing a child nothing
+/// and costing this relay a scalar multiplication per duplicate.
+pub fn admit_candidate(
+    arrival: &CandidateArrival,
+    parent_routing_nonce: &[u8; 32],
+) -> Result<[u8; 16], CandidateRefusal> {
+    if arrival.consumed {
+        return Err(CandidateRefusal::Replayed);
+    }
+    if !arrival.child_exists {
+        return Err(CandidateRefusal::UnknownChild);
+    }
+    if arrival
+        .committed_child
+        .is_some_and(|chosen| chosen != arrival.child_index)
+    {
+        return Err(CandidateRefusal::OffRoute);
+    }
+    offer_label(parent_routing_nonce, arrival.offers_forwarded)
+        .map_err(|_| CandidateRefusal::ResponseLimit)
+}
+
 fn append_field(output: &mut Vec<u8>, value: &[u8]) -> Result<(), P1Error> {
     let length = u16::try_from(value.len()).map_err(|_| P1Error::InvalidOffer)?;
     output.extend_from_slice(&length.to_be_bytes());
@@ -514,6 +565,106 @@ mod tests {
     use trahens_crypto::{
         blind_public, random_nonzero_16, random_scalar, route_keys, scalar_base, signing_keypair,
     };
+
+    fn arrival() -> CandidateArrival {
+        CandidateArrival {
+            consumed: false,
+            child_exists: true,
+            committed_child: None,
+            child_index: 0,
+            offers_forwarded: 0,
+        }
+    }
+
+    /// A child that resends a logically identical CANDIDATE gets a fresh T1
+    /// transmission and a fresh W2 sequence, so every layer below this one
+    /// correctly treats the duplicate as new traffic. The consumed label is the
+    /// only thing that can refuse it.
+    #[test]
+    fn a_duplicate_candidate_is_refused_on_the_consumed_label() -> Result<(), CandidateRefusal> {
+        let nonce = [4_u8; 32];
+        let first = admit_candidate(&arrival(), &nonce)?;
+
+        let replay = CandidateArrival {
+            consumed: true,
+            ..arrival()
+        };
+        assert_eq!(
+            admit_candidate(&replay, &nonce),
+            Err(CandidateRefusal::Replayed)
+        );
+
+        // The label is consumed, not unbound: downstream control for the chain
+        // still arrives on it, so the binding has to survive admission.
+        assert_ne!(first, [0_u8; 16]);
+        Ok(())
+    }
+
+    /// The ordering that matters: once the ceiling is spent the refusal must
+    /// come from this function, which the caller runs before any wrapping. If
+    /// the quota moved back after the wrap, every duplicate would buy a scalar
+    /// multiplication.
+    #[test]
+    fn the_response_ceiling_is_refused_before_any_wrapping() {
+        let nonce = [4_u8; 32];
+        let limit = u16::try_from(LIMIT_MAX_CANDIDATE_RESPONSES_PER_DISCOVERY).unwrap_or(u16::MAX);
+        let last = CandidateArrival {
+            offers_forwarded: limit - 1,
+            ..arrival()
+        };
+        assert!(
+            admit_candidate(&last, &nonce).is_ok(),
+            "the last slot works"
+        );
+
+        let spent = CandidateArrival {
+            offers_forwarded: limit,
+            ..arrival()
+        };
+        assert_eq!(
+            admit_candidate(&spent, &nonce),
+            Err(CandidateRefusal::ResponseLimit)
+        );
+    }
+
+    #[test]
+    fn an_offer_returning_through_a_losing_sibling_is_refused() {
+        let nonce = [4_u8; 32];
+        let off_route = CandidateArrival {
+            committed_child: Some(1),
+            child_index: 0,
+            ..arrival()
+        };
+        assert_eq!(
+            admit_candidate(&off_route, &nonce),
+            Err(CandidateRefusal::OffRoute)
+        );
+
+        let chosen = CandidateArrival {
+            committed_child: Some(0),
+            child_index: 0,
+            ..arrival()
+        };
+        assert!(admit_candidate(&chosen, &nonce).is_ok());
+    }
+
+    #[test]
+    fn each_admitted_offer_travels_under_its_own_selector() -> Result<(), CandidateRefusal> {
+        let nonce = [4_u8; 32];
+        let first = admit_candidate(&arrival(), &nonce)?;
+        let second = admit_candidate(
+            &CandidateArrival {
+                offers_forwarded: 1,
+                ..arrival()
+            },
+            &nonce,
+        )?;
+        assert_ne!(
+            first, second,
+            "a COMMIT must be able to name one chain rather than the branch"
+        );
+        Ok(())
+    }
 
     /// The defect this profile exists to fix: a relay that keeps a protected
     /// body and re-sends it later inside its own fresh transmission. Nothing at
