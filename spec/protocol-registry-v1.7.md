@@ -171,6 +171,7 @@ Byte order for fixed-width integers: **big-endian**.
 | `gateway_pseudonym` | `end-to-end-encrypted` |
 | `r1_capability` | `end-to-end-encrypted` |
 | `route_secret` | `end-to-end-encrypted` |
+| `route_nonce` | `link-encrypted` |
 | `application_data` | `end-to-end-encrypted` |
 | `retransmission_counters` | `local-only` |
 | `queue_depth` | `local-only` |

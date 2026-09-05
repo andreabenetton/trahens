@@ -138,6 +138,22 @@ key. The encrypted gateway offer contains gateway ID, expiry, gateway
 pseudonym, route secret, commit challenge, final routing nonce, signing public
 key, and signature.
 
+The signature is computed over the `p1_gateway_offer` transcript, which binds,
+in this order and each length-prefixed: protocol version, suite ID, gateway ID,
+gateway pseudonym, offer deadline, the reply public key the offer is sealed to,
+route secret, commit challenge, routing nonce, gateway signing key, and the
+profile parameter digest. The digest covers the protocol version, the six
+profile numbers, and the fixed T2 epoch, cells per epoch, and slot interval, so
+the parameter set both ends assume is part of what the gateway signs rather
+than something each side supplies from its own registry.
+
+An initiator MUST verify the signature over the transcript it recomputes
+itself, including the reply key. It recomputes that key as the public
+counterpart of the secret that opened the gateway layer, which is the blinded
+key the gateway sealed to. The hash of this transcript is the route channel
+binding in section 7; an implementation MUST NOT accept an offer whose
+transcript it cannot reconstruct.
+
 Each relay adds an authenticated reply layer encrypted to its incoming reply
 key. The layer contains its non-zero blinding factor, child candidate token,
 forward label, parent routing nonce, child routing nonce, and child blob. Both
@@ -182,6 +198,38 @@ reassembly, queue, and secret state.
 Relays never decrypt end-to-end controls. They authenticate the adjacent W2
 record, validate the hop-local label, generation, and state, replace only the
 hop-local label, and forward a newly encoded M2 message on the next link.
+
+### 7.1 Route channel
+
+The route channel is directional. Both ends derive two keys from the route
+secret by HKDF: an extract step over `p1_route_extract || route_secret`, then
+one expand per direction under `p1_route_key_e2g` and `p1_route_key_g2e`, with
+the selected offer's transcript hash as expansion context. A route secret
+presented under any other offer therefore derives different keys and fails
+closed.
+
+Each record's AEAD nonce is a 32-bit direction code followed by a 64-bit
+sequence, which fills the nonce exactly. Sequences begin at zero and increase by
+one per record sent in that direction. An implementation MUST NOT reuse a
+sequence under one key and MUST fail closed rather than wrap when the sequence
+space is exhausted.
+
+A receiver MUST reject a record whose direction code is not the one it expects,
+MUST keep a bounded acceptance window per direction sized by
+`limits.route_replay_window`, and MUST commit a sequence to that window only
+after the record authenticates. This is the only protection against end-to-end
+replay: a duplicate carried in a fresh T1 transmission is legitimately new link
+traffic, so the adjacent-link replay window admits it correctly and cannot be
+what rejects it.
+
+The nonce travels in the clear inside the link encryption, so a relay on the
+path learns the direction and a per-route counter. That is a deliberate
+disclosure, recorded in `field_protection` as `link-encrypted` and in ADR 0041;
+a relay could already count records and infer direction from their travel.
+
+The `direction` and `sequence` fields inside the DATA payload are superseded by
+the nonce and retained only for encoding compatibility within this profile. The
+nonce is authoritative.
 
 ## 8. Security and resource requirements
 
