@@ -470,10 +470,14 @@ PY
 # other's. Fixed asserts the constant cadence the P1 gate rests on; adaptive
 # asserts that negotiation happened and stayed within its rules, and is refused
 # the fixed-trace assertion entirely.
-python3 - "$OUTPUT" "$SCHEDULE_PROFILE" <<'SCHED'
+python3 - "$OUTPUT" "$SCHEDULE_PROFILE" "$ROOT" <<'SCHED'
 import json, pathlib, sys
 
 root, profile = pathlib.Path(sys.argv[1]), sys.argv[2]
+registry = json.loads(
+    (pathlib.Path(sys.argv[3]) / "spec/protocol-registry-v1.8.json").read_text()
+)
+slot_interval_us = registry["fixed_t2_p1"]["slot_interval_us"]
 links = [
     (path.name, link)
     for path in sorted(root.glob("*.metrics.json"))
@@ -487,7 +491,21 @@ if profile == "fixed":
         assert link["missed_slots"] == 0, f"{name}: missed a slot"
         assert link["rate_class_changes"] == 0, f"{name}: rate changed on fixed"
         assert link["schedule_cells"] == 0, f"{name}: SCHEDULE cell on fixed"
-    print(f"fixed profile: {len(links)} links held a constant cadence")
+    # How close the run came, not only that it passed. A slot is missed at one
+    # whole interval of lateness, and a loaded host drives ordinary jitter a
+    # long way towards that on every link at once -- which is what a
+    # load-induced failure looks like, as against a protocol fault, which moves
+    # one link and not the rest. Reporting the margin is what tells those two
+    # apart afterwards, and makes a shrinking one visible before it is a flake.
+    # It is deliberately not a threshold: the gate is the missed slot, and a
+    # second one invented here would be a claim the profile does not make.
+    worst = max(link["worst_jitter_us"] for _, link in links)
+    margin = 100.0 * worst / slot_interval_us
+    print(
+        f"fixed profile: {len(links)} links held a constant cadence; "
+        f"worst jitter {worst}us against a {slot_interval_us}us slot "
+        f"({margin:.0f}% of the miss threshold)"
+    )
 elif profile == "adaptive":
     negotiating = [(n, l) for n, l in links if l["schedule_cells"] > 0]
     assert negotiating, "adaptive profile negotiated on no link"
