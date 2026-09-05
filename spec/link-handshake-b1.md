@@ -174,6 +174,10 @@ distinguished from cells by the leading zero byte, the outstanding record is
 resent on a timer until the peer answers, and normal traffic continues under the
 current keys throughout.
 
+`formal/B1Rekey.tla` models the generation overlap: a retired generation never
+becomes usable again, at most two are live at once however many rekeys a link
+performs, and the overlap only ever holds the immediately preceding generation.
+
 The initiator MUST rekey before `rekey_after_cells` cells have been sent in
 either direction or `rekey_after_ms` has elapsed, whichever comes first. Those
 registry values are ceilings, not mandates: an implementation MAY rekey sooner,

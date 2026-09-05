@@ -42,6 +42,7 @@ docs/review-remediation-v1.5.md
 docs/crypto-review/reply-key-privacy-v1.5.md
 formal/R1Capability.tla
 formal/E1Lifecycle.tla
+formal/B1Rekey.tla
 spec/core-v1.5.md
 spec/messages-v1.5.md
 spec/state-machines-v1.5.md

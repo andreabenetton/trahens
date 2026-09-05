@@ -278,6 +278,9 @@ jobs:
       - name: Check the E1 lifecycle model
         working-directory: formal
         run: java -cp /tmp/tla2tools.jar tlc2.TLC -config E1Lifecycle.cfg E1Lifecycle.tla
+      - name: Check the B1 rekey overlap model
+        working-directory: formal
+        run: java -cp /tmp/tla2tools.jar tlc2.TLC -config B1Rekey.cfg B1Rekey.tla
 
   paper:
     runs-on: ubuntu-latest
