@@ -196,6 +196,18 @@ duration (`handshake_timeout_ms`) and retransmissions
 (`max_handshake_retransmits`); and consecutive failures before backing off a
 source (`max_failed_handshakes_before_backoff`, `handshake_backoff_ms`).
 
+An implementation SHOULD retry a failed handshake a bounded number of times
+before treating the link as unusable. A single attempt is not enough: an outage
+that outlasts one attempt would otherwise leave the link down for the lifetime
+of the process, so a peer briefly unreachable at startup would be unreachable
+permanently.
+
+Retrying does not by itself make a delayed link usable end to end. A node that
+starts route timers when it queues a message, rather than when its link is
+established, may find that state expired by the time the link carries it. B1.1
+does not address that; it is a property of how a node drives its links, not of
+the handshake.
+
 Under `XX` a responder performs Diffie-Hellman work to answer any well-formed
 first message, before it knows who sent it, and its reply discloses its static
 key to that sender. The bounds cap the cost; nothing in B1.1 eliminates it, and

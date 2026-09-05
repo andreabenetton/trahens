@@ -85,6 +85,10 @@ BLACKHOLE_AFTER_MS=0
 # channel replaces ordinary loss, so a scenario can let the links handshake
 # before the outage begins. Zero applies the burst from the start.
 BURST_AFTER_MS=0
+# Duration of a total outage on the initiator's link at startup, after which
+# ordinary loss is restored. Used to show that a link whose first handshake
+# attempt fails still comes up.
+HANDSHAKE_OUTAGE_MS=0
 EXPECT_RETRY_EXHAUSTION=0
 case "$SCENARIO" in
   ok) ;;
@@ -149,6 +153,22 @@ case "$SCENARIO" in
     # only the recipient can tell, and the relays in between cannot.
     ELIGIBILITY_SUITE=c1
     INITIATOR_LABEL="not-this-gateway"
+    EXPECT_ENDPOINT_FAILURE=1 ;;
+  late-peer)
+    # The initiator's link is dead for longer than one whole handshake attempt,
+    # then recovers. The gate is that every link still comes up: with a single
+    # attempt the two ends of that link stay down for the rest of the run, so
+    # only four of the six link metrics appear.
+    #
+    # The route does NOT establish, and that is a separate finding rather than
+    # a flaw in this scenario. spawn_link returns before the handshake
+    # completes, so the endpoint opens its branch and starts a route TTL while
+    # the link is still down; the TTL is shorter than this outage, so the state
+    # has expired by the time the DISCOVER is actually carried. The run
+    # therefore ends in NO_CANDIDATE even though the link recovered.
+    HANDSHAKE_OUTAGE_MS=4000
+    P1_EXPECT_ALL_LINKS=1
+    ENDPOINT_EXTRA=(--rings "16:20000")
     EXPECT_ENDPOINT_FAILURE=1 ;;
   wrong-pin)
     # The initiator is given a static key for its peer that the peer does not
@@ -227,7 +247,11 @@ for ((i=0; i<NODES-1; i++)); do
     # 1,052-byte record assertion with nothing to check. Scope it to the
     # gateway-facing link: one sender still starves, and every other link
     # keeps emitting on schedule so the captures stay meaningful.
-    if [[ -n "$BURST_LOSS" && $i -eq $((NODES-2)) && $BURST_AFTER_MS -eq 0 ]]; then
+    if (( HANDSHAKE_OUTAGE_MS > 0 )) && [[ $i -eq 0 ]]; then
+      # Total outage on the initiator's own link, cleared partway through, so
+      # its first handshake attempt cannot succeed and a later one must.
+      ip netns exec "$ns" tc qdisc add dev "$dev" root netem loss 100%
+    elif [[ -n "$BURST_LOSS" && $i -eq $((NODES-2)) && $BURST_AFTER_MS -eq 0 ]]; then
       ip netns exec "$ns" tc qdisc add dev "$dev" root netem \
         loss gemodel "${BURST_LOSS%,*}%" "${BURST_LOSS#*,}%" \
         delay "$DELAY" "$JITTER" duplicate "${DUPLICATE}%" reorder "${REORDER}%"
@@ -328,6 +352,16 @@ p1_endpoint_args "10.200.0.1:${PORT}" "10.200.0.2:${PORT}" 0 \
 run_node "${NAMES[0]}" endpoint -7 \
   "${ENDPOINT_CMD[@]}" "${P1_NODE_ARGS[@]}"
 
+if (( HANDSHAKE_OUTAGE_MS > 0 )); then
+  (
+    sleep "$(python3 -c "print(${HANDSHAKE_OUTAGE_MS}/1000)")"
+    for side in "0:t${TAG}0a" "1:t${TAG}0b"; do
+      ip netns exec "${NAMES[${side%%:*}]}" tc qdisc change dev "${side#*:}" root netem \
+        loss "${LOSS}%" delay "$DELAY" "$JITTER" >/dev/null 2>&1 || true
+    done
+  ) &
+  PIDS+=("$!")
+fi
 if [[ -n "$BURST_LOSS" ]] && (( BURST_AFTER_MS > 0 )); then
   (
     # Wait for the initiator to hold a candidate rather than sleeping a fixed
@@ -447,6 +481,24 @@ if [[ -n "${P1_REKEY_AFTER_CELLS:-}" ]]; then
     exit 1
   fi
   echo "scenario ${SCENARIO}: ${REKEYS} rekey(s) completed under live traffic"
+fi
+if [[ -n "${P1_EXPECT_ALL_LINKS:-}" ]]; then
+  # Every link has two ends, each writing its own metrics entry. A link whose
+  # handshake never succeeded contributes neither, so the count is what shows
+  # a link recovered rather than stayed down.
+  EXPECTED_LINKS=$(( 2 * (NODES - 1) ))
+  SEEN_LINKS=$(python3 - "$OUTPUT" <<'PY'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+print(sum(len(json.loads(p.read_text()).get("links", [])) for p in root.glob("*.metrics.json")))
+PY
+)
+  if (( SEEN_LINKS != EXPECTED_LINKS )); then
+    echo "scenario ${SCENARIO}: ${SEEN_LINKS} of ${EXPECTED_LINKS} links came up," >&2
+    echo "so a link that lost its first handshake did not recover" >&2
+    exit 1
+  fi
+  echo "scenario ${SCENARIO}: all ${EXPECTED_LINKS} links came up despite the outage"
 fi
 if [[ -n "${P1_WRONG_PIN:-}" ]]; then
   if ! grep -qs "link_handshake_failed" "$OUTPUT"/*.log "$OUTPUT"/*.err; then

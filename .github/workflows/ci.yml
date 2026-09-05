@@ -120,6 +120,11 @@ jobs:
       # reclaim remote state.
       - name: A restart cannot reuse a link epoch
         run: sudo -E OUTPUT="$GITHUB_WORKSPACE/build/p1-restart" implementation/harness/netns-restart.sh
+      - name: A link whose first handshake fails still comes up
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 2 --loss 0 --scenario late-peer \
+            --timeout-ms 40000 --output "$GITHUB_WORKSPACE/build/p1-late-peer"
       - name: A peer whose static key is not the pinned one is refused
         run: |
           sudo -E implementation/harness/netns-p1.sh \

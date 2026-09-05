@@ -570,6 +570,15 @@ const T2_HYSTERESIS_EPOCHS: u32 = 4;
 /// link whose whole point is a constant cadence.
 const T2_REKEY_RESEND_MS: u64 = 200;
 
+/// How many times a link attempts its handshake before giving up.
+///
+/// Each attempt already runs to `handshake_timeout_ms` with its own
+/// retransmissions, so this covers an outage that outlasts one whole attempt
+/// rather than an individual lost record. Small on purpose: the worker cannot
+/// see a shutdown while it is retrying, so this also bounds how long closing an
+/// unreachable link takes.
+const LINK_HANDSHAKE_ATTEMPTS: usize = 3;
+
 /// Pad a 32-byte SCHEDULE header out to a full cell body.
 ///
 /// Every frame class is the same length on the wire, so a rate negotiation is
@@ -595,15 +604,36 @@ fn run_link(
     // handshake completes, so it runs first and its failure stops the link.
     // Both directional keys and the epoch come out of it; nothing here is
     // configured, which is what makes restarting into a used epoch impossible.
-    let Some((session, mut finish_record)) = handshake::run(
-        &socket,
-        config.local_id,
-        config.peer_id,
-        config.suite,
-        config.static_secret,
-        config.peer_static,
-        None,
-    ) else {
+    // Retried rather than attempted once. A single failed handshake used to
+    // kill the link for the rest of the run, so a peer that was briefly
+    // unreachable at startup -- a loss burst, a slow bind -- was unreachable
+    // permanently. Each attempt carries its own registry-bounded deadline and
+    // retransmissions, so this is a bound on how long a link keeps trying, not
+    // a second retransmission scheme.
+    //
+    // The cost is shutdown latency: the worker does not read its command
+    // channel while retrying, so a node closing a link whose peer never
+    // appears waits for the attempts to run out. Queued sends are safe -- they
+    // stay in the channel and are picked up once the link is up -- and the
+    // bound is small enough that the wait stays bounded too. Draining the
+    // channel to notice a shutdown sooner would mean either dropping those
+    // sends or replaying them, which is a worse trade for an error path.
+    let mut established = None;
+    for _ in 0..LINK_HANDSHAKE_ATTEMPTS {
+        established = handshake::run(
+            &socket,
+            config.local_id,
+            config.peer_id,
+            config.suite,
+            config.static_secret,
+            config.peer_static,
+            None,
+        );
+        if established.is_some() {
+            break;
+        }
+    }
+    let Some((session, mut finish_record)) = established else {
         sink.report(LinkEvent::SecurityEvent {
             peer_id: config.peer_id,
             error_id: ERROR_AUTHENTICATION_FAILED,
