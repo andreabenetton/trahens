@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-exclude = ["fuzz"]
+exclude = ["fuzz", "crosscheck"]
 members = [
   "crates/protocol-registry",
   "crates/test-vectors",

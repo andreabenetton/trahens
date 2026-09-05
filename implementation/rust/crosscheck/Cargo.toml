@@ -1,0 +1,18 @@
+[package]
+name = "crosscheck"
+version = "1.5.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+# Excluded from the workspace, for the same reason the fuzz crate is: snow
+# brings roughly forty transitive crates, some of which require a newer edition
+# than the 1.82 build floor the workspace holds. Keeping it out preserves both
+# that floor and the workspace's libsodium-only dependency posture, while the
+# independent check it provides still runs in CI on its own toolchain.
+[dependencies]
+
+[dev-dependencies]
+test-vectors = { path = "../crates/test-vectors" }
+snow = "0.10"
+hex = "0.4"

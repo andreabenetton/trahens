@@ -242,6 +242,19 @@ jobs:
       - name: Check fuzz crate formatting
         run: cargo fmt --manifest-path implementation/rust/fuzz/Cargo.toml --all --check
 
+  # Excluded from the workspace, like the fuzz crate and for the same reason:
+  # snow's dependency tree exceeds the 1.82 build floor. It runs on stable so
+  # the workspace keeps both its floor and its libsodium-only dependency set,
+  # while the published handshake vectors are still checked against a second
+  # Noise implementation on every push.
+  crosscheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cross-check the B1.1 vectors against an independent Noise implementation
+        run: cargo test --manifest-path implementation/rust/crosscheck/Cargo.toml
+
   # The TLA+ models were committed but never executed by any pipeline, so a
   # property could be weakened -- or become vacuous -- without anything
   # failing. TLC exits 12 on an invariant violation and 0 on success, so these

@@ -14,9 +14,7 @@ workspace = true
 
 [dev-dependencies]
 test-vectors = { path = "../test-vectors" }
-# Independent Noise implementation, tests only. The published vectors come
-# from the Python reference; cross-checking them against a second
-# implementation is what stops a mistake in that reference from being
-# inherited by everything built on it. Never a runtime dependency.
-snow = "0.10"
 hex = "0.4"
+# The independent Noise cross-check lives in ../../crosscheck, outside the
+# workspace: snow's dependency tree exceeds this workspace's build floor, and
+# excluding it keeps that floor and the libsodium-only posture intact.

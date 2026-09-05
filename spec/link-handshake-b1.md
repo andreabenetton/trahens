@@ -200,7 +200,8 @@ reproduce every record byte for byte and derive identical outputs.
 Both exchanges are additionally replayed through an independent Noise
 implementation, which is given the same statics, ephemerals, prologue, chained
 key and payloads and must produce the same message bytes and the same handshake
-hash (`implementation/rust/crates/link-handshake-b1/tests/cross_check_snow.rs`).
+hash (`implementation/rust/crosscheck/tests/cross_check_snow.rs`, kept outside
+the workspace so that implementation's dependency tree does not reach it).
 That check is what makes the reference trustworthy rather than merely
 self-consistent: it found a real defect in the `psk0` path, where the reference
 had omitted the `MixKey(e.public_key)` that Noise section 9 requires of an `e`
