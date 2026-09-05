@@ -183,9 +183,26 @@ either direction or `rekey_after_ms` has elapsed, whichever comes first. Those
 registry values are ceilings, not mandates: an implementation MAY rekey sooner,
 and a conformance run is expected to, because no realistic run reaches the
 ceiling. On
-completion each side switches its send key immediately and zeroizes the old
-one; it keeps the old receive key for at most `rekey_overlap_ms`, then zeroizes
-it. A record that authenticates under neither key is rejected.
+completion each side installs the new generation for receiving and keeps the
+old receive key for at most `rekey_overlap_ms`, then zeroizes it. A record that
+authenticates under neither key is rejected.
+
+The two ends switch their **send** keys at different moments, and the asymmetry
+is required. A responder switches on reading the finish record, because the
+peer that wrote it already holds both keys. An initiator MUST NOT: nothing
+acknowledges the finish record, so writing it is no evidence the responder read
+it. An initiator therefore keeps sending under the old key until it opens a
+record under the new receive epoch, which only a peer that installed the
+generation can produce — and because a link emits chaff on every slot, that
+arrives within one slot rather than waiting for real traffic. Until it does,
+the initiator MUST NOT open another rekey.
+
+Switching on write instead makes every cell unreadable until the finish record
+lands, and if that record is lost the damage is not bounded by the loss: the
+initiator has advanced its chain, so its next rekey is one the responder cannot
+answer, and the two ends diverge permanently. Measured on a five-percent link
+rekeying every 48 cells, that turned into roughly a thousand undecryptable
+cells per link and a route that never completed, in about one run in four.
 
 ## 8. Bounds and failure
 

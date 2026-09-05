@@ -303,7 +303,7 @@ fn advance_rekey(
     export_key: &[u8; 32],
     state: &mut RekeyState,
     finish_record: &mut Option<Vec<u8>>,
-    install: &mut dyn FnMut(handshake::LinkSession),
+    install: &mut dyn FnMut(handshake::LinkSession, bool),
 ) {
     use link_handshake_b1::Stage;
     match (stage, std::mem::replace(state, RekeyState::Idle)) {
@@ -330,7 +330,15 @@ fn advance_rekey(
                 if let Ok((finish, session)) = initiator.write_finish() {
                     let _ = socket.send(&finish);
                     *finish_record = Some(finish);
-                    install(handshake::directional(&session, true));
+                    install(handshake::directional(&session, true), true);
+                    // Nothing acknowledges the finish record, so this end does
+                    // not yet know the peer can read the new generation. It
+                    // stays here until a cell arrives under the new receive
+                    // epoch, which only a peer that installed it can produce.
+                    // Leaving the state Idle instead would let the next rekey
+                    // open on a chain the peer never reached, and the two ends
+                    // would then diverge for good.
+                    *state = RekeyState::Confirming;
                 }
             } else {
                 // Not ours, or lost in transit. Keep waiting; the outstanding
@@ -344,7 +352,7 @@ fn advance_rekey(
         }
         (Stage::Finish, RekeyState::AwaitingFinish { mut responder, .. }) => {
             if let Ok(session) = responder.read_finish(record) {
-                install(handshake::directional(&session, false));
+                install(handshake::directional(&session, false), false);
             }
         }
         (_, other) => *state = other,
@@ -353,6 +361,11 @@ fn advance_rekey(
 
 enum RekeyState {
     Idle,
+    /// The initiator wrote its finish record and installed the new generation
+    /// for receiving, but is still sending under the old one because nothing
+    /// acknowledges that record. A cell under the new receive epoch ends this;
+    /// until then no further rekey may open.
+    Confirming,
     AwaitingRespond {
         initiator: Box<link_handshake_b1::Initiator>,
         record: Vec<u8>,
@@ -742,13 +755,21 @@ fn run_link(
     let opened = handshake::directional(&session, initiator);
     let mut send_key = opened.send;
     let mut receive_key = opened.receive;
-    let mut epoch = opened.epoch;
+    // The two directions carry the same epoch until a rekey, which an initiator
+    // completes on the receive side before the send side. They are separate
+    // variables because during that gap they genuinely differ.
+    let mut send_epoch = opened.epoch;
+    let mut receive_epoch = opened.epoch;
     let mut export_key = opened.export;
     // A rekey installs a new epoch, so records already in flight under the old
     // one must still open for a bounded overlap. The old window comes with it:
     // a replay is only refused if the window that saw the original is still
     // the one consulted.
     let mut previous: Option<(([u8; 32], u32), ReplayWindow, Instant)> = None;
+    // An initiator's new send key, waiting for the peer to prove it installed
+    // the generation. Switching on write_finish instead loses every cell until
+    // the peer catches up, and if that record was lost the two ends diverge.
+    let mut pending_send: Option<([u8; 32], u32)> = None;
     let mut rekey = RekeyState::Idle;
     let mut cells_since_rekey = 0_usize;
     let mut last_rekey = Instant::now();
@@ -787,7 +808,7 @@ fn run_link(
         return;
     };
     let mut sequence = u64::from(u32::from_be_bytes(sequence_seed));
-    let mut replay = ReplayWindow::new(epoch);
+    let mut replay = ReplayWindow::new(receive_epoch);
     let mut sender = Sender::new();
     let mut receiver = Receiver::new();
     // Queued ACKs with the time each was first queued, so the emitted
@@ -855,7 +876,11 @@ fn run_link(
                     *last_send = Instant::now();
                 }
             }
-            RekeyState::Idle => {}
+            // Nothing to resend on a timer here: the peer is still resending
+            // its respond record, and every one of those triggers a resend of
+            // the finish record on the receive path. A second timer would only
+            // add traffic to a link whose whole point is a constant cadence.
+            RekeyState::Confirming | RekeyState::Idle => {}
         }
         // Retire an overlap that has expired, so an old key never outlives its
         // bounded window.
@@ -977,9 +1002,9 @@ fn run_link(
                                 &chain,
                                 &mut rekey,
                                 &mut finish_record,
-                                &mut |installed: handshake::LinkSession| {
+                                &mut |installed: handshake::LinkSession, hold_send: bool| {
                                     previous = Some((
-                                        (receive_key, epoch),
+                                        (receive_key, receive_epoch),
                                         std::mem::replace(
                                             &mut replay,
                                             ReplayWindow::new(installed.epoch),
@@ -987,10 +1012,21 @@ fn run_link(
                                         Instant::now()
                                             + Duration::from_millis(LIMIT_REKEY_OVERLAP_MS as u64),
                                     ));
-                                    zeroize(&mut send_key);
-                                    send_key = installed.send;
                                     receive_key = installed.receive;
-                                    epoch = installed.epoch;
+                                    receive_epoch = installed.epoch;
+                                    // The initiator holds its send key back
+                                    // until the peer proves it installed this
+                                    // generation; see RekeyState::Confirming.
+                                    // The responder has no such doubt: whoever
+                                    // sent the record that got us here already
+                                    // holds both keys.
+                                    if hold_send {
+                                        pending_send = Some((installed.send, installed.epoch));
+                                    } else {
+                                        zeroize(&mut send_key);
+                                        send_key = installed.send;
+                                        send_epoch = installed.epoch;
+                                    }
                                     export_key = installed.export;
                                     cells_since_rekey = 0;
                                     last_rekey = Instant::now();
@@ -1003,8 +1039,24 @@ fn run_link(
                     // Try the current generation, then a still-live previous
                     // one. A failed open commits nothing, so the current
                     // window is not poisoned by the attempt.
-                    let opened = open_record(&receive_key, epoch, &buffer[..length], &mut replay);
-                    let opened = match opened {
+                    let current =
+                        open_record(&receive_key, receive_epoch, &buffer[..length], &mut replay);
+                    // A cell under the current epoch is the only proof this end
+                    // gets that the peer installed the generation, because
+                    // nothing acknowledges a finish record. Taking it here also
+                    // covers chaff, so confirmation arrives within one slot on
+                    // an idle link rather than waiting for real traffic.
+                    if current.is_ok() {
+                        if let Some((key, epoch)) = pending_send.take() {
+                            zeroize(&mut send_key);
+                            send_key = key;
+                            send_epoch = epoch;
+                        }
+                        if matches!(rekey, RekeyState::Confirming) {
+                            rekey = RekeyState::Idle;
+                        }
+                    }
+                    let opened = match current {
                         Ok(value) => Ok(value),
                         Err(error) => match previous.as_mut() {
                             Some(((old_key, old_epoch), old_replay, expiry))
@@ -1241,7 +1293,7 @@ fn run_link(
             }
             if let Some(frame) = pending_schedule.take() {
                 if let Some(body) = schedule_cell(&frame) {
-                    if let Ok(record) = seal_record(&send_key, epoch, sequence, &body) {
+                    if let Ok(record) = seal_record(&send_key, send_epoch, sequence, &body) {
                         if socket.send(&record).is_ok() {
                             metrics.sent_cells = metrics.sent_cells.saturating_add(1);
                             cells_since_rekey = cells_since_rekey.saturating_add(1);
@@ -1306,7 +1358,7 @@ fn run_link(
                 }
             };
             match encode_frame(&frame).and_then(|body| {
-                seal_record(&send_key, epoch, sequence, &body)
+                seal_record(&send_key, send_epoch, sequence, &body)
                     .map_err(|_| transport_t1::TransportError::Malformed)
             }) {
                 Ok(record) => {
@@ -1726,6 +1778,134 @@ pub fn write_link_metrics(
 mod tests {
     use super::*;
     use protocol_registry::{ERROR_AUTHENTICATION_FAILED, ERROR_MALFORMED, SUITE_R1};
+
+    /// Drive one complete rekey between two ends and report, for each end in
+    /// turn, whether it was told to hold its send key back.
+    fn rekey_exchange() -> Result<(Vec<bool>, [u8; 32], [u8; 32]), RuntimeError> {
+        let suite = SUITE_R1;
+        let fresh = || random_bytes::<32>().map_err(|_| RuntimeError::KeyDerivation);
+        let derive = |secret: &[u8; 32]| {
+            trahens_crypto::x25519_base(secret).map_err(|_| RuntimeError::KeyDerivation)
+        };
+        let initiator_secret = fresh()?;
+        let responder_secret = fresh()?;
+        let initiator_public = derive(&initiator_secret)?;
+        let responder_public = derive(&responder_secret)?;
+        let chain = fresh()?;
+
+        // The records are handed over directly, so no datagram is sent; the
+        // socket exists only because advance_rekey writes its reply to one.
+        let socket = UdpSocket::bind("127.0.0.1:0")?;
+        socket.connect(socket.local_addr()?)?;
+        let config = |local, peer, secret, peer_static| LinkConfig {
+            local_id: local,
+            peer_id: peer,
+            bind: socket.local_addr().unwrap_or(([127, 0, 0, 1], 0).into()),
+            peer: socket.local_addr().unwrap_or(([127, 0, 0, 1], 0).into()),
+            static_secret: secret,
+            peer_static,
+            rekey_after_cells: 48,
+            suite,
+            adaptive: false,
+        };
+
+        let Some((state, initiate)) =
+            handshake::begin_rekey(suite, initiator_secret, responder_public, &chain)
+        else {
+            return Err(RuntimeError::KeyDerivation);
+        };
+        let mut initiator_state = RekeyState::AwaitingRespond {
+            initiator: Box::new(state),
+            record: initiate.clone(),
+            last_send: Instant::now(),
+        };
+        let mut responder_state = RekeyState::Idle;
+        let mut held = Vec::new();
+        let mut initiator_send = [0_u8; 32];
+        let mut responder_send = [0_u8; 32];
+
+        // The responder answers the initiate, and its reply is the record the
+        // initiator reads next.
+        let responder_config = config(2, 1, responder_secret, initiator_public);
+        let mut respond = Vec::new();
+        advance_rekey(
+            &socket,
+            &responder_config,
+            &initiate,
+            link_handshake_b1::Stage::Initiate,
+            false,
+            &chain,
+            &mut responder_state,
+            &mut None,
+            &mut |_installed, _hold| {},
+        );
+        if let RekeyState::AwaitingFinish { record, .. } = &responder_state {
+            respond = record.clone();
+        }
+        if respond.is_empty() {
+            return Err(RuntimeError::KeyDerivation);
+        }
+
+        let initiator_config = config(1, 2, initiator_secret, responder_public);
+        let mut finish = None;
+        advance_rekey(
+            &socket,
+            &initiator_config,
+            &respond,
+            link_handshake_b1::Stage::Respond,
+            true,
+            &chain,
+            &mut initiator_state,
+            &mut finish,
+            &mut |installed: handshake::LinkSession, hold| {
+                held.push(hold);
+                initiator_send = installed.send;
+            },
+        );
+        let Some(finish) = finish else {
+            return Err(RuntimeError::KeyDerivation);
+        };
+        assert!(
+            matches!(initiator_state, RekeyState::Confirming),
+            "the initiator must not return to Idle before the peer confirms"
+        );
+
+        advance_rekey(
+            &socket,
+            &responder_config,
+            &finish,
+            link_handshake_b1::Stage::Finish,
+            false,
+            &chain,
+            &mut responder_state,
+            &mut None,
+            &mut |installed: handshake::LinkSession, hold| {
+                held.push(hold);
+                responder_send = installed.receive;
+            },
+        );
+        Ok((held, initiator_send, responder_send))
+    }
+
+    #[test]
+    fn a_rekey_holds_the_initiator_send_key_until_the_peer_installs() {
+        // Nothing acknowledges the finish record. An initiator that switched
+        // its send key on writing it would make every cell unreadable until
+        // that record arrived, and if it was lost the two ends would rekey on
+        // different chains for the rest of the run.
+        let Ok((held, initiator_send, responder_receive)) = rekey_exchange() else {
+            panic!("the rekey exchange did not complete");
+        };
+        assert_eq!(
+            held,
+            vec![true, false],
+            "the initiator holds its send key back; the responder does not need to"
+        );
+        assert_eq!(
+            initiator_send, responder_receive,
+            "the held key is the one the peer will read"
+        );
+    }
 
     #[test]
     fn readiness_blocks_until_the_handshake_settles_it() {
