@@ -5,32 +5,41 @@
 | v1.4.1 | independent review remediation | cryptographic construction and evidence boundaries corrected | Complete |
 | v1.5 | first P1 interoperable user-space prototype | Rust nodes, frozen registry/vectors, namespace faults, cleanup | Complete and historical; artifacts remain reproducible |
 | v1.6 | selectable experimental paths | routing nonce separated from eligibility; C1 and adaptive T2 selectable with separate gates | Complete and historical; artifacts remain reproducible |
-| v1.7 | active profile; end-to-end channel and offer hardening | directional route key schedule with counter nonces and per-direction replay window; gateway offer signed over a transcript binding version, suite, reply key, and parameter digest | Landed from independent review remediation |
-| v1.8 | real multi-host deployment | independently operated nodes interoperate across real networks using a reproducible B1.0 static bootstrap manifest | Planned |
-| v1.9 | captured-traffic evaluation | performance and traffic-analysis experiments use real packet traces | Planned |
-| v1.10 | bootstrap and directory integration research | reviewed adjacent-link bootstrap, gateway advertisements, and authenticated directory roots are tested without changing P1 semantics | Planned; design starts in B1/D1 |
-| v2.0 | reviewed stable protocol | wire protocol and security model survive implementation, independent review, multi-host measurement, and explicit deployment assumptions | Blocked on v1.7–v1.10 |
+| v1.7 | end-to-end channel and offer hardening | directional route key schedule with counter nonces and per-direction replay window; gateway offer signed over a transcript binding version, suite, reply key, and parameter digest | Complete and historical; artifacts remain reproducible |
+| v1.8 | active profile; authenticated adjacent-link establishment | B1.1 Noise `XX` handshake over X25519 with manifest-pinned static keys, transcript-bound profile negotiation, session-derived directional keys and epoch, and `XXpsk0` rekey chained through an export key | Landed |
+| v1.9 | real multi-host deployment | independently operated nodes interoperate across real networks | Planned |
+| v1.10 | captured-traffic evaluation | performance and traffic-analysis experiments use real packet traces | Planned |
+| v1.11 | discovery and directory integration research | bounded peer discovery, gateway advertisements, and authenticated directory roots are tested without changing P1 semantics | Planned; design starts in B1.2/D1 |
+| v2.0 | reviewed stable protocol | wire protocol and security model survive implementation, independent review, multi-host measurement, and explicit deployment assumptions | Blocked on v1.8–v1.11 |
 
-## Active v1.7 focus
+## Active v1.8 focus
 
-Core v1.7 is the profile the current binaries speak. It supersedes v1.6 by
-rebuilding the end-to-end route channel on a directional key schedule with
-counter nonces and a per-direction replay window, and by signing the gateway
-offer over a transcript that binds the protocol version, suite, reply key, and
-parameter digest. The protocol version byte becomes `2`; v1.6 peers do not
-interoperate with v1.7.
+Core v1.8 is the profile the current binaries speak. It supersedes v1.7 by
+replacing the pre-shared adjacent-link key and configured epoch with the B1.1
+handshake: a Noise `XX` exchange over X25519 between peers that pin each other's
+static key, with the profile set negotiated inside the authenticated transcript.
+Both directional W2 keys and the link epoch are derived per session, so the
+restart hazard v1.7 could only state as an operator obligation is gone — a node
+cannot reuse an epoch because it no longer chooses one. Rekeys are a fresh
+handshake under `XXpsk0`, chained through the previous session's export key.
 
-v1.6 had itself superseded v1.5 by separating the suite-independent 32-byte
-routing nonce from the suite-sized eligibility field, adding 32 bytes to
-`DISCOVER`. v1.7 keeps that encoding unchanged.
+The protocol version byte becomes `3`. v1.7 peers do not interoperate with
+v1.8, and a v1.7 node cannot bring a link up at all, having no handshake to
+offer.
 
-The mandatory path remains U1 + E1 + R1 + M2 + W2 + T1 + fixed T2/P1.
+v1.7 had itself superseded v1.6 by rebuilding the end-to-end route channel on a
+directional key schedule and signing the gateway offer over a transcript binding
+version, suite, reply key, and parameter digest. v1.6 had superseded v1.5 by
+separating the suite-independent 32-byte routing nonce from the suite-sized
+eligibility field, adding 32 bytes to `DISCOVER`. v1.8 keeps both unchanged.
+
+The mandatory path is now B1.1 + U1 + E1 + R1 + M2 + W2 + T1 + fixed T2/P1.
 Adaptive T2 and C1 eligibility are selectable experimental profiles with their
 own narrower CI gates. Neither may be cited as evidence for a mandatory gate
 line.
 
 The active acceptance checklist is normative in
-`spec/p1-prototype-profile-v1.7.md`. Source presence is not equivalent to
+`spec/p1-prototype-profile-v1.8.md`. Source presence is not equivalent to
 passing the runtime gate. `docs/p1-acceptance-evidence.md` maps each gate line
 to the job or harness arm that executes it.
 
@@ -47,7 +56,7 @@ Completed protocol-engineering items include:
 - fixed-schedule missed-slot detection;
 - separate mandatory fixed-T2, experimental adaptive-T2, and experimental C1 gates.
 
-## Security work retained for v1.7 review
+## Security work retained for v1.8 review
 
 1. obtain an independent multi-user IK-CCA/key-privacy review of reply sealing and nested blinding composition;
 2. review the recipient-bound commitment and failure/resource uniformity;
@@ -55,37 +64,44 @@ Completed protocol-engineering items include:
 4. review capability atomicity, replay/expiry, T1 recovery, and fixed-T2 claim boundaries;
 5. decide whether C1 should be retained, replaced with a standard anonymous public-key encryption construction, or remain only a research control;
 6. keep post-quantum migration classified as a reply-path redesign, not a primitive substitution;
-7. obtain a second independent implementation against the v1.7 registry and corpus.
+7. obtain a second independent implementation against the v1.8 registry, corpus, and handshake vectors;
+8. obtain independent review of the B1.1 instantiation, including the `XXpsk0` rekey chain and the identity exposure inherent in `XX`.
 
-## Future network-bootstrap track: B1
+## Network-bootstrap track: B1
 
-P1 currently starts over an already configured graph. The prototype is given
-adjacent peer addresses, node IDs, link epochs, and symmetric base keys. It
-therefore demonstrates **route bootstrap**, not autonomous network bootstrap.
+P1 starts over a named peer set. Adjacent-link authentication is no longer part
+of that assumption — B1.1 landed in v1.8 — but the prototype is still given the
+peer list itself: addresses, node IDs, and each peer's pinned static public key.
+It therefore demonstrates **route bootstrap over a named peer set**, not
+autonomous network bootstrap.
 
-`spec/network-bootstrap-b1.md` records the non-normative future architecture.
-The work is deliberately separated from P1 because peer identity, admission,
-Sybil resistance, and underlay discovery are deployment and governance choices
-with their own privacy consequences.
+`spec/network-bootstrap-b1.md` records the architecture. The remaining work is
+deliberately separated from P1 because peer identity, admission, Sybil
+resistance, and underlay discovery are deployment and governance choices with
+their own privacy consequences.
 
-The proposed stages are:
+The stages are:
 
 ### B1.0 — Reproducible static manifest
 
 Replace duplicated command-line topology and key configuration with a signed
-manifest format covering peers, addresses, pinned keys or base keys, epochs,
-selected profiles, and resource ceilings.
+manifest format covering peers, addresses, pinned static keys, selected
+profiles, and resource ceilings. Partially subsumed by B1.1, which already
+requires each peer's pinned static key; what remains is the signed file format.
 
-B1.0 is sufficient for v1.8 multi-host measurement. It makes the existing
-assumption explicit and reproducible without pretending the graph is discovered
-autonomously.
+### B1.1 — Authenticated adjacent-link establishment — **delivered in v1.8**
 
-### B1.1 — Authenticated adjacent-link establishment
+Noise `XX` over X25519 between manually named peers, with the presented static
+key pinned against the manifest, version and profile negotiation bound into the
+transcript, session-derived directional keys and epoch, and `XXpsk0` rekey.
+`spec/link-handshake-b1.md` is normative;
+`docs/adr/0043-b1.1-handshake-decisions.md` records the decisions and
+`docs/b1.1-scope.md` the scope.
 
-Keep peers manually named, but replace pre-shared W2 base keys with a reviewed
-authenticated key exchange. Bind version and profile negotiation into the
-transcript; derive independent directional keys and a fresh replay epoch; test
-restart, rekey, downgrade, replay, and resource exhaustion.
+Not addressed by B1.1: under `XX` the responder discloses its static key to any
+sender of a well-formed first message, and answering one costs it a
+Diffie-Hellman. Registry limits bound the cost; the disclosure is a property of
+the pattern. B1.2's cookie gate is what would remove both.
 
 ### B1.2 — Bounded peer discovery
 

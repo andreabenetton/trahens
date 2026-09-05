@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Generated from spec/protocol-registry-v1.7.json; do not edit.
-pub const REGISTRY_VERSION: &str = "1.7.0";
+// Generated from spec/protocol-registry-v1.8.json; do not edit.
+pub const REGISTRY_VERSION: &str = "1.8.0";
 
-pub const VERSION: u8 = 2;
+pub const VERSION: u8 = 3;
 pub const PRIVACY_PROFILE_U1: u8 = 1;
 pub const LIFECYCLE_PROFILE_E1: u8 = 1;
 pub const MESSAGE_PROFILE_M2: u8 = 2;
@@ -47,6 +47,13 @@ pub const P1_PAYLOAD_RENDEZVOUS_RESULT: u8 = 83;
 pub const P1_PAYLOAD_DATA: u8 = 84;
 pub const P1_PAYLOAD_CLOSE: u8 = 85;
 
+pub const B1_RECORD_HANDSHAKE_INITIATE: u8 = 1;
+pub const B1_RECORD_HANDSHAKE_RESPOND: u8 = 2;
+pub const B1_RECORD_HANDSHAKE_FINISH: u8 = 3;
+pub const B1_RECORD_REKEY_INITIATE: u8 = 4;
+pub const B1_RECORD_REKEY_RESPOND: u8 = 5;
+pub const B1_RECORD_REKEY_FINISH: u8 = 6;
+
 pub const ERROR_MALFORMED: u16 = 1;
 pub const ERROR_UNSUPPORTED_VERSION: u16 = 2;
 pub const ERROR_UNSUPPORTED_PROFILE: u16 = 3;
@@ -88,6 +95,14 @@ pub const BYTES_REPLY_KEY_COMMITMENT: usize = 32;
 pub const BYTES_ROUTE_DIRECTION: usize = 4;
 pub const BYTES_ROUTE_SEQUENCE: usize = 8;
 pub const BYTES_ROUTE_NONCE: usize = 12;
+pub const BYTES_X25519_PUBLIC: usize = 32;
+pub const BYTES_B1_RECORD: usize = 1052;
+pub const BYTES_B1_RECORD_PREFIX: usize = 2;
+pub const BYTES_B1_INITIATE_PAYLOAD: usize = 1018;
+pub const BYTES_B1_RESPOND_PAYLOAD: usize = 954;
+pub const BYTES_B1_FINISH_PAYLOAD: usize = 986;
+pub const BYTES_B1_EXPORT_KEY: usize = 32;
+pub const BYTES_B1_INITIATE_PAYLOAD_PSK: usize = 1002;
 
 pub const LIMIT_MAX_LOGICAL_MESSAGE_BYTES: usize = 16384;
 pub const LIMIT_MAX_CONTROL_PROTECTED_BYTES: usize = 8192;
@@ -127,6 +142,17 @@ pub const LIMIT_ENDPOINT_HANDLE_TTL_MS: usize = 5000;
 pub const LIMIT_MAX_FANOUT_CLASS: usize = 3;
 pub const LIMIT_EXPIRY_CLASS_P1: usize = 1;
 pub const LIMIT_ROUTE_REPLAY_WINDOW: usize = 64;
+pub const LIMIT_MAX_HANDSHAKE_CONTEXTS: usize = 64;
+pub const LIMIT_HANDSHAKE_TIMEOUT_MS: usize = 3000;
+pub const LIMIT_MAX_HANDSHAKE_RETRANSMITS: usize = 4;
+pub const LIMIT_HANDSHAKE_PUBKEY_OPS_PER_INTERVAL: usize = 32;
+pub const LIMIT_HANDSHAKE_INTERVAL_MS: usize = 1000;
+pub const LIMIT_MAX_FAILED_HANDSHAKES_BEFORE_BACKOFF: usize = 8;
+pub const LIMIT_HANDSHAKE_BACKOFF_MS: usize = 5000;
+pub const LIMIT_MAX_OFFERED_PROFILES_PER_CLASS: usize = 8;
+pub const LIMIT_REKEY_AFTER_CELLS: usize = 4194304;
+pub const LIMIT_REKEY_AFTER_MS: usize = 3600000;
+pub const LIMIT_REKEY_OVERLAP_MS: usize = 2000;
 
 pub const FIXED_T2_PROFILE_ID: usize = 1;
 pub const FIXED_T2_EPOCH_MS: usize = 200;
@@ -158,3 +184,9 @@ pub const DOMAIN_P1_ROUTE_EXTRACT: &[u8] = b"Trahens-P1-route-extract-v2";
 pub const DOMAIN_P1_ROUTE_KEY_E2G: &[u8] = b"Trahens-P1-route-key-e2g-v2";
 pub const DOMAIN_P1_ROUTE_KEY_G2E: &[u8] = b"Trahens-P1-route-key-g2e-v2";
 pub const DOMAIN_P1_GATEWAY_OFFER: &[u8] = b"Trahens-P1-gateway-offer-v2";
+pub const DOMAIN_B1_NOISE_PROTOCOL: &[u8] = b"Noise_XX_25519_ChaChaPoly_SHA256";
+pub const DOMAIN_B1_PROLOGUE: &[u8] = b"Trahens-B1-prologue-v1";
+pub const DOMAIN_B1_REKEY_CHAIN: &[u8] = b"Trahens-B1-rekey-chain-v1";
+pub const DOMAIN_B1_EPOCH: &[u8] = b"Trahens-B1-epoch-v1";
+pub const DOMAIN_B1_EXPORT: &[u8] = b"Trahens-B1-export-v1";
+pub const DOMAIN_B1_NOISE_PROTOCOL_REKEY: &[u8] = b"Noise_XXpsk0_25519_ChaChaPoly_SHA256";

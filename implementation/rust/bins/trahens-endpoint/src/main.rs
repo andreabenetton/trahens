@@ -182,7 +182,11 @@ fn run() -> Result<(), Box<dyn Error>> {
     let args = CliArgs::parse()?;
     let node_id = args.u32("id")?;
     let peer_id = args.u32("peer-id")?;
-    let base_key = parse_hex::<32>(args.required("key")?)?;
+    // Handshake identity, not a pre-shared link key: the link keys and epoch
+    // come out of the B1.1 exchange. --peer-static is the manifest pin the
+    // peer's presented static key must match.
+    let static_secret = parse_hex::<32>(args.required("static-seed")?)?;
+    let peer_static = parse_hex::<32>(args.required("peer-static")?)?;
     let expected_gateway_public = parse_hex::<32>(args.required("gateway-public")?)?;
     // The pseudonyms this destination's descriptor authorises. The gateway
     // signature proves a pseudonym was asserted by that gateway key; it does
@@ -203,7 +207,6 @@ fn run() -> Result<(), Box<dyn Error>> {
     let message = args.optional("message", "trahens-p1").as_bytes().to_vec();
     let timeout_ms = args.u64_or("timeout-ms", 20_000)?;
     let metrics_path = args.optional("metrics", "endpoint-metrics.json").to_owned();
-    let epoch = args.u32("epoch")?;
     // Which T2 schedule profile this node runs. The mandatory P1 path is
     // fixed; adaptive renegotiates its rate and is therefore outside the
     // fixed-trace claim, which is a claim about a constant cadence.
@@ -249,8 +252,8 @@ fn run() -> Result<(), Box<dyn Error>> {
             peer_id,
             bind: args.socket("bind")?,
             peer: args.socket("peer")?,
-            base_key,
-            epoch,
+            static_secret,
+            peer_static,
             suite: wire_suite,
             adaptive,
         },

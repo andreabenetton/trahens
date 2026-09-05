@@ -148,7 +148,6 @@ fn run() -> Result<(), Box<dyn Error>> {
     let node_id = args.u32("id")?;
     let peer_id = args.u32("peer-id")?;
     let gateway_id = args.u32("gateway-id")?;
-    let epoch = args.u32("epoch")?;
     // Which T2 schedule profile this node runs. The mandatory P1 path is
     // fixed; adaptive renegotiates its rate and is therefore outside the
     // fixed-trace claim, which is a claim about a constant cadence.
@@ -228,8 +227,8 @@ fn run() -> Result<(), Box<dyn Error>> {
             peer_id,
             bind: args.socket("bind")?,
             peer: args.socket("peer")?,
-            base_key: parse_hex::<32>(args.required("key")?)?,
-            epoch,
+            static_secret: parse_hex::<32>(args.required("static-seed")?)?,
+            peer_static: parse_hex::<32>(args.required("peer-static")?)?,
             suite: wire_suite,
             adaptive,
         },

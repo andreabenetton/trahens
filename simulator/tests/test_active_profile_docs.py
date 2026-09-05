@@ -10,16 +10,16 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # Retained for reproducibility only. No current binary speaks these, so an
 # active document must never point an implementer at one of them.
-SUPERSEDED = ("1.5", "1.6")
+SUPERSEDED = ("1.5", "1.6", "1.7")
 
 
 class ActiveProfileDocumentationTests(unittest.TestCase):
     """Keep active prose synchronized with the registry and executable CLI.
 
     These tests are intentionally precise rather than a broad ban on historical
-    version strings. The repository retains v1.6 and v1.5 artifacts for
+    version strings. The repository retains v1.7, v1.6 and v1.5 artifacts for
     reproducibility, so references to them are valid when they are explicitly
-    historical. What must fail is an active v1.7 document pointing an implementer
+    historical. What must fail is an active v1.8 document pointing an implementer
     at a superseded registry, corpus, acceptance gate, field model, or
     command-line option.
     """
@@ -27,7 +27,7 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.registry = json.loads(
-            (ROOT / "spec/protocol-registry-v1.7.json").read_text(encoding="utf-8")
+            (ROOT / "spec/protocol-registry-v1.8.json").read_text(encoding="utf-8")
         )
         cls.version = cls.registry["registry_version"]
         cls.series = ".".join(cls.version.split(".")[:2])
@@ -100,7 +100,9 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
         self.assertIn("child routing nonce", evidence)
         self.assertNotIn("--adaptive-t2", evidence)
         self.assertNotIn("child discovery nonce", evidence)
-        self.assertNotIn("Registry: 1.6.0", evidence)
+        for series in SUPERSEDED:
+            with self.subTest(series=series):
+                self.assertNotIn(f"Registry: {series}.", evidence)
 
     def test_implementer_guide_matches_registry(self) -> None:
         guide = self.read("docs/implementing-trahens-p1.md")
@@ -163,7 +165,11 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
 
         evidence = self.read("docs/p1-acceptance-evidence.md")
         self.assertIn("Autonomous network bootstrap", evidence)
-        self.assertIn("future B1 profile", evidence)
+        # B1.1 landed in v1.8, so the remaining bootstrap work is B1.2 onward.
+        # An evidence map still calling the whole of B1 future would overstate
+        # what is missing and understate what is now mandatory.
+        self.assertIn("B1.2", evidence)
+        self.assertNotIn("belong to the future B1 profile", evidence)
 
 
 if __name__ == "__main__":

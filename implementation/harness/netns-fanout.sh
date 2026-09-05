@@ -113,7 +113,18 @@ for index in "${!LINKS[@]}"; do
   done
 done
 
-key_for() { printf '%064x' "$(( $1 + 1 ))"; }
+# Per-node X25519 handshake identity, keyed by node id. Since v1.8 a link has
+# no configured key: each end pins the other's public key and the link keys and
+# epoch come out of the B1.1 handshake.
+static_for() { printf '%064x' "$(( $1 + 100 ))"; }
+static_public() {
+  python3 - "$(static_for "$1")" <<'PY'
+import sys
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+seed = bytes.fromhex(sys.argv[1])
+print(X25519PrivateKey.from_private_bytes(seed).public_key().public_bytes_raw().hex())
+PY
+}
 SIGNING_SEED=$(printf '11%.0s' {1..32})
 CAPABILITY=$(printf '22%.0s' {1..32})
 GATEWAY_PUBLIC=$(python3 - "$SIGNING_SEED" <<'PY'
@@ -126,7 +137,6 @@ print(Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(
 PY
 )
 PORT=4242
-EPOCH=1
 
 run_node() {
   local ns=$1 name=$2
@@ -141,50 +151,55 @@ run_node() {
 # the initiator's selection decides which one actually redeems it.
 run_node "${NAMES[3]}" gateway-1 \
   "$BIN_DIR/trahens-rendezvous" \
-  --id 4 --peer-id 3 --gateway-id 7 --epoch "$EPOCH" \
+  --id 4 --peer-id 3 --gateway-id 7 \
   --bind "10.210.2.2:${PORT}" --peer "10.210.2.1:${PORT}" \
-  --key "$(key_for 2)" --signing-seed "$SIGNING_SEED" \
+  --static-seed "$(static_for 4)" --peer-static "$(static_public 3)" \
+  --signing-seed "$SIGNING_SEED" \
   --capability "$CAPABILITY" --capability-ttl-ms 5000 \
   --timeout-ms "$TIMEOUT_MS" --metrics "$OUTPUT/gateway-1.metrics.json"
 
 run_node "${NAMES[5]}" gateway-2 \
   "$BIN_DIR/trahens-rendezvous" \
-  --id 6 --peer-id 5 --gateway-id 7 --epoch "$EPOCH" \
+  --id 6 --peer-id 5 --gateway-id 7 \
   --bind "10.210.4.2:${PORT}" --peer "10.210.4.1:${PORT}" \
-  --key "$(key_for 4)" --signing-seed "$SIGNING_SEED" \
+  --static-seed "$(static_for 6)" --peer-static "$(static_public 5)" \
+  --signing-seed "$SIGNING_SEED" \
   --capability "$CAPABILITY" --capability-ttl-ms 5000 \
   --timeout-ms "$TIMEOUT_MS" --metrics "$OUTPUT/gateway-2.metrics.json"
 
 run_node "${NAMES[2]}" relay-b \
   "$BIN_DIR/trahens-relay" \
-  --id 3 --upstream-id 2 --downstream-id 4 --epoch "$EPOCH" \
+  --id 3 --upstream-id 2 --downstream-id 4 \
+  --static-seed "$(static_for 3)" \
   --upstream-bind "10.210.1.2:${PORT}" --upstream-peer "10.210.1.1:${PORT}" \
-  --upstream-key "$(key_for 1)" \
+  --upstream-static "$(static_public 2)" \
   --downstream-bind "10.210.2.1:${PORT}" --downstream-peer "10.210.2.2:${PORT}" \
-  --downstream-key "$(key_for 2)" --timeout-ms "$TIMEOUT_MS" \
+  --downstream-static "$(static_public 4)" --timeout-ms "$TIMEOUT_MS" \
   --metrics "$OUTPUT/relay-b.metrics.json"
 
 run_node "${NAMES[4]}" relay-c \
   "$BIN_DIR/trahens-relay" \
-  --id 5 --upstream-id 2 --downstream-id 6 --epoch "$EPOCH" \
+  --id 5 --upstream-id 2 --downstream-id 6 \
+  --static-seed "$(static_for 5)" \
   --upstream-bind "10.210.3.2:${PORT}" --upstream-peer "10.210.3.1:${PORT}" \
-  --upstream-key "$(key_for 3)" \
+  --upstream-static "$(static_public 2)" \
   --downstream-bind "10.210.4.1:${PORT}" --downstream-peer "10.210.4.2:${PORT}" \
-  --downstream-key "$(key_for 4)" --timeout-ms "$TIMEOUT_MS" \
+  --downstream-static "$(static_public 6)" --timeout-ms "$TIMEOUT_MS" \
   --metrics "$OUTPUT/relay-c.metrics.json"
 
 # The fan-out relay: one parent, two children on separate links.
 run_node "${NAMES[1]}" relay-a \
   "$BIN_DIR/trahens-relay" \
-  --id 2 --upstream-id 1 --epoch "$EPOCH" \
+  --id 2 --upstream-id 1 \
+  --static-seed "$(static_for 2)" \
   --upstream-bind "10.210.0.2:${PORT}" --upstream-peer "10.210.0.1:${PORT}" \
-  --upstream-key "$(key_for 0)" \
+  --upstream-static "$(static_public 1)" \
   --downstream-id 3 \
   --downstream-bind "10.210.1.1:${PORT}" --downstream-peer "10.210.1.2:${PORT}" \
-  --downstream-key "$(key_for 1)" \
+  --downstream-static "$(static_public 3)" \
   --downstream-id-1 5 \
   --downstream-bind-1 "10.210.3.1:${PORT}" --downstream-peer-1 "10.210.3.2:${PORT}" \
-  --downstream-key-1 "$(key_for 3)" \
+  --downstream-static-1 "$(static_public 5)" \
   --timeout-ms "$TIMEOUT_MS" --metrics "$OUTPUT/relay-a.metrics.json"
 
 sleep 0.3
@@ -192,8 +207,9 @@ sleep 0.3
 # answer, so selection is a real choice rather than a first-arrival race.
 run_node "${NAMES[0]}" endpoint \
   "$BIN_DIR/trahens-endpoint" \
-  --id 1 --peer-id 2 --epoch "$EPOCH" \
-  --bind "10.210.0.1:${PORT}" --peer "10.210.0.2:${PORT}" --key "$(key_for 0)" \
+  --id 1 --peer-id 2 \
+  --bind "10.210.0.1:${PORT}" --peer "10.210.0.2:${PORT}" \
+  --static-seed "$(static_for 1)" --peer-static "$(static_public 2)" \
   --gateway-public "$GATEWAY_PUBLIC" --capability "$CAPABILITY" \
   --fanout-class 2 --candidate-threshold 2 --rings "16:2000" \
   --message "fanout-p1" --timeout-ms "$TIMEOUT_MS" \

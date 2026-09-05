@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Generated from spec/protocol-registry-v1.7.json; do not edit."""
+"""Generated from spec/protocol-registry-v1.8.json; do not edit."""
 
-REGISTRY_VERSION = '1.7.0'
+REGISTRY_VERSION = '1.8.0'
 BYTE_ORDER = 'big'
 
-VERSION = 2
+VERSION = 3
 PRIVACY_PROFILE_U1 = 1
 LIFECYCLE_PROFILE_E1 = 1
 MESSAGE_PROFILE_M2 = 2
@@ -49,6 +49,13 @@ P1_PAYLOAD_RENDEZVOUS_RESULT = 83
 P1_PAYLOAD_DATA = 84
 P1_PAYLOAD_CLOSE = 85
 
+B1_RECORD_HANDSHAKE_INITIATE = 1
+B1_RECORD_HANDSHAKE_RESPOND = 2
+B1_RECORD_HANDSHAKE_FINISH = 3
+B1_RECORD_REKEY_INITIATE = 4
+B1_RECORD_REKEY_RESPOND = 5
+B1_RECORD_REKEY_FINISH = 6
+
 ERROR_MALFORMED = 1
 ERROR_UNSUPPORTED_VERSION = 2
 ERROR_UNSUPPORTED_PROFILE = 3
@@ -90,6 +97,14 @@ BYTES_REPLY_KEY_COMMITMENT = 32
 BYTES_ROUTE_DIRECTION = 4
 BYTES_ROUTE_SEQUENCE = 8
 BYTES_ROUTE_NONCE = 12
+BYTES_X25519_PUBLIC = 32
+BYTES_B1_RECORD = 1052
+BYTES_B1_RECORD_PREFIX = 2
+BYTES_B1_INITIATE_PAYLOAD = 1018
+BYTES_B1_RESPOND_PAYLOAD = 954
+BYTES_B1_FINISH_PAYLOAD = 986
+BYTES_B1_EXPORT_KEY = 32
+BYTES_B1_INITIATE_PAYLOAD_PSK = 1002
 
 LIMIT_MAX_LOGICAL_MESSAGE_BYTES = 16384
 LIMIT_MAX_CONTROL_PROTECTED_BYTES = 8192
@@ -129,6 +144,17 @@ LIMIT_ENDPOINT_HANDLE_TTL_MS = 5000
 LIMIT_MAX_FANOUT_CLASS = 3
 LIMIT_EXPIRY_CLASS_P1 = 1
 LIMIT_ROUTE_REPLAY_WINDOW = 64
+LIMIT_MAX_HANDSHAKE_CONTEXTS = 64
+LIMIT_HANDSHAKE_TIMEOUT_MS = 3000
+LIMIT_MAX_HANDSHAKE_RETRANSMITS = 4
+LIMIT_HANDSHAKE_PUBKEY_OPS_PER_INTERVAL = 32
+LIMIT_HANDSHAKE_INTERVAL_MS = 1000
+LIMIT_MAX_FAILED_HANDSHAKES_BEFORE_BACKOFF = 8
+LIMIT_HANDSHAKE_BACKOFF_MS = 5000
+LIMIT_MAX_OFFERED_PROFILES_PER_CLASS = 8
+LIMIT_REKEY_AFTER_CELLS = 4194304
+LIMIT_REKEY_AFTER_MS = 3600000
+LIMIT_REKEY_OVERLAP_MS = 2000
 
 FIXED_T2_PROFILE_ID = 1
 FIXED_T2_EPOCH_MS = 200
@@ -160,5 +186,11 @@ DOMAIN_P1_ROUTE_EXTRACT = b'Trahens-P1-route-extract-v2'
 DOMAIN_P1_ROUTE_KEY_E2G = b'Trahens-P1-route-key-e2g-v2'
 DOMAIN_P1_ROUTE_KEY_G2E = b'Trahens-P1-route-key-g2e-v2'
 DOMAIN_P1_GATEWAY_OFFER = b'Trahens-P1-gateway-offer-v2'
+DOMAIN_B1_NOISE_PROTOCOL = b'Noise_XX_25519_ChaChaPoly_SHA256'
+DOMAIN_B1_PROLOGUE = b'Trahens-B1-prologue-v1'
+DOMAIN_B1_REKEY_CHAIN = b'Trahens-B1-rekey-chain-v1'
+DOMAIN_B1_EPOCH = b'Trahens-B1-epoch-v1'
+DOMAIN_B1_EXPORT = b'Trahens-B1-export-v1'
+DOMAIN_B1_NOISE_PROTOCOL_REKEY = b'Noise_XXpsk0_25519_ChaChaPoly_SHA256'
 
-FIELD_PROTECTION = {'link_epoch': 'public', 'link_sequence': 'public', 't1_frame_type': 'link-encrypted', 'm2_message_type': 'link-encrypted', 'm2_suite_id': 'link-encrypted', 'fragment_metadata': 'link-encrypted', 'branch_token': 'link-encrypted-hop-local', 'candidate_token': 'link-encrypted-hop-local', 'local_label': 'link-encrypted-hop-local', 'r1_discovery_nonce': 'link-encrypted-replaced-each-hop', 'gateway_pseudonym': 'end-to-end-encrypted', 'r1_capability': 'end-to-end-encrypted', 'route_secret': 'end-to-end-encrypted', 'route_nonce': 'link-encrypted', 'application_data': 'end-to-end-encrypted', 'retransmission_counters': 'local-only', 'queue_depth': 'local-only', 'route_mapping': 'local-only', 'keys_and_capabilities': 'never-logged'}
+FIELD_PROTECTION = {'link_epoch': 'public', 'link_sequence': 'public', 't1_frame_type': 'link-encrypted', 'm2_message_type': 'link-encrypted', 'm2_suite_id': 'link-encrypted', 'fragment_metadata': 'link-encrypted', 'branch_token': 'link-encrypted-hop-local', 'candidate_token': 'link-encrypted-hop-local', 'local_label': 'link-encrypted-hop-local', 'r1_discovery_nonce': 'link-encrypted-replaced-each-hop', 'gateway_pseudonym': 'end-to-end-encrypted', 'r1_capability': 'end-to-end-encrypted', 'route_secret': 'end-to-end-encrypted', 'route_nonce': 'link-encrypted', 'application_data': 'end-to-end-encrypted', 'retransmission_counters': 'local-only', 'queue_depth': 'local-only', 'route_mapping': 'local-only', 'keys_and_capabilities': 'never-logged', 'handshake_ephemeral': 'public', 'negotiation_offer': 'public', 'handshake_static_responder': 'ephemeral-encrypted', 'handshake_static_initiator': 'handshake-encrypted', 'negotiation_selection': 'handshake-encrypted'}

@@ -16,7 +16,7 @@ fixed in July 2026 were exactly that confusion.
 
 ## The one rule
 
-`spec/protocol-registry-v1.7.json` is the only source of identifiers, widths,
+`spec/protocol-registry-v1.8.json` is the only source of identifiers, widths,
 limits, and domain separators. Do not copy constants out of prose, out of this
 document, or out of our Rust. Generate them, as we do — `make registry` emits
 Python, Rust, and Markdown from that one file, and `tools/check_repo.sh` fails
@@ -30,18 +30,18 @@ a wire problem.
 
 ### 1. Registry and codecs, no network
 
-Read `spec/core-v1.7.md` first for the shape of the whole path, then
+Read `spec/core-v1.8.md` first for the shape of the whole path, then
 `spec/message-codec-m2.md` and `spec/wire-cell-w2.md`.
 
-Note the v1.6 split before you encode anything, which v1.7 keeps unchanged: `DISCOVER` carries a
+Note the v1.6 split before you encode anything, which v1.7 and v1.8 keep unchanged: `DISCOVER` carries a
 suite-independent 32-byte `routing_nonce` **and** a separate eligibility field
 the suite sizes. Route discovery reads only the former. Getting this wrong is
 the one mistake that will make everything else fail confusingly. Implement M2
 encode/decode and W2 fragmentation.
 
-Check against `spec/p1-conformance-vectors-v1.7.json` and the binary corpus
-`spec/p1-conformance-corpus-v1.7.bin` (3,133 bytes, format described below; 32
-vectors at registry 1.7.0). Canonical encodings must round-trip;
+Check against `spec/p1-conformance-vectors-v1.8.json` and the binary corpus
+`spec/p1-conformance-corpus-v1.8.bin` (3,133 bytes, format described below; 32
+vectors at registry 1.8.0). Canonical encodings must round-trip;
 **noncanonical ones must be rejected**, and that half matters more. A decoder
 that accepts a noncanonical encoding is the classic source of
 cross-implementation divergence, and it will not show up in interoperability
@@ -101,7 +101,7 @@ refused everywhere. See ADR 0038 and ADR 0040.
 
 ### 4. Lifecycle and discovery
 
-`spec/state-machines-v1.7.md`, `spec/invariants-v1.7.md`, and
+`spec/state-machines-v1.8.md`, `spec/invariants-v1.8.md`, and
 `spec/event-lifecycle-profile-e1.md`.
 
 Time is a **monotonically increasing local clock**. Use wall clock only for the
@@ -114,7 +114,7 @@ falls idle. Otherwise a peer that keeps sending keeps your expired state alive.
 
 ### 5. Resource bounds
 
-`spec/resource-accounting-v1.7.md`. Every ceiling is in the registry.
+`spec/resource-accounting-v1.8.md`. Every ceiling is in the registry.
 
 Count queued **cells**, not messages: the sender ceiling and the fragment
 ceiling multiply, so a per-message count does not bound anything. Track branch
@@ -135,7 +135,7 @@ wiped when its branch ends.
 
 ## Corpus format
 
-`spec/p1-conformance-corpus-v1.7.bin` is:
+`spec/p1-conformance-corpus-v1.8.bin` is:
 
 ```text
 "TP15"                     magic
@@ -156,21 +156,29 @@ settles an ambiguity.
 
 ## Bootstrap boundary
 
-P1 assumes that an authenticated adjacent graph already exists. The current
-harness supplies every process with peer addresses, node identifiers, link
-epochs, and pre-shared 32-byte base keys. Your second P1 implementation may use
-the same static inputs; it is not expected to implement autonomous peer
-discovery or link authentication.
+Link authentication is now part of what you must implement. `spec/link-handshake-b1.md`
+is normative and `spec/b1-test-vectors.json` fixes an initial exchange and a
+chained rekey byte for byte; those vectors are cross-checked against an
+independent Noise implementation, so agreeing with them means agreeing with
+Noise rather than with one reference. No W2 cell and no route state may exist on
+a link before the handshake completes.
 
-Do not treat those command-line inputs as part of the P1 wire protocol. Peer
-discovery, admission, identity, authenticated key exchange, rekey, gateway
-advertisements, and directory-root discovery belong to the future non-normative
-B1 work in `spec/network-bootstrap-b1.md`.
+What the harness still supplies from configuration is the peer set: addresses,
+node identifiers, and each peer's pinned static public key. Your second P1
+implementation may use the same static inputs; it is not expected to implement
+autonomous peer discovery.
 
-The planned B1.0 stage may eventually replace the repeated command-line inputs
-with a signed static manifest. A later B1.1 stage may replace pre-shared W2
-base keys with a reviewed authenticated key exchange. Neither changes the M2,
-W2, T1, T2, or P1 route-discovery semantics implemented here.
+Do not treat that peer list as part of the P1 wire protocol. Peer discovery,
+admission, identity beyond a pinned key, gateway advertisements, and
+directory-root discovery belong to the non-normative B1.2 work onward in
+`spec/network-bootstrap-b1.md`. None of it changes the M2, W2, T1, T2, or P1
+route-discovery semantics implemented here.
+
+Two consequences of the `XX` pattern are worth knowing before you deploy
+anything. A responder answers a well-formed first message before it knows who
+sent it, which costs it a Diffie-Hellman; and its reply carries its own static
+key under ephemeral-only protection, so an active prober learns the responder's
+identity. Registry limits bound the first. Nothing in B1.1 removes the second.
 
 ## Proving it works
 
@@ -195,7 +203,7 @@ that accepts the arguments and speaks nothing, and check it exits non-zero.
 
 ## Acceptance
 
-`spec/p1-prototype-profile-v1.7.md` holds the gate.
+`spec/p1-prototype-profile-v1.8.md` holds the gate.
 `docs/p1-acceptance-evidence.md` maps each line to the job or harness arm that
 executes it here, and states what remains open. Source presence is not passing;
 the gate is a runtime gate.

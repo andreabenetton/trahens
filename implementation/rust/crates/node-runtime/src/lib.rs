@@ -2,16 +2,17 @@
 #![forbid(unsafe_code)]
 #![doc = "UDP link runtime shared by Trahens P1 executables."]
 
+pub mod handshake;
 pub mod p1;
 
 use codec_m2::{decode, encode, Envelope};
 use protocol_registry::{
-    BYTES_CELL_BODY, BYTES_CELL_PAYLOAD, ERROR_INTERNAL, ERROR_MALFORMED, ERROR_REPLAY,
-    ERROR_RESOURCE_EXHAUSTED, ERROR_UNSUPPORTED_PROFILE, ERROR_UNSUPPORTED_SUITE,
-    ERROR_UNSUPPORTED_VERSION, FIXED_T2_ACK_RESERVE_PER_EPOCH, FIXED_T2_CELLS_PER_EPOCH,
-    FIXED_T2_EPOCH_MS, FIXED_T2_QUEUE_CELLS_GLOBAL, FIXED_T2_QUEUE_CELLS_PER_PEER,
-    FIXED_T2_RETRANSMIT_RESERVE_PER_EPOCH, LIMIT_MAX_T1_RETRIES, LIMIT_T1_ACK_DELAY_MAX_MS,
-    LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS, SUITE_R1,
+    BYTES_CELL_BODY, BYTES_CELL_PAYLOAD, ERROR_AUTHENTICATION_FAILED, ERROR_INTERNAL,
+    ERROR_MALFORMED, ERROR_REPLAY, ERROR_RESOURCE_EXHAUSTED, ERROR_UNSUPPORTED_PROFILE,
+    ERROR_UNSUPPORTED_SUITE, ERROR_UNSUPPORTED_VERSION, FIXED_T2_ACK_RESERVE_PER_EPOCH,
+    FIXED_T2_CELLS_PER_EPOCH, FIXED_T2_EPOCH_MS, FIXED_T2_QUEUE_CELLS_GLOBAL,
+    FIXED_T2_QUEUE_CELLS_PER_PEER, FIXED_T2_RETRANSMIT_RESERVE_PER_EPOCH, LIMIT_MAX_T1_RETRIES,
+    LIMIT_T1_ACK_DELAY_MAX_MS, LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS, SUITE_R1,
 };
 use scheduling_t2::{
     decode_schedule_header, encode_schedule_header, FixedSchedule, QueueBudget, RateNegotiation,
@@ -35,8 +36,14 @@ pub struct LinkConfig {
     pub peer_id: u32,
     pub bind: SocketAddr,
     pub peer: SocketAddr,
-    pub base_key: [u8; 32],
-    pub epoch: u32,
+    /// This node's X25519 handshake identity. Distinct from its Ed25519
+    /// signing key: a key is never reused across a signature scheme and a DH
+    /// scheme.
+    pub static_secret: [u8; 32],
+    /// The peer's expected static public key, from the manifest. Under Noise
+    /// `XX` the peer presents its own key; this is what it must match, and a
+    /// mismatch aborts before any key is derived.
+    pub peer_static: [u8; 32],
     /// Suite this link speaks. Chaff and SCHEDULE frames follow it, so a link
     /// does not emit a mix an observer could separate: on the C1 profile,
     /// R1-suited chaff among C1-suited data would be exactly the distinguisher
@@ -187,14 +194,6 @@ impl std::fmt::Display for RuntimeError {
 
 impl std::error::Error for RuntimeError {}
 
-fn directional_key(base: &[u8; 32], sender: u32, receiver: u32) -> Result<[u8; 32], RuntimeError> {
-    let mut input = Vec::with_capacity(8 + 22);
-    input.extend_from_slice(b"Trahens-W2-direction-v1");
-    input.extend_from_slice(&sender.to_be_bytes());
-    input.extend_from_slice(&receiver.to_be_bytes());
-    hmac_sha256(base, &input).map_err(|_| RuntimeError::KeyDerivation)
-}
-
 fn elapsed_ms(origin: Instant) -> u64 {
     origin.elapsed().as_millis().try_into().unwrap_or(u64::MAX)
 }
@@ -329,8 +328,9 @@ pub fn spawn_link(
     let socket = UdpSocket::bind(config.bind)?;
     socket.connect(config.peer)?;
     socket.set_nonblocking(true)?;
-    let send_key = directional_key(&config.base_key, config.local_id, config.peer_id)?;
-    let receive_key = directional_key(&config.base_key, config.peer_id, config.local_id)?;
+    // Both directional keys and the epoch now come from the B1.1 handshake,
+    // which runs inside the worker before any cell exists. Nothing is derived
+    // here, because there is no longer a configured key to derive from.
     let (command_sender, command_receiver) = mpsc::sync_channel(FIXED_T2_QUEUE_CELLS_PER_PEER);
     let peer_id = config.peer_id;
     let lifecycle_lost = Arc::new(AtomicBool::new(false));
@@ -344,8 +344,6 @@ pub fn spawn_link(
             run_link(
                 config,
                 socket,
-                send_key,
-                receive_key,
                 command_receiver,
                 events,
                 budget,
@@ -486,14 +484,52 @@ fn schedule_cell(frame: &ScheduleFrame) -> Option<[u8; BYTES_CELL_BODY]> {
 fn run_link(
     mut config: LinkConfig,
     socket: UdpSocket,
-    mut send_key: [u8; 32],
-    mut receive_key: [u8; 32],
     commands: ChannelReceiver<LinkCommand>,
     events: SyncSender<LinkEvent>,
     node_budget: NodeQueueBudget,
     lifecycle_lost: Arc<AtomicBool>,
 ) {
     let mut sink = EventSink::new(events, lifecycle_lost);
+
+    // No W2 cell and no P1 route state may exist on this link until the B1.1
+    // handshake completes, so it runs first and its failure stops the link.
+    // Both directional keys and the epoch come out of it; nothing here is
+    // configured, which is what makes restarting into a used epoch impossible.
+    let Some(session) = handshake::run(
+        &socket,
+        config.local_id,
+        config.peer_id,
+        config.suite,
+        config.static_secret,
+        config.peer_static,
+        None,
+    ) else {
+        sink.report(LinkEvent::SecurityEvent {
+            peer_id: config.peer_id,
+            error_id: ERROR_AUTHENTICATION_FAILED,
+            detail: "link_handshake_failed",
+        });
+        sink.deliver(LinkEvent::Stopped {
+            peer_id: config.peer_id,
+            metrics: LinkMetrics::default(),
+        });
+        return;
+    };
+    let initiator = handshake::is_initiator(config.local_id, config.peer_id);
+    let (mut send_key, mut receive_key) = if initiator {
+        (
+            session.initiator_to_responder.0,
+            session.responder_to_initiator.0,
+        )
+    } else {
+        (
+            session.responder_to_initiator.0,
+            session.initiator_to_responder.0,
+        )
+    };
+    let epoch = session.epoch;
+    let mut export_key = session.export_key.0;
+
     let origin = Instant::now();
     let mut schedule = FixedSchedule::new(origin);
     // Only one end of a link proposes, so two peers cannot offer past each
@@ -528,7 +564,7 @@ fn run_link(
         return;
     };
     let mut sequence = u64::from(u32::from_be_bytes(sequence_seed));
-    let mut replay = ReplayWindow::new(config.epoch);
+    let mut replay = ReplayWindow::new(epoch);
     let mut sender = Sender::new();
     let mut receiver = Receiver::new();
     // Queued ACKs with the time each was first queued, so the emitted
@@ -641,7 +677,7 @@ fn run_link(
         loop {
             match socket.recv(&mut buffer) {
                 Ok(length) => {
-                    match open_record(&receive_key, config.epoch, &buffer[..length], &mut replay) {
+                    match open_record(&receive_key, epoch, &buffer[..length], &mut replay) {
                         Ok((_received_sequence, body)) => {
                             metrics.received_cells = metrics.received_cells.saturating_add(1);
                             // A SCHEDULE cell carries the T2 profile byte where
@@ -867,7 +903,7 @@ fn run_link(
             }
             if let Some(frame) = pending_schedule.take() {
                 if let Some(body) = schedule_cell(&frame) {
-                    if let Ok(record) = seal_record(&send_key, config.epoch, sequence, &body) {
+                    if let Ok(record) = seal_record(&send_key, epoch, sequence, &body) {
                         if socket.send(&record).is_ok() {
                             metrics.sent_cells = metrics.sent_cells.saturating_add(1);
                             metrics.schedule_cells = metrics.schedule_cells.saturating_add(1);
@@ -931,7 +967,7 @@ fn run_link(
                 }
             };
             match encode_frame(&frame).and_then(|body| {
-                seal_record(&send_key, config.epoch, sequence, &body)
+                seal_record(&send_key, epoch, sequence, &body)
                     .map_err(|_| transport_t1::TransportError::Malformed)
             }) {
                 Ok(record) => {
@@ -1010,7 +1046,10 @@ fn run_link(
     metrics.telemetry_dropped = sink.telemetry_dropped;
     zeroize(&mut send_key);
     zeroize(&mut receive_key);
-    zeroize(&mut config.base_key);
+    // The export key would chain the next rekey; nothing outlives the link, so
+    // it is wiped with the traffic keys rather than retained.
+    zeroize(&mut export_key);
+    zeroize(&mut config.static_secret);
     sink.deliver(LinkEvent::Stopped {
         peer_id: config.peer_id,
         metrics,

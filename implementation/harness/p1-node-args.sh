@@ -7,7 +7,7 @@
 # and builds each node's argument list into P1_NODE_ARGS.
 #
 # Callers supply, before sourcing:
-#   SIGNING_SEED, CAPABILITY, PORT, EPOCH, TIMEOUT_MS, OUTPUT
+#   SIGNING_SEED, CAPABILITY, PORT, TIMEOUT_MS, OUTPUT
 # and, before each *_args call, the addresses for that node.
 #
 # P1_ADAPTIVE and P1_ENDPOINT_EXTRA must be declared as arrays by the caller,
@@ -23,8 +23,21 @@ declare -a P1_ENDPOINT_EXTRA=("${P1_ENDPOINT_EXTRA[@]:-}")
 [[ ${#P1_SUITE[@]} -eq 1 && -z "${P1_SUITE[0]}" ]] && P1_SUITE=()
 [[ ${#P1_ENDPOINT_EXTRA[@]} -eq 1 && -z "${P1_ENDPOINT_EXTRA[0]}" ]] && P1_ENDPOINT_EXTRA=()
 
-# Per-link base key: link i is keyed by i+1 so no link ever gets the zero key.
-p1_key_for() { printf '%064x' "$(( $1 + 1 ))"; }
+# Per-node X25519 handshake identity. Since v1.8 a link has no configured key:
+# each node holds one static identity and each end pins the other's public key,
+# and the link keys and epoch come out of the B1.1 handshake. Offset so no node
+# is seeded with zero.
+p1_static_for() { printf '%064x' "$(( $1 + 100 ))"; }
+
+# The X25519 public key a peer must present, derived from that node's seed.
+p1_static_public() {
+  python3 - "$(p1_static_for "$1")" <<'PY'
+import sys
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+seed = bytes.fromhex(sys.argv[1])
+print(X25519PrivateKey.from_private_bytes(seed).public_key().public_bytes_raw().hex())
+PY
+}
 
 # Ed25519 public key the initiator pins for the gateway's candidate signature.
 p1_gateway_public() {
@@ -50,10 +63,11 @@ p1_ring_window_ms() { echo $(( 1500 + $1 * 600 )); }
 # Extra arguments for the caller's scenario go in P1_ENDPOINT_EXTRA.
 p1_endpoint_args() {
   P1_NODE_ARGS=(
-    --id 1 --peer-id 2 --epoch "$EPOCH"
+    --id 1 --peer-id 2
     "${P1_ADAPTIVE[@]}"
     "${P1_SUITE[@]}"
-    --bind "$1" --peer "$2" --key "$(p1_key_for "$3")"
+    --bind "$1" --peer "$2"
+    --static-seed "$(p1_static_for 1)" --peer-static "$(p1_static_public 2)"
     --gateway-public "$4" --capability "$5"
     --gateway-pseudonyms "$ENDPOINT_PSEUDONYMS"
     "${P1_ENDPOINT_EXTRA[@]}"
@@ -65,11 +79,14 @@ p1_endpoint_args() {
 # p1_relay_args <index> <up-bind> <up-peer> <up-link> <down-bind> <down-peer> <down-link>
 p1_relay_args() {
   P1_NODE_ARGS=(
-    --id "$(( $1 + 1 ))" --upstream-id "$1" --downstream-id "$(( $1 + 2 ))" --epoch "$EPOCH"
+    --id "$(( $1 + 1 ))" --upstream-id "$1" --downstream-id "$(( $1 + 2 ))"
     "${P1_ADAPTIVE[@]}"
     "${P1_SUITE[@]}"
-    --upstream-bind "$2" --upstream-peer "$3" --upstream-key "$(p1_key_for "$4")"
-    --downstream-bind "$5" --downstream-peer "$6" --downstream-key "$(p1_key_for "$7")"
+    --static-seed "$(p1_static_for "$(( $1 + 1 ))")"
+    --upstream-bind "$2" --upstream-peer "$3"
+    --upstream-static "$(p1_static_public "$1")"
+    --downstream-bind "$5" --downstream-peer "$6"
+    --downstream-static "$(p1_static_public "$(( $1 + 2 ))")"
     --timeout-ms "$TIMEOUT_MS" --metrics "$OUTPUT/relay-$1.metrics.json"
   )
 }
@@ -77,10 +94,12 @@ p1_relay_args() {
 # p1_gateway_args <node-index> <bind> <peer> <link-index> <capability-ttl-ms>
 p1_gateway_args() {
   P1_NODE_ARGS=(
-    --id "$(( $1 + 1 ))" --peer-id "$1" --gateway-id 7 --epoch "$EPOCH"
+    --id "$(( $1 + 1 ))" --peer-id "$1" --gateway-id 7
     "${P1_ADAPTIVE[@]}"
     "${P1_SUITE[@]}"
-    --bind "$2" --peer "$3" --key "$(p1_key_for "$4")"
+    --bind "$2" --peer "$3"
+    --static-seed "$(p1_static_for "$(( $1 + 1 ))")"
+    --peer-static "$(p1_static_public "$1")"
     --signing-seed "$SIGNING_SEED"
     --gateway-pseudonym "$GATEWAY_PSEUDONYM"
     --capability "$CAPABILITY" --capability-ttl-ms "$5"

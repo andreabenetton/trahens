@@ -14,8 +14,8 @@ class P1ConformanceVectorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.repository = Path(__file__).resolve().parents[2]
-        cls.vector_path = cls.repository / "spec" / "p1-conformance-vectors-v1.7.json"
-        cls.corpus_path = cls.repository / "spec" / "p1-conformance-corpus-v1.7.bin"
+        cls.vector_path = cls.repository / "spec" / "p1-conformance-vectors-v1.8.json"
+        cls.corpus_path = cls.repository / "spec" / "p1-conformance-corpus-v1.8.bin"
         cls.document = json.loads(cls.vector_path.read_text(encoding="utf-8"))
 
     def test_every_message_has_positive_and_negative_vector(self) -> None:

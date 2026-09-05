@@ -273,7 +273,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     let args = CliArgs::parse()?;
     let node_id = args.u32("id")?;
     let upstream_id = args.u32("upstream-id")?;
-    let epoch = args.u32("epoch")?;
+    // One handshake identity per node, pinned per link: the link keys and
+    // epoch come out of the B1.1 exchange rather than from configuration.
+    let static_secret = parse_hex::<32>(args.required("static-seed")?)?;
     // Which T2 schedule profile this node runs. The mandatory P1 path is
     // fixed; adaptive renegotiates its rate and is therefore outside the
     // fixed-trace claim, which is a claim about a constant cadence.
@@ -321,8 +323,8 @@ fn run() -> Result<(), Box<dyn Error>> {
             peer_id: upstream_id,
             bind: args.socket("upstream-bind")?,
             peer: args.socket("upstream-peer")?,
-            base_key: parse_hex::<32>(args.required("upstream-key")?)?,
-            epoch,
+            static_secret,
+            peer_static: parse_hex::<32>(args.required("upstream-static")?)?,
             suite: wire_suite,
             adaptive,
         },
@@ -353,8 +355,10 @@ fn run() -> Result<(), Box<dyn Error>> {
                     peer_id,
                     bind: args.socket(&format!("downstream-bind{suffix}"))?,
                     peer: args.socket(&format!("downstream-peer{suffix}"))?,
-                    base_key: parse_hex::<32>(args.required(&format!("downstream-key{suffix}"))?)?,
-                    epoch,
+                    static_secret,
+                    peer_static: parse_hex::<32>(
+                        args.required(&format!("downstream-static{suffix}"))?,
+                    )?,
                     suite: wire_suite,
                     adaptive,
                 },
@@ -450,7 +454,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     // before any cryptographic work or branch allocation, so a
                     // fresh-branch flood costs the relay a table lookup rather
                     // than a scalar multiplication.
-                    if !admission.admit(epoch, upstream_id, clock.now_ms()) {
+                    if !admission.admit(upstream_id, clock.now_ms()) {
                         drops.record("relay", ERROR_RESOURCE_EXHAUSTED, "ingress_token_bucket");
                         continue;
                     }

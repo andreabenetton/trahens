@@ -67,6 +67,15 @@ spec/protocol-registry-v1.7.md
 spec/p1-conformance-vectors-v1.7.json
 spec/p1-conformance-corpus-v1.7.bin
 spec/protocol-registry-v1.8.json
+spec/protocol-registry-v1.8.md
+spec/core-v1.8.md
+spec/messages-v1.8.md
+spec/state-machines-v1.8.md
+spec/invariants-v1.8.md
+spec/resource-accounting-v1.8.md
+spec/p1-prototype-profile-v1.8.md
+spec/p1-conformance-vectors-v1.8.json
+spec/p1-conformance-corpus-v1.8.bin
 spec/link-handshake-b1.md
 spec/b1-test-vectors.json
 simulator/trahens_crypto/b1.py
@@ -268,12 +277,12 @@ python tools/generate_protocol_registry.py \
     --markdown-output "$registry_md_tmp"
 cmp simulator/trahens_spec/generated.py "$registry_py_tmp"
 cmp implementation/rust/crates/protocol-registry/src/generated.rs "$registry_rs_tmp"
-cmp spec/protocol-registry-v1.7.md "$registry_md_tmp"
-# v1.5 and v1.6 are retained and must still regenerate from their own
+cmp spec/protocol-registry-v1.8.md "$registry_md_tmp"
+# v1.5, v1.6 and v1.7 are retained and must still regenerate from their own
 # registries, so each frozen profile stays reproducible even though the
-# binaries target v1.7.
+# binaries target v1.8.
 registry_md_old_tmp=$(mktemp)
-for retired_series in 1.5 1.6; do
+for retired_series in 1.5 1.6 1.7; do
     python tools/generate_protocol_registry.py \
         --registry "spec/protocol-registry-v$retired_series.json" \
         --markdown-output "$registry_md_old_tmp"
@@ -283,13 +292,13 @@ rm -f "$registry_md_old_tmp"
 python tools/generate_p1_conformance.py \
     --json-output "$p1_vectors_tmp" \
     --corpus-output "$p1_corpus_tmp"
-cmp spec/p1-conformance-vectors-v1.7.json "$p1_vectors_tmp"
-cmp spec/p1-conformance-corpus-v1.7.bin "$p1_corpus_tmp"
-# v1.5 and v1.6 are retained and must still regenerate from their own
+cmp spec/p1-conformance-vectors-v1.8.json "$p1_vectors_tmp"
+cmp spec/p1-conformance-corpus-v1.8.bin "$p1_corpus_tmp"
+# v1.5, v1.6 and v1.7 are retained and must still regenerate from their own
 # registries.
 p1_vectors_old_tmp=$(mktemp)
 p1_corpus_old_tmp=$(mktemp)
-for retired_series in 1.5 1.6; do
+for retired_series in 1.5 1.6 1.7; do
     python tools/generate_p1_conformance.py \
         --registry "spec/protocol-registry-v$retired_series.json" \
         --json-output "$p1_vectors_old_tmp" \

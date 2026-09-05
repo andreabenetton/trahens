@@ -236,7 +236,8 @@ done
 # a quiet machine and reports NO_CANDIDATE on a slower one, which measures the
 # runner rather than recovery. Scenarios that set their own schedule keep it.
 PORT=4242
-EPOCH=1
+# No EPOCH: since v1.8 the link epoch is derived from the B1.1 handshake rather
+# than configured, which is what makes restarting into a used epoch impossible.
 # Shared with multihost-p1.sh so the two harnesses cannot drift into testing
 # different protocols.
 P1_ADAPTIVE=(--schedule-profile "$SCHEDULE_PROFILE")

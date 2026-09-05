@@ -16,24 +16,34 @@ capability-based rendezvous, and explicit evidence boundaries.
 
 ## Status
 
-The active specification is **Trahens Core v1.7**, registry **1.7.0**.
-**v1.6 and v1.5 are history.**
+The active specification is **Trahens Core v1.8**, registry **1.8.0**.
+**v1.7, v1.6 and v1.5 are history.**
 
-v1.7 rebuilds the end-to-end route channel on a directional key schedule with
+v1.8 replaces the pre-shared adjacent-link key and configured epoch with an
+authenticated handshake. **B1.1** is a Noise `XX` exchange over X25519 between
+peers that pin each other's static key, with the profile set negotiated inside
+the authenticated transcript. Every process session now derives its own
+directional W2 keys and its own link epoch, so a node cannot restart into an
+epoch it has already used: it no longer chooses one. Rekeys are a fresh
+handshake under Noise `XXpsk0`, chained through an export key. The protocol
+version byte becomes `3`, so v1.7 and v1.8 do not interoperate — and a v1.7 node
+cannot bring a link up at all, because it has no handshake to offer.
+
+v1.7 rebuilt the end-to-end route channel on a directional key schedule with
 counter nonces and a per-direction replay window, closing an end-to-end `DATA`
-replay an intermediate relay could otherwise mount, and signs the gateway offer
+replay an intermediate relay could otherwise mount, and signed the gateway offer
 over a transcript binding the protocol version, suite, reply key, and parameter
-digest. The protocol version byte becomes `2`, so v1.6 and v1.7 do not
-interoperate.
+digest. v1.8 keeps both unchanged.
 
 v1.6 separated the suite-independent routing nonce from the suite-sized
 eligibility field. This added 32 bytes to `DISCOVER`, so v1.5 and v1.6 do not
-interoperate either; v1.7 keeps that encoding unchanged. The v1.6 and v1.5
-registries, vectors, corpora, and generated Markdown remain only so those
-historical profiles stay reproducible; no current binary speaks them.
+interoperate either; v1.7 and v1.8 keep that encoding unchanged. The v1.7, v1.6
+and v1.5 registries, vectors, corpora, and generated Markdown remain only so
+those historical profiles stay reproducible; no current binary speaks them.
 
 The active profile stack is:
 
+- **B1.1** — authenticated adjacent-link establishment with session-derived directional keys and epoch;
 - **U1** — branch-local representation replacement and conditional passive unlinkability;
 - **E1** — deterministic route lifecycle, event precedence, and cleanup;
 - **R1** — generic rendezvous-gateway discovery with post-READY capability redemption;
@@ -44,13 +54,13 @@ The active profile stack is:
 - **T3** — equal-budget multi-link classification and active probing analysis;
 - **T4** — packet-event emulation with clocks, jitter, bottlenecks, churn, partial observation, and selective delay.
 
-The mandatory interoperability path is U1 + E1 + R1 + M2 + W2 + T1 + fixed
-T2/P1. Adaptive T2 and C1 eligibility are selectable experimental profiles with
-their own narrower CI gates. T3 and T4 remain analysis profiles.
+The mandatory interoperability path is B1.1 + U1 + E1 + R1 + M2 + W2 + T1 +
+fixed T2/P1. Adaptive T2 and C1 eligibility are selectable experimental profiles
+with their own narrower CI gates. T3 and T4 remain analysis profiles.
 
 ## Complete-system boundaries
 
-Core v1.7 is not a complete endpoint-anonymity system.
+Core v1.8 is not a complete endpoint-anonymity system.
 
 ### Private directory
 
@@ -61,15 +71,20 @@ timing, authorization, and directory-gateway collusion remain unresolved.
 
 ### Network bootstrap
 
-P1 starts only after an authenticated graph of adjacent nodes already exists.
-The current prototype receives peer addresses, node IDs, link epochs, and
-32-byte link base keys from configuration. It therefore demonstrates **route
-bootstrap**, not autonomous network bootstrap.
+Adjacent-link authentication is now inside the profile: peers establish their
+link keys through the B1.1 handshake rather than being handed them. What the
+prototype still receives from configuration is the peer list itself — addresses,
+node IDs, and each peer's pinned static public key. It therefore demonstrates
+**route bootstrap over a named peer set**, not autonomous network bootstrap.
 
 The non-normative [`spec/network-bootstrap-b1.md`](spec/network-bootstrap-b1.md)
-records future work for peer discovery, admission, authenticated adjacent-link
-key exchange, profile negotiation, gateway-service advertisement, and
-directory-root discovery.
+records the remaining stages, B1.2 onward: peer discovery, admission,
+gateway-service advertisement, and directory-root discovery.
+
+Under Noise `XX` the responder sends its static key in message 2 under
+ephemeral-only protection, so an active prober that can send a first message
+learns the responder's identity. Registry limits bound what such probing costs,
+but nothing in the pattern hides it; B1.2's cookie gate is what would.
 
 ### Traffic analysis
 
@@ -84,7 +99,7 @@ A destination creates a short-lived one-time capability, registers its
 commitment at selected rendezvous gateways, and privately distributes a
 descriptor to an authorized initiator.
 
-A v1.7 `DISCOVER` contains:
+A v1.8 `DISCOVER` contains:
 
 - a suite-independent 32-byte routing nonce;
 - a suite-sized eligibility field.
@@ -135,11 +150,12 @@ authentication, and an Extract-then-Expand key schedule. Full reply-layer
 unlinkability remains conditional on key privacy and independent review of the
 complete multi-user composition.
 
-## v1.7 P1 implementation
+## v1.8 P1 implementation
 
-The registry in `spec/protocol-registry-v1.7.json` generates Python, Rust, and
+The registry in `spec/protocol-registry-v1.8.json` generates Python, Rust, and
 Markdown constants. Independent generators produce canonical and noncanonical
-M2 vectors and the binary corpus.
+M2 vectors and the binary corpus, and the B1.1 handshake vectors are
+additionally cross-checked against an independent Noise implementation.
 
 Three Rust executables use ordinary UDP:
 
@@ -149,9 +165,9 @@ trahens-relay
 trahens-rendezvous
 ```
 
-They implement fixed 1,052-byte W2 records, bounded T1 recovery, selectable T2
-scheduling, typed route state, atomic R1 redemption, experimental C1
-eligibility, and zeroizing secret wrappers.
+They implement the B1.1 link handshake, fixed 1,052-byte W2 records, bounded T1
+recovery, selectable T2 scheduling, typed route state, atomic R1 redemption,
+experimental C1 eligibility, and zeroizing secret wrappers.
 
 The Linux namespace harness starts each process separately, builds veth
 networks, applies `tc netem`, captures every link, and checks packet size,
@@ -173,7 +189,7 @@ The highest-value remaining work is:
 3. a concrete and reviewed D1 directory;
 4. real multi-host measurement;
 5. independent traffic-analysis evaluation;
-6. explicit B1 identity, admission, and adjacent-link bootstrap profiles.
+6. B1.2 onward: identity, admission, and bounded peer discovery.
 
 ## Repository map
 
@@ -206,14 +222,15 @@ make check
 Start with:
 
 1. [`FORDUMMY.md`](FORDUMMY.md)
-2. [`spec/core-v1.7.md`](spec/core-v1.7.md)
-3. [`spec/p1-prototype-profile-v1.7.md`](spec/p1-prototype-profile-v1.7.md)
-4. [`spec/protocol-registry-v1.7.md`](spec/protocol-registry-v1.7.md)
-5. [`docs/implementing-trahens-p1.md`](docs/implementing-trahens-p1.md)
-6. [`docs/p1-acceptance-evidence.md`](docs/p1-acceptance-evidence.md)
-7. [`docs/threat-model.md`](docs/threat-model.md)
-8. [`spec/private-directory-d1.md`](spec/private-directory-d1.md)
-9. [`spec/network-bootstrap-b1.md`](spec/network-bootstrap-b1.md)
+2. [`spec/core-v1.8.md`](spec/core-v1.8.md)
+3. [`spec/link-handshake-b1.md`](spec/link-handshake-b1.md)
+4. [`spec/p1-prototype-profile-v1.8.md`](spec/p1-prototype-profile-v1.8.md)
+5. [`spec/protocol-registry-v1.8.md`](spec/protocol-registry-v1.8.md)
+6. [`docs/implementing-trahens-p1.md`](docs/implementing-trahens-p1.md)
+7. [`docs/p1-acceptance-evidence.md`](docs/p1-acceptance-evidence.md)
+8. [`docs/threat-model.md`](docs/threat-model.md)
+9. [`spec/private-directory-d1.md`](spec/private-directory-d1.md)
+10. [`spec/network-bootstrap-b1.md`](spec/network-bootstrap-b1.md)
 
 ## Development-record note
 

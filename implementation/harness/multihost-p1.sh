@@ -27,7 +27,7 @@ set -euo pipefail
 
 RELAYS=1
 PORT=4242
-EPOCH=1
+# No EPOCH: derived from the B1.1 handshake since v1.8.
 TIMEOUT_MS=45000
 OUTPUT="${PWD}/build/p1-multihost"
 BIN_DIR="implementation/rust/target/release"

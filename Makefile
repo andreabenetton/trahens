@@ -108,7 +108,8 @@ clean:
 
 .PHONY: registry p1-vectors b1-vectors rust-test p1-harness
 registry:
-	python tools/generate_protocol_registry.py --python-output simulator/trahens_spec/generated.py --rust-output implementation/rust/crates/protocol-registry/src/generated.rs --markdown-output spec/protocol-registry-v1.7.md
+	python tools/generate_protocol_registry.py --python-output simulator/trahens_spec/generated.py --rust-output implementation/rust/crates/protocol-registry/src/generated.rs --markdown-output spec/protocol-registry-v1.8.md
+	python tools/generate_protocol_registry.py --registry spec/protocol-registry-v1.7.json --markdown-output spec/protocol-registry-v1.7.md
 	python tools/generate_protocol_registry.py --registry spec/protocol-registry-v1.6.json --markdown-output spec/protocol-registry-v1.6.md
 	python tools/generate_protocol_registry.py --registry spec/protocol-registry-v1.5.json --markdown-output spec/protocol-registry-v1.5.md
 

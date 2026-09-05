@@ -2,7 +2,7 @@
 
 # Trahens, explained in plain language
 
-This document explains **Trahens Core v1.7 and its P1 prototype** without
+This document explains **Trahens Core v1.8 and its P1 prototype** without
 requiring the reader to begin with cryptographic notation, packet layouts, or
 state-machine specifications.
 
@@ -50,28 +50,36 @@ Trahens P1 does **not** currently create a network from nothing.
 Before P1 starts, the following must already exist:
 
 - UDP or equivalent underlay connectivity between adjacent nodes;
-- the address of each adjacent peer;
-- an authenticated adjacent-link key and link epoch;
+- the address of each adjacent peer, and that peer's public identity key;
 - a configured graph of endpoints, relays, and gateways;
 - a destination registration at one or more gateways;
 - a private descriptor known to the authorized initiator.
 
-The current Rust prototype receives peer addresses, node IDs, epochs, and
-32-byte base keys from command-line configuration. The test harness creates the
-network namespaces, veth links, routes, and keys before starting the nodes.
+Adjacent-link keys are **not** on that list any more. Since v1.8 the two ends of
+a link run an authenticated handshake and derive their own keys from it, so
+nothing has to be installed in advance except each side's knowledge of the
+other's public identity key. This is what B1.1 added, and it means a node cannot
+accidentally restart onto keys it has already used.
+
+The current Rust prototype still receives peer addresses, node IDs, and pinned
+peer identity keys from command-line configuration. The test harness creates the
+network namespaces, veth links, routes, and identity keys before starting the
+nodes.
 
 That is **static network configuration**, not autonomous Trahens network
-bootstrap.
+bootstrap. Knowing which peers exist is still someone else's job.
 
 A future non-normative design, [`spec/network-bootstrap-b1.md`](spec/network-bootstrap-b1.md),
-records how peer discovery, admission, authenticated key exchange, profile
-negotiation, gateway-service advertisement, and directory-root discovery could
-be added without mixing them into P1.
+records how peer discovery, admission, gateway-service advertisement, and
+directory-root discovery could be added without mixing them into P1. Its
+adjacent-link stage is already done; what remains is stage B1.2 onward.
 
 The intended separation is:
 
 ```text
-underlay and authenticated adjacent links
+underlay connectivity and a known peer set
+                    ↓
+      B1.1 authenticated adjacent links
                     ↓
           Trahens P1 route discovery
                     ↓
@@ -165,7 +173,7 @@ for the destination.
 The initiator creates a bounded discovery branch and sends `DISCOVER` to one
 adjacent relay.
 
-A v1.7 `DISCOVER` contains two different per-hop values:
+A v1.8 `DISCOVER` contains two different per-hop values:
 
 ### Routing nonce
 
@@ -262,7 +270,7 @@ reply-key transformation for that hop.
 The initiator can verify the complete chain. Intermediate relays cannot open
 the final gateway offer.
 
-The v1.7 candidate chain binds the **routing nonce chain**. It does not bind the
+The v1.8 candidate chain binds the **routing nonce chain**. It does not bind the
 eligibility field end to end; that field is transformed hop by hop and protected
 on each adjacent W2 link. A future eligibility suite requiring end-to-end field
 binding must define it itself.
@@ -368,6 +376,32 @@ Cleanup is local and does not require the remote peer to cooperate.
 
 Trahens separates the meaning of a message from how that message appears on one
 physical link.
+
+### B1.1: bringing the link up
+
+Before any of the machinery below can run, the two ends of a link must agree on
+keys. They do this with a short authenticated exchange — three messages, each
+padded to the same 1,052-byte size as every other record, so the handshake is
+not distinguishable by length from ordinary traffic.
+
+Each side already knows the other's public identity key from configuration.
+During the exchange each proves it holds the matching private key, and either
+side aborts if the key it is shown is not the one it expected. Both ends then
+derive, from the exchange itself:
+
+- one encryption key for each direction;
+- the link epoch, a number that separates this session from every previous one;
+- a chaining key used if the link later needs fresh keys.
+
+Deriving the epoch rather than configuring it is what makes restart safe. In
+earlier versions an operator had to remember to change the epoch whenever a node
+restarted, and nothing checked it; now neither side chooses the epoch, so
+neither can repeat one.
+
+Two honest caveats. A node answers the first handshake message before it knows
+who sent it, which costs it some work — bounded, but not free. And its reply
+contains its own identity key, so anyone who can send a first message can learn
+which node is listening. Hiding that is a later stage's job.
 
 ### M2: logical messages
 
@@ -521,8 +555,9 @@ unimplemented.
 
 ## 19. Mandatory and experimental parts
 
-### Mandatory v1.7 interoperability path
+### Mandatory v1.8 interoperability path
 
+- **B1.1** — authenticated adjacent-link establishment with session-derived keys and epoch;
 - **U1** — branch-local representation replacement;
 - **E1** — route lifecycle and cleanup;
 - **R1** — generic gateway discovery and capability redemption;
@@ -536,7 +571,7 @@ unimplemented.
 - adaptive T2 scheduling;
 - C1 v2 eligibility.
 
-C1 is now a live experimental path in v1.7. It requires an explicit
+C1 is now a live experimental path in v1.8. It requires an explicit
 experimental profile and an explicit suite choice. It must not be cited as
 proof of endpoint anonymity, and its algebraic tagging negative control remains
 relevant.
@@ -545,7 +580,7 @@ relevant.
 
 - T3 and T4 traffic-analysis experiments;
 - D1 private-directory design;
-- B1 network bootstrap design;
+- B1.2 onward: peer discovery and admission design;
 - symbolic and disabled C2 research constructions.
 
 ---
@@ -554,7 +589,7 @@ relevant.
 
 The repository includes:
 
-- a normative v1.7 registry;
+- a normative v1.8 registry;
 - canonical and noncanonical conformance vectors;
 - Rust endpoint, relay, and rendezvous executables;
 - fuzz targets;
@@ -587,7 +622,8 @@ measurement, D1, and a reviewed B1 profile remain important milestones.
 ```text
 Before P1
 ---------
-Operator / future B1             : establish authenticated adjacent links
+Operator                         : configure peer addresses and pinned keys
+Adjacent peers (B1.1)            : authenticate and derive link keys
 Destination -> selected gateways : register capability commitments
 Destination -> Initiator         : privately deliver descriptor/capability
 
@@ -628,19 +664,20 @@ ensuring that:
 - the protocol states which privacy, directory, bootstrap, and cryptographic
   questions remain unresolved.
 
-That is the current contribution of Trahens Core v1.7.
+That is the current contribution of Trahens Core v1.8.
 
 ---
 
 ## Further reading
 
 1. [`README.md`](README.md) — current status and claim boundary.
-2. [`spec/core-v1.7.md`](spec/core-v1.7.md) — active interoperability profile.
-3. [`spec/p1-prototype-profile-v1.7.md`](spec/p1-prototype-profile-v1.7.md) — runtime acceptance gate.
-4. [`docs/implementing-trahens-p1.md`](docs/implementing-trahens-p1.md) — second-implementation guide.
-5. [`docs/threat-model.md`](docs/threat-model.md) — adversaries and exclusions.
-6. [`spec/rendezvous-capability-r1.md`](spec/rendezvous-capability-r1.md) — mandatory rendezvous model.
-7. [`spec/private-directory-d1.md`](spec/private-directory-d1.md) — directory strawman.
-8. [`spec/network-bootstrap-b1.md`](spec/network-bootstrap-b1.md) — future bootstrap architecture.
-9. [`spec/transport-profile-t1.md`](spec/transport-profile-t1.md) and
+2. [`spec/core-v1.8.md`](spec/core-v1.8.md) — active interoperability profile.
+3. [`spec/link-handshake-b1.md`](spec/link-handshake-b1.md) — mandatory adjacent-link handshake.
+4. [`spec/p1-prototype-profile-v1.8.md`](spec/p1-prototype-profile-v1.8.md) — runtime acceptance gate.
+5. [`docs/implementing-trahens-p1.md`](docs/implementing-trahens-p1.md) — second-implementation guide.
+6. [`docs/threat-model.md`](docs/threat-model.md) — adversaries and exclusions.
+7. [`spec/rendezvous-capability-r1.md`](spec/rendezvous-capability-r1.md) — mandatory rendezvous model.
+8. [`spec/private-directory-d1.md`](spec/private-directory-d1.md) — directory strawman.
+9. [`spec/network-bootstrap-b1.md`](spec/network-bootstrap-b1.md) — remaining bootstrap architecture (B1.2 onward).
+10. [`spec/transport-profile-t1.md`](spec/transport-profile-t1.md) and
    [`spec/transport-profile-t2.md`](spec/transport-profile-t2.md) — recovery and scheduling.

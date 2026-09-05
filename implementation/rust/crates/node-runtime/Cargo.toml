@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 codec-m2 = { path = "../codec-m2" }
+link-handshake-b1 = { path = "../link-handshake-b1" }
 protocol-registry = { path = "../protocol-registry" }
 state-machine = { path = "../state-machine" }
 scheduling-t2 = { path = "../scheduling-t2" }
