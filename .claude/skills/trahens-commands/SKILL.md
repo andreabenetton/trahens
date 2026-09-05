@@ -20,14 +20,20 @@ make check
 make crypto-vectors
 make r1-vectors
 make t1-vectors  make t2-vectors  make t3-vectors  make t4-vectors
+make b1-vectors   # B1.1 handshake: an initial exchange and a chained rekey
 
 # Comparison/analysis runs
 make t1-compare  make t2-compare  make t3-compare  make t4-compare
 make r1-compare  make c2-compare  make fragmentation-compare
 make unlinkability-compare  make lifecycle-compare
+make policy-compare  make tagging-compare
 
 # Regenerate the protocol registry (Python, Rust, and Markdown outputs simultaneously)
 make registry     # python tools/generate_protocol_registry.py
+
+# The registry is embedded in the P1 conformance vectors, so a registry change
+# needs this too, or `make check` fails on the vectors rather than the registry.
+make p1-vectors
 
 # Build the LaTeX paper
 make paper
@@ -42,10 +48,38 @@ Requirements: Rust ≥1.82, `libsodium-dev`.
 cargo test --manifest-path implementation/rust/Cargo.toml --all-targets
 cargo build --release --manifest-path implementation/rust/Cargo.toml
 
-# Linux namespace interoperability harness (requires root, ip, tc, tcpdump)
+# What CI actually gates on. Plain `cargo fmt --check` fails with "Failed to
+# find targets" here; the workspace needs --all.
+cargo clippy --manifest-path implementation/rust/Cargo.toml --all-targets --locked
+cargo fmt --manifest-path implementation/rust/Cargo.toml --all --check
+
+# Outside the workspace, so it needs its own manifest path: replays the B1.1
+# vectors against an independent Noise implementation.
+cargo test --manifest-path implementation/rust/crosscheck/Cargo.toml
+
+# Linux namespace interoperability harness (requires root, ip, tc, tcpdump).
+# It runs the release binaries, so `cargo build --release` first or it will
+# exercise the previous build and the result will be about the wrong code.
 sudo implementation/harness/netns-p1.sh --relays 2 --loss 5
 sudo implementation/harness/netns-p1.sh --relays 12 --loss 0
 sudo implementation/harness/netns-fanout.sh          # fan-out and off-route cancellation
+
+# Named scenarios, each asserting one thing the plain run does not. Several
+# expect the initiator to fail and check that it failed for the stated reason,
+# so a scenario passing is not the same as a route establishing.
+#   replay wrong-capability expired-capability unauthorized-pseudonym
+#                              -- R1 capability and gateway authorisation
+#   no-candidate transport-failure burst-loss
+#                              -- discovery exhaustion, teardown, T1 retry exhaustion
+#   late-peer wrong-pin rekey  -- B1.1: handshake retry, manifest pin, in-band rekey
+#   c1-not-eligible            -- experimental C1 profile only
+sudo implementation/harness/netns-p1.sh --relays 2 --loss 0 --scenario late-peer
+sudo implementation/harness/netns-p1.sh --relays 2 --loss 5 --scenario rekey
+
+# A restart must not reuse a link epoch. Runs the same topology twice with the
+# same static keys and requires the two sets of epochs to be disjoint; the epoch
+# is the one W2 field in the clear, so the captures are enough to check it.
+sudo OUTPUT=build/p1-restart implementation/harness/netns-restart.sh
 
 # Selectable experimental profiles, each with its own CI gate. Neither may be
 # cited as evidence for a mandatory gate line.
