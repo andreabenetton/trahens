@@ -13,7 +13,7 @@ use node_runtime::{
 };
 use protocol_registry::{
     ERROR_INTERNAL, ERROR_MALFORMED, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION,
-    ERROR_TIMEOUT, LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_MAX_FANOUT_CLASS, SUITE_R1,
+    ERROR_TIMEOUT, LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_MAX_FANOUT_CLASS, LIMIT_REKEY_AFTER_CELLS,
 };
 use rendezvous_r1::suite::{require_provider, C1Suite, EligibilitySuite, Profile, R1Suite, Role};
 use state_machine::{Event, IngressAdmission, Phase, RouteTable};
@@ -276,6 +276,10 @@ fn run() -> Result<(), Box<dyn Error>> {
     // One handshake identity per node, pinned per link: the link keys and
     // epoch come out of the B1.1 exchange rather than from configuration.
     let static_secret = parse_hex::<32>(args.required("static-seed")?)?;
+    // The registry ceiling is a maximum; a deployment may rekey sooner.
+    let rekey_after_cells =
+        usize::try_from(args.u64_or("rekey-after-cells", LIMIT_REKEY_AFTER_CELLS as u64)?)
+            .unwrap_or(LIMIT_REKEY_AFTER_CELLS);
     // Which T2 schedule profile this node runs. The mandatory P1 path is
     // fixed; adaptive renegotiates its rate and is therefore outside the
     // fixed-trace claim, which is a claim about a constant cadence.
@@ -325,6 +329,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             peer: args.socket("upstream-peer")?,
             static_secret,
             peer_static: parse_hex::<32>(args.required("upstream-static")?)?,
+            rekey_after_cells,
             suite: wire_suite,
             adaptive,
         },
@@ -359,6 +364,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     peer_static: parse_hex::<32>(
                         args.required(&format!("downstream-static{suffix}"))?,
                     )?,
+                    rekey_after_cells,
                     suite: wire_suite,
                     adaptive,
                 },
@@ -1212,6 +1218,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use protocol_registry::SUITE_R1;
 
     #[test]
     fn an_abort_is_a_bare_failure_teardown() {

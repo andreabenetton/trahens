@@ -12,7 +12,8 @@ use protocol_registry::{
     ERROR_UNSUPPORTED_SUITE, ERROR_UNSUPPORTED_VERSION, FIXED_T2_ACK_RESERVE_PER_EPOCH,
     FIXED_T2_CELLS_PER_EPOCH, FIXED_T2_EPOCH_MS, FIXED_T2_QUEUE_CELLS_GLOBAL,
     FIXED_T2_QUEUE_CELLS_PER_PEER, FIXED_T2_RETRANSMIT_RESERVE_PER_EPOCH, LIMIT_MAX_T1_RETRIES,
-    LIMIT_T1_ACK_DELAY_MAX_MS, LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS, SUITE_R1,
+    LIMIT_REKEY_AFTER_CELLS, LIMIT_REKEY_AFTER_MS, LIMIT_REKEY_OVERLAP_MS,
+    LIMIT_T1_ACK_DELAY_MAX_MS, LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS,
 };
 use scheduling_t2::{
     decode_schedule_header, encode_schedule_header, FixedSchedule, QueueBudget, RateNegotiation,
@@ -49,6 +50,12 @@ pub struct LinkConfig {
     /// R1-suited chaff among C1-suited data would be exactly the distinguisher
     /// fixed-size cells exist to remove.
     pub suite: [u8; 2],
+    /// Rekey after this many cells sent, capped by the registry ceiling.
+    ///
+    /// The registry value is a maximum, not a mandate: a deployment may rekey
+    /// more often, and the harness does exactly that to exercise the path
+    /// within a run rather than after four million cells.
+    pub rekey_after_cells: usize,
     /// Negotiate a T2 rate class instead of holding the frozen fixed profile.
     ///
     /// Off by default and off in CI: the P1 fixed-trace claim is a claim about
@@ -78,6 +85,9 @@ pub struct LinkMetrics {
     pub telemetry_dropped: u64,
     /// SCHEDULE cells emitted while negotiating a rate class.
     pub schedule_cells: u64,
+    /// Completed rekeys on this link. Zero on a run short enough not to reach
+    /// the trigger, which is every run at the registry ceiling.
+    pub rekeys: u64,
     pub reassembly: transport_t1::ReceiverMetrics,
     pub peak_queue_cells: usize,
     pub schedule: ScheduleMetrics,
@@ -193,6 +203,87 @@ impl std::fmt::Display for RuntimeError {
 }
 
 impl std::error::Error for RuntimeError {}
+
+/// Progress of an in-band rekey.
+///
+/// A rekey is a full handshake carried on a link that is already passing
+/// traffic, so it cannot block: each stage is advanced by whatever the loop
+/// next receives, and the outstanding record is resent on a timer until the
+/// peer answers.
+/// Advance a rekey by one received record, installing the new session when the
+/// exchange completes.
+///
+/// `install` is a callback rather than a return value because the caller owns
+/// the key material and the replay window this has to swap.
+#[allow(clippy::too_many_arguments)]
+fn advance_rekey(
+    socket: &UdpSocket,
+    config: &LinkConfig,
+    record: &[u8],
+    stage: link_handshake_b1::Stage,
+    initiator: bool,
+    export_key: &[u8; 32],
+    state: &mut RekeyState,
+    install: &mut dyn FnMut(handshake::LinkSession),
+) {
+    use link_handshake_b1::Stage;
+    match (stage, std::mem::replace(state, RekeyState::Idle)) {
+        // A peer opened a rekey. Only the non-initiator answers, so two ends
+        // cannot rekey past each other.
+        (Stage::Initiate, RekeyState::Idle) if !initiator => {
+            if let Some((responder, reply)) = handshake::answer_rekey(
+                config.suite,
+                config.static_secret,
+                config.peer_static,
+                export_key,
+                record,
+            ) {
+                let _ = socket.send(&reply);
+                *state = RekeyState::AwaitingFinish {
+                    responder: Box::new(responder),
+                    record: reply,
+                    last_send: Instant::now(),
+                };
+            }
+        }
+        (Stage::Respond, RekeyState::AwaitingRespond { mut initiator, .. }) => {
+            if initiator.read_respond(record).is_ok() {
+                if let Ok((finish, session)) = initiator.write_finish() {
+                    let _ = socket.send(&finish);
+                    install(handshake::directional(&session, true));
+                }
+            } else {
+                // Not ours, or lost in transit. Keep waiting; the outstanding
+                // record is still being resent.
+                *state = RekeyState::AwaitingRespond {
+                    initiator,
+                    record: Vec::new(),
+                    last_send: Instant::now(),
+                };
+            }
+        }
+        (Stage::Finish, RekeyState::AwaitingFinish { mut responder, .. }) => {
+            if let Ok(session) = responder.read_finish(record) {
+                install(handshake::directional(&session, false));
+            }
+        }
+        (_, other) => *state = other,
+    }
+}
+
+enum RekeyState {
+    Idle,
+    AwaitingRespond {
+        initiator: Box<link_handshake_b1::Initiator>,
+        record: Vec<u8>,
+        last_send: Instant,
+    },
+    AwaitingFinish {
+        responder: Box<link_handshake_b1::Responder>,
+        record: Vec<u8>,
+        last_send: Instant,
+    },
+}
 
 fn elapsed_ms(origin: Instant) -> u64 {
     origin.elapsed().as_millis().try_into().unwrap_or(u64::MAX)
@@ -470,6 +561,13 @@ impl EventSink {
 /// Epochs a link must hold a rate before proposing another change.
 const T2_HYSTERESIS_EPOCHS: u32 = 4;
 
+/// How long an outstanding rekey record waits before being resent.
+///
+/// Well under the handshake timeout, so a lost record costs a retry rather than
+/// the whole exchange, and long enough that a rekey does not add a burst to a
+/// link whose whole point is a constant cadence.
+const T2_REKEY_RESEND_MS: u64 = 200;
+
 /// Pad a 32-byte SCHEDULE header out to a full cell body.
 ///
 /// Every frame class is the same length on the wire, so a rate negotiation is
@@ -516,19 +614,19 @@ fn run_link(
         return;
     };
     let initiator = handshake::is_initiator(config.local_id, config.peer_id);
-    let (mut send_key, mut receive_key) = if initiator {
-        (
-            session.initiator_to_responder.0,
-            session.responder_to_initiator.0,
-        )
-    } else {
-        (
-            session.responder_to_initiator.0,
-            session.initiator_to_responder.0,
-        )
-    };
-    let epoch = session.epoch;
-    let mut export_key = session.export_key.0;
+    let opened = handshake::directional(&session, initiator);
+    let mut send_key = opened.send;
+    let mut receive_key = opened.receive;
+    let mut epoch = opened.epoch;
+    let mut export_key = opened.export;
+    // A rekey installs a new epoch, so records already in flight under the old
+    // one must still open for a bounded overlap. The old window comes with it:
+    // a replay is only refused if the window that saw the original is still
+    // the one consulted.
+    let mut previous: Option<(([u8; 32], u32), ReplayWindow, Instant)> = None;
+    let mut rekey = RekeyState::Idle;
+    let mut cells_since_rekey = 0_usize;
+    let mut last_rekey = Instant::now();
 
     let origin = Instant::now();
     let mut schedule = FixedSchedule::new(origin);
@@ -594,6 +692,55 @@ fn run_link(
         if sink.failed() {
             running = false;
             break;
+        }
+
+        // Rekey before the cell or time budget is spent. Only the initiator
+        // opens one; the peer answers.
+        let due = cells_since_rekey >= config.rekey_after_cells.min(LIMIT_REKEY_AFTER_CELLS)
+            || elapsed_ms(last_rekey) >= LIMIT_REKEY_AFTER_MS as u64;
+        if initiator && due && matches!(rekey, RekeyState::Idle) {
+            if let Some((state, record)) = handshake::begin_rekey(
+                config.suite,
+                config.static_secret,
+                config.peer_static,
+                &export_key,
+            ) {
+                let _ = socket.send(&record);
+                rekey = RekeyState::AwaitingRespond {
+                    initiator: Box::new(state),
+                    record,
+                    last_send: Instant::now(),
+                };
+            }
+            // Reset regardless: a failed attempt must not spin every iteration.
+            cells_since_rekey = 0;
+            last_rekey = Instant::now();
+        }
+        // Resend whatever the rekey is waiting on. UDP loses handshake records
+        // exactly as it loses cells.
+        match &mut rekey {
+            RekeyState::AwaitingRespond {
+                record, last_send, ..
+            }
+            | RekeyState::AwaitingFinish {
+                record, last_send, ..
+            } => {
+                if !record.is_empty() && elapsed_ms(*last_send) >= T2_REKEY_RESEND_MS {
+                    let _ = socket.send(record);
+                    *last_send = Instant::now();
+                }
+            }
+            RekeyState::Idle => {}
+        }
+        // Retire an overlap that has expired, so an old key never outlives its
+        // bounded window.
+        if previous
+            .as_ref()
+            .is_some_and(|(_, _, expiry)| Instant::now() >= *expiry)
+        {
+            if let Some(((mut old_key, _), _, _)) = previous.take() {
+                zeroize(&mut old_key);
+            }
         }
         loop {
             match commands.try_recv() {
@@ -677,7 +824,62 @@ fn run_link(
         loop {
             match socket.recv(&mut buffer) {
                 Ok(length) => {
-                    match open_record(&receive_key, epoch, &buffer[..length], &mut replay) {
+                    // A derived epoch always has its top bit set, so a leading
+                    // zero byte is a handshake record and never a cell. No
+                    // trial decryption is needed to tell them apart.
+                    if let Some((is_rekey, stage)) = handshake::record_stage(&buffer[..length]) {
+                        if is_rekey {
+                            // Copied out first: the installer below replaces
+                            // it, and the chain a rekey uses is the one in
+                            // force when the record arrived.
+                            let chain = export_key;
+                            advance_rekey(
+                                &socket,
+                                &config,
+                                &buffer[..length],
+                                stage,
+                                initiator,
+                                &chain,
+                                &mut rekey,
+                                &mut |installed: handshake::LinkSession| {
+                                    previous = Some((
+                                        (receive_key, epoch),
+                                        std::mem::replace(
+                                            &mut replay,
+                                            ReplayWindow::new(installed.epoch),
+                                        ),
+                                        Instant::now()
+                                            + Duration::from_millis(LIMIT_REKEY_OVERLAP_MS as u64),
+                                    ));
+                                    zeroize(&mut send_key);
+                                    send_key = installed.send;
+                                    receive_key = installed.receive;
+                                    epoch = installed.epoch;
+                                    export_key = installed.export;
+                                    cells_since_rekey = 0;
+                                    last_rekey = Instant::now();
+                                    metrics.rekeys = metrics.rekeys.saturating_add(1);
+                                },
+                            );
+                        }
+                        continue;
+                    }
+                    // Try the current generation, then a still-live previous
+                    // one. A failed open commits nothing, so the current
+                    // window is not poisoned by the attempt.
+                    let opened = open_record(&receive_key, epoch, &buffer[..length], &mut replay);
+                    let opened = match opened {
+                        Ok(value) => Ok(value),
+                        Err(error) => match previous.as_mut() {
+                            Some(((old_key, old_epoch), old_replay, expiry))
+                                if Instant::now() < *expiry =>
+                            {
+                                open_record(old_key, *old_epoch, &buffer[..length], old_replay)
+                            }
+                            _ => Err(error),
+                        },
+                    };
+                    match opened {
                         Ok((_received_sequence, body)) => {
                             metrics.received_cells = metrics.received_cells.saturating_add(1);
                             // A SCHEDULE cell carries the T2 profile byte where
@@ -906,6 +1108,7 @@ fn run_link(
                     if let Ok(record) = seal_record(&send_key, epoch, sequence, &body) {
                         if socket.send(&record).is_ok() {
                             metrics.sent_cells = metrics.sent_cells.saturating_add(1);
+                            cells_since_rekey = cells_since_rekey.saturating_add(1);
                             metrics.schedule_cells = metrics.schedule_cells.saturating_add(1);
                         }
                         sequence = sequence.saturating_add(1);
@@ -973,6 +1176,7 @@ fn run_link(
                 Ok(record) => {
                     if socket.send(&record).is_ok() {
                         metrics.sent_cells = metrics.sent_cells.saturating_add(1);
+                        cells_since_rekey = cells_since_rekey.saturating_add(1);
                     } else {
                         sink.report(LinkEvent::SecurityEvent {
                             peer_id: config.peer_id,
@@ -1329,7 +1533,7 @@ pub fn write_link_metrics(
             output.push_str(",\n");
         }
         output.push_str(&format!(
-            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"queue_cells_rejected\":{},\"events_dropped\":{},\"telemetry_dropped\":{},\"schedule_cells\":{},\"rate_class_changes\":{},\"duplicate_fragments\":{},\"capacity_drops\":{},\"metadata_failures\":{},\"peak_reassembly_messages\":{},\"peak_reassembly_bytes\":{},\"chaff_to_real_cell_ratio\":{:.4},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{},\"late_slots\":{},\"missed_slots\":{},\"worst_lateness_ms\":{},\"worst_jitter_us\":{},\"fixed_trace_valid\":{}}}",
+            "    {{\"peer_id\":{peer},\"sent_cells\":{},\"received_cells\":{},\"malformed_cells\":{},\"replay_rejections\":{},\"logical_messages_sent\":{},\"logical_messages_received\":{},\"transmission_failures\":{},\"ack_drops\":{},\"ack_coalesced\":{},\"queue_cells_rejected\":{},\"events_dropped\":{},\"telemetry_dropped\":{},\"schedule_cells\":{},\"rekeys\":{},\"rate_class_changes\":{},\"duplicate_fragments\":{},\"capacity_drops\":{},\"metadata_failures\":{},\"peak_reassembly_messages\":{},\"peak_reassembly_bytes\":{},\"chaff_to_real_cell_ratio\":{:.4},\"peak_queue_cells\":{},\"slots\":{},\"ack_cells\":{},\"retransmission_cells\":{},\"new_data_cells\":{},\"chaff_cells\":{},\"late_slots\":{},\"missed_slots\":{},\"worst_lateness_ms\":{},\"worst_jitter_us\":{},\"fixed_trace_valid\":{}}}",
             metrics.sent_cells,
             metrics.received_cells,
             metrics.malformed_cells,
@@ -1343,6 +1547,7 @@ pub fn write_link_metrics(
             metrics.events_dropped,
             metrics.telemetry_dropped,
             metrics.schedule_cells,
+            metrics.rekeys,
             metrics.schedule.rate_class_changes,
             metrics.reassembly.duplicate_fragments,
             metrics.reassembly.capacity_drops,
@@ -1370,7 +1575,7 @@ pub fn write_link_metrics(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use protocol_registry::{ERROR_AUTHENTICATION_FAILED, ERROR_MALFORMED};
+    use protocol_registry::{ERROR_AUTHENTICATION_FAILED, ERROR_MALFORMED, SUITE_R1};
 
     #[test]
     fn equal_time_events_follow_the_specified_precedence() {

@@ -159,8 +159,18 @@ unrelated handshake from being spliced in as a rekey, and because the export
 key reaches the chaining key, it also means a rekey's traffic keys differ from
 the replaced session's even if every ephemeral were to repeat.
 
+Only the initiator opens a rekey, by the same lower-identifier rule that decides
+who opens the initial handshake, so two ends cannot rekey past each other. A
+rekey is carried in band on a link that is already passing traffic: records are
+distinguished from cells by the leading zero byte, the outstanding record is
+resent on a timer until the peer answers, and normal traffic continues under the
+current keys throughout.
+
 The initiator MUST rekey before `rekey_after_cells` cells have been sent in
-either direction or `rekey_after_ms` has elapsed, whichever comes first. On
+either direction or `rekey_after_ms` has elapsed, whichever comes first. Those
+registry values are ceilings, not mandates: an implementation MAY rekey sooner,
+and a conformance run is expected to, because no realistic run reaches the
+ceiling. On
 completion each side switches its send key immediately and zeroizes the old
 one; it keeps the old receive key for at most `rekey_overlap_ms`, then zeroizes
 it. A record that authenticates under neither key is rejected.

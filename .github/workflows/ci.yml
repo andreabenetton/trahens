@@ -118,6 +118,11 @@ jobs:
             --timeout-ms 20000 --output "$GITHUB_WORKSPACE/build/p1-expired-capability"
       # Gate line: success, cancellation, timeout, and transport failure all
       # reclaim remote state.
+      - name: A link rekeys under live traffic without disturbing the route
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 2 --loss 5 --scenario rekey --timeout-ms 25000 \
+            --output "$GITHUB_WORKSPACE/build/p1-rekey"
       - name: Descriptor-unauthorized gateway pseudonym is refused
         run: |
           sudo -E implementation/harness/netns-p1.sh \

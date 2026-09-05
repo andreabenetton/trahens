@@ -136,6 +136,14 @@ case "$SCENARIO" in
     ELIGIBILITY_SUITE=c1
     INITIATOR_LABEL="not-this-gateway"
     EXPECT_ENDPOINT_FAILURE=1 ;;
+  rekey)
+    # Force a rekey inside the run by lowering the trigger far below the
+    # registry ceiling, which no run would otherwise reach. Fixed T2 emits 16
+    # cells per 200 ms epoch on every link, so a few dozen cells is a second or
+    # two: the route is established, rekeys underneath, and must keep working.
+    # The gate is the ordinary success gate -- data both ways, clean teardown --
+    # because the whole point is that a rekey is invisible to the route above it.
+    P1_REKEY_AFTER_CELLS=48 ;;
   unauthorized-pseudonym)
     # The gateway signs with the key the initiator expects but advertises a
     # pseudonym the descriptor does not list, which is what a stale descriptor
@@ -380,6 +388,17 @@ if (( EXPECT_RETRY_EXHAUSTION )); then
   # Exhaustion must be reported once per transmission and leave nothing behind;
   # the live_routes assertion above already covers the state side.
   echo "scenario ${SCENARIO}: retry exhaustion reached cleanly"
+fi
+if [[ -n "${P1_REKEY_AFTER_CELLS:-}" ]]; then
+  # A run that lowered the trigger but rekeyed nothing would pass the ordinary
+  # gate while testing nothing, so the count is the assertion.
+  REKEYS=$(cat "$OUTPUT"/*.metrics.json | grep -o '"rekeys":[0-9]*' | cut -d: -f2 |
+    awk '{ total += $1 } END { print total + 0 }')
+  if (( REKEYS == 0 )); then
+    echo "scenario ${SCENARIO}: no link rekeyed, so the run proved nothing" >&2
+    exit 1
+  fi
+  echo "scenario ${SCENARIO}: ${REKEYS} rekey(s) completed under live traffic"
 fi
 if (( EXPECT_ENDPOINT_FAILURE )); then
   if (( STATUS == 0 )); then

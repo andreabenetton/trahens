@@ -14,7 +14,7 @@ use node_runtime::{
 use protocol_registry::{
     ERROR_AUTHENTICATION_FAILED, ERROR_CANCELLED, ERROR_CAPABILITY_INVALID, ERROR_EXPIRED,
     ERROR_INTERNAL, ERROR_NOT_ELIGIBLE, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
-    LIMIT_CAPABILITY_TTL_MS, LIMIT_ROUTE_TTL_MS,
+    LIMIT_CAPABILITY_TTL_MS, LIMIT_REKEY_AFTER_CELLS, LIMIT_ROUTE_TTL_MS,
 };
 use rendezvous_r1::suite::{require_provider, C1Suite, EligibilitySuite, Profile, R1Suite};
 use state_machine::{Event, RouteTable};
@@ -187,6 +187,11 @@ fn run() -> Result<(), Box<dyn Error>> {
     // peer's presented static key must match.
     let static_secret = parse_hex::<32>(args.required("static-seed")?)?;
     let peer_static = parse_hex::<32>(args.required("peer-static")?)?;
+    // The registry ceiling is a maximum; a deployment may rekey sooner, and
+    // the harness does so to exercise the path inside a run.
+    let rekey_after_cells =
+        usize::try_from(args.u64_or("rekey-after-cells", LIMIT_REKEY_AFTER_CELLS as u64)?)
+            .unwrap_or(LIMIT_REKEY_AFTER_CELLS);
     let expected_gateway_public = parse_hex::<32>(args.required("gateway-public")?)?;
     // The pseudonyms this destination's descriptor authorises. The gateway
     // signature proves a pseudonym was asserted by that gateway key; it does
@@ -254,6 +259,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             peer: args.socket("peer")?,
             static_secret,
             peer_static,
+            rekey_after_cells,
             suite: wire_suite,
             adaptive,
         },

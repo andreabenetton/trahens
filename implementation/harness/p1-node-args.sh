@@ -14,6 +14,11 @@
 # empty if unused. They are expanded without ':-' on purpose: that form injects
 # an empty-string argument for an empty array, which a node then rejects as an
 # unexpected argument.
+# Rekey trigger, in cells. Empty means the registry ceiling, which no harness
+# run reaches; a scenario lowers it to exercise the path.
+declare -a P1_REKEY=()
+[[ -n "${P1_REKEY_AFTER_CELLS:-}" ]] && P1_REKEY=(--rekey-after-cells "$P1_REKEY_AFTER_CELLS")
+
 declare -a P1_ADAPTIVE=("${P1_ADAPTIVE[@]:-}")
 declare -a P1_SUITE=("${P1_SUITE[@]:-}")
 declare -a P1_ENDPOINT_EXTRA=("${P1_ENDPOINT_EXTRA[@]:-}")
@@ -65,6 +70,7 @@ p1_endpoint_args() {
   P1_NODE_ARGS=(
     --id 1 --peer-id 2
     "${P1_ADAPTIVE[@]}"
+    "${P1_REKEY[@]}"
     "${P1_SUITE[@]}"
     --bind "$1" --peer "$2"
     --static-seed "$(p1_static_for 1)" --peer-static "$(p1_static_public 2)"
@@ -81,6 +87,7 @@ p1_relay_args() {
   P1_NODE_ARGS=(
     --id "$(( $1 + 1 ))" --upstream-id "$1" --downstream-id "$(( $1 + 2 ))"
     "${P1_ADAPTIVE[@]}"
+    "${P1_REKEY[@]}"
     "${P1_SUITE[@]}"
     --static-seed "$(p1_static_for "$(( $1 + 1 ))")"
     --upstream-bind "$2" --upstream-peer "$3"
@@ -96,6 +103,7 @@ p1_gateway_args() {
   P1_NODE_ARGS=(
     --id "$(( $1 + 1 ))" --peer-id "$1" --gateway-id 7
     "${P1_ADAPTIVE[@]}"
+    "${P1_REKEY[@]}"
     "${P1_SUITE[@]}"
     --bind "$2" --peer "$3"
     --static-seed "$(p1_static_for "$(( $1 + 1 ))")"

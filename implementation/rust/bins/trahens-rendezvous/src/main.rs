@@ -14,7 +14,8 @@ use node_runtime::{
 use protocol_registry::{
     ERROR_AUTHENTICATION_FAILED, ERROR_CANCELLED, ERROR_CAPABILITY_INVALID, ERROR_INTERNAL,
     ERROR_MALFORMED, ERROR_NOT_ELIGIBLE, ERROR_RESOURCE_EXHAUSTED, ERROR_STATE_VIOLATION,
-    ERROR_TIMEOUT, LIMIT_CAPABILITY_TTL_MS, LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE, SUITE_R1,
+    ERROR_TIMEOUT, LIMIT_CAPABILITY_TTL_MS, LIMIT_MAX_FAILED_REDEMPTIONS_PER_ROUTE,
+    LIMIT_REKEY_AFTER_CELLS,
 };
 use rendezvous_r1::suite::{require_provider, C1Suite, EligibilitySuite, Profile, R1Suite, Role};
 use rendezvous_r1::Registry;
@@ -229,6 +230,11 @@ fn run() -> Result<(), Box<dyn Error>> {
             peer: args.socket("peer")?,
             static_secret: parse_hex::<32>(args.required("static-seed")?)?,
             peer_static: parse_hex::<32>(args.required("peer-static")?)?,
+            // The registry ceiling is a maximum; a deployment may rekey sooner.
+            rekey_after_cells: usize::try_from(
+                args.u64_or("rekey-after-cells", LIMIT_REKEY_AFTER_CELLS as u64)?,
+            )
+            .unwrap_or(LIMIT_REKEY_AFTER_CELLS),
             suite: wire_suite,
             adaptive,
         },
@@ -718,6 +724,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use protocol_registry::SUITE_R1;
 
     #[test]
     fn control_envelopes_carry_the_r1_suite() {

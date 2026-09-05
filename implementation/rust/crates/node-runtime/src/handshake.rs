@@ -6,7 +6,7 @@
 //! epoch. No W2 cell and no P1 route state may exist on a link until this
 //! completes, so it runs to conclusion before the main loop starts.
 
-use link_handshake_b1::{Initiator, Offer, Profile, Responder, Selection, Session};
+use link_handshake_b1::{Initiator, Offer, Profile, Responder, Selection, Session, Stage};
 use protocol_registry::{
     B1_RECORD_HANDSHAKE_FINISH, B1_RECORD_HANDSHAKE_INITIATE, B1_RECORD_HANDSHAKE_RESPOND,
     B1_RECORD_REKEY_FINISH, B1_RECORD_REKEY_INITIATE, B1_RECORD_REKEY_RESPOND,
@@ -94,6 +94,101 @@ fn selection(suite: [u8; 2]) -> Selection {
         suite,
         resource_class: 1,
     }
+}
+
+/// One session's link material, oriented for this node.
+pub struct LinkSession {
+    pub send: [u8; 32],
+    pub receive: [u8; 32],
+    pub epoch: u32,
+    /// Chains the next rekey.
+    pub export: [u8; 32],
+}
+
+/// Orient a completed session's two directional keys for this node.
+pub fn directional(session: &Session, initiator: bool) -> LinkSession {
+    let (send, receive) = if initiator {
+        (
+            session.initiator_to_responder.0,
+            session.responder_to_initiator.0,
+        )
+    } else {
+        (
+            session.responder_to_initiator.0,
+            session.initiator_to_responder.0,
+        )
+    };
+    LinkSession {
+        send,
+        receive,
+        epoch: session.epoch,
+        export: session.export_key.0,
+    }
+}
+
+/// Classify a datagram that begins with the handshake marker.
+///
+/// A derived epoch always has its top bit set, so a leading zero byte cannot be
+/// a W2 cell. Returns which stage of which exchange the record claims to be;
+/// the claim is not trusted beyond dispatch, since the record still has to
+/// authenticate.
+pub fn record_stage(record: &[u8]) -> Option<(bool, Stage)> {
+    if record.len() != BYTES_B1_RECORD || record.first() != Some(&0) {
+        return None;
+    }
+    let kind = *record.get(1)?;
+    match kind {
+        _ if kind == B1_RECORD_HANDSHAKE_INITIATE => Some((false, Stage::Initiate)),
+        _ if kind == B1_RECORD_HANDSHAKE_RESPOND => Some((false, Stage::Respond)),
+        _ if kind == B1_RECORD_HANDSHAKE_FINISH => Some((false, Stage::Finish)),
+        _ if kind == B1_RECORD_REKEY_INITIATE => Some((true, Stage::Initiate)),
+        _ if kind == B1_RECORD_REKEY_RESPOND => Some((true, Stage::Respond)),
+        _ if kind == B1_RECORD_REKEY_FINISH => Some((true, Stage::Finish)),
+        _ => None,
+    }
+}
+
+/// Start a rekey as the initiator: the first record and the state to drive it.
+pub fn begin_rekey(
+    suite: [u8; 2],
+    static_secret: [u8; 32],
+    peer_static: [u8; 32],
+    previous_export: &[u8; 32],
+) -> Option<(Initiator, Vec<u8>)> {
+    let ephemeral = random_bytes::<32>().ok()?;
+    let mut initiator = Initiator::new(
+        profile(suite),
+        static_secret,
+        ephemeral,
+        peer_static,
+        offer(suite),
+        Some(previous_export),
+    )
+    .ok()?;
+    let record = initiator.write_initiate().ok()?;
+    Some((initiator, record))
+}
+
+/// Answer a peer's rekey: the reply record and the state to finish it.
+pub fn answer_rekey(
+    suite: [u8; 2],
+    static_secret: [u8; 32],
+    peer_static: [u8; 32],
+    previous_export: &[u8; 32],
+    initiate: &[u8],
+) -> Option<(Responder, Vec<u8>)> {
+    let ephemeral = random_bytes::<32>().ok()?;
+    let mut responder = Responder::new(
+        profile(suite),
+        static_secret,
+        ephemeral,
+        peer_static,
+        Some(previous_export),
+    )
+    .ok()?;
+    responder.read_initiate(initiate).ok()?;
+    let record = responder.write_respond(selection(suite)).ok()?;
+    Some((responder, record))
 }
 
 /// Which side opens the exchange.
