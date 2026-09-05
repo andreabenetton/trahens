@@ -283,6 +283,23 @@ fn run() -> Result<(), Box<dyn Error>> {
                     let state_expires_at_ms = clock
                         .now_ms()
                         .saturating_add(Phase::Discovering.lifetime_ms());
+                    // A peer filling the route table is admission pressure, not
+                    // a gateway fault. Propagating PeerLimit or GlobalLimit out
+                    // of run() let a flood of perfectly valid discoveries
+                    // terminate the process.
+                    //
+                    // Claimed before the offer is sealed, not after: resource
+                    // accounting requires bounded state to be reserved ahead of
+                    // expensive protocol operations, so an authenticated hostile
+                    // peer cannot keep buying scalar multiplications and
+                    // signatures from a gateway whose capacity is already gone.
+                    if states
+                        .begin(discover.branch_token, peer_id, 0, state_expires_at_ms)
+                        .is_err()
+                    {
+                        drops.record("rendezvous", ERROR_RESOURCE_EXHAUSTED, "route_table_limit");
+                        continue;
+                    }
                     // The reply key is remote input, so an invalid point is
                     // this peer's problem rather than the gateway's.
                     let Ok(blob) = seal_gateway_offer(
@@ -297,6 +314,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                         &signing_secret,
                     ) else {
                         drops.record("rendezvous", ERROR_MALFORMED, "discover_reply_public_key");
+                        let _ = states.apply(
+                            discover.branch_token,
+                            Event::CancelAccepted,
+                            clock.now_ms(),
+                        );
                         continue;
                     };
                     // The offer travels upstream under a label derived from
@@ -305,19 +327,13 @@ fn run() -> Result<(), Box<dyn Error>> {
                     // to while telling it apart from any sibling's offer.
                     let Ok(selector) = offer_label(&routing_nonce, 0) else {
                         drops.record("rendezvous", ERROR_INTERNAL, "offer_label_derivation");
+                        let _ = states.apply(
+                            discover.branch_token,
+                            Event::CancelAccepted,
+                            clock.now_ms(),
+                        );
                         continue;
                     };
-                    // A peer filling the route table is admission pressure, not
-                    // a gateway fault. Propagating PeerLimit or GlobalLimit out
-                    // of run() let a flood of perfectly valid discoveries
-                    // terminate the process.
-                    if states
-                        .begin(discover.branch_token, peer_id, 0, state_expires_at_ms)
-                        .is_err()
-                    {
-                        drops.record("rendezvous", ERROR_RESOURCE_EXHAUSTED, "route_table_limit");
-                        continue;
-                    }
                     if states
                         .apply(
                             discover.branch_token,
