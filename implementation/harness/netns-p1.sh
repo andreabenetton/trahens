@@ -136,6 +136,18 @@ case "$SCENARIO" in
     ELIGIBILITY_SUITE=c1
     INITIATOR_LABEL="not-this-gateway"
     EXPECT_ENDPOINT_FAILURE=1 ;;
+  wrong-pin)
+    # The initiator is given a static key for its peer that the peer does not
+    # hold. Under Noise XX the peer's real key still authenticates, so only the
+    # manifest pin can reject it -- and it must, before any key is derived.
+    #
+    # Discovery still starts: spawn_link returns before the handshake finishes,
+    # so the endpoint sends a DISCOVER into a link that never comes up. It goes
+    # nowhere, that link carries no cell, and the run ends in NO_CANDIDATE. The
+    # assertion below is on the handshake failure rather than on the endpoint's
+    # exit, so the scenario has to fail for the right reason.
+    P1_WRONG_PIN=99
+    EXPECT_ENDPOINT_FAILURE=1 ;;
   rekey)
     # Force a rekey inside the run by lowering the trigger far below the
     # registry ceiling, which no run would otherwise reach. Fixed T2 emits 16
@@ -399,6 +411,14 @@ if [[ -n "${P1_REKEY_AFTER_CELLS:-}" ]]; then
     exit 1
   fi
   echo "scenario ${SCENARIO}: ${REKEYS} rekey(s) completed under live traffic"
+fi
+if [[ -n "${P1_WRONG_PIN:-}" ]]; then
+  if ! grep -qs "link_handshake_failed" "$OUTPUT"/*.log "$OUTPUT"/*.err; then
+    echo "scenario ${SCENARIO}: no link reported a handshake failure, so the" >&2
+    echo "run may have failed for some unrelated reason" >&2
+    exit 1
+  fi
+  echo "scenario ${SCENARIO}: the manifest pin refused the link"
 fi
 if (( EXPECT_ENDPOINT_FAILURE )); then
   if (( STATUS == 0 )); then

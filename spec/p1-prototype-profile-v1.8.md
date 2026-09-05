@@ -42,6 +42,11 @@ B1.1 derives both directional keys and the epoch from a handshake whose
 transcript includes both sides' fresh ephemerals, so a restarted pair cannot
 reuse an epoch: neither end chooses one.
 
+`implementation/harness/netns-restart.sh` is the falsification test: it runs the
+same topology twice with the same static keys and peer list and requires the two
+sets of link epochs to be disjoint. The epoch is the one W2 field on the wire in
+the clear, so the captures are enough to check it.
+
 What remains an operator responsibility is the static handshake keys and the
 peer list. A node whose static key is disclosed can be impersonated, and a node
 given the wrong pinned key for a peer will refuse to talk to it. Neither is a

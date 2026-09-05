@@ -114,6 +114,8 @@ implementation/rust/fuzz/Cargo.toml
 implementation/rust/fuzz/fuzz_targets/m2.rs
 implementation/rust/fuzz/fuzz_targets/w2.rs
 implementation/harness/netns-p1.sh
+implementation/harness/netns-restart.sh
+tools/w2_epochs.py
 docs/external-review-2026-07-30.md
 docs/review-remediation-v1.4.1.md
 docs/development-record.md
@@ -437,6 +439,7 @@ STALE
 bash -n implementation/harness/netns-p1.sh
 bash -n implementation/harness/multihost-p1.sh
 bash -n implementation/harness/netns-fanout.sh
+bash -n implementation/harness/netns-restart.sh
 python -m compileall -q tools
 
 if command -v cargo >/dev/null 2>&1; then

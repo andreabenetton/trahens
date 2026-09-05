@@ -118,6 +118,13 @@ jobs:
             --timeout-ms 20000 --output "$GITHUB_WORKSPACE/build/p1-expired-capability"
       # Gate line: success, cancellation, timeout, and transport failure all
       # reclaim remote state.
+      - name: A restart cannot reuse a link epoch
+        run: sudo -E OUTPUT="$GITHUB_WORKSPACE/build/p1-restart" implementation/harness/netns-restart.sh
+      - name: A peer whose static key is not the pinned one is refused
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 2 --loss 0 --scenario wrong-pin \
+            --timeout-ms 15000 --output "$GITHUB_WORKSPACE/build/p1-wrong-pin"
       - name: A link rekeys under live traffic without disturbing the route
         run: |
           sudo -E implementation/harness/netns-p1.sh \

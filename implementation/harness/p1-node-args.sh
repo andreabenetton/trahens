@@ -64,6 +64,11 @@ PY
 # than recovery.
 p1_ring_window_ms() { echo $(( 1500 + $1 * 600 )); }
 
+# The static key the initiator pins for its only peer, node 2. A scenario may
+# point it at a node that is not on this link: the key the peer presents then
+# authenticates but is not the pinned one, so only the pin can reject it.
+p1_endpoint_peer_pin() { p1_static_public "${P1_WRONG_PIN:-2}"; }
+
 # p1_endpoint_args <bind> <peer> <link-index> <gateway-public> <capability>
 # Extra arguments for the caller's scenario go in P1_ENDPOINT_EXTRA.
 p1_endpoint_args() {
@@ -73,7 +78,7 @@ p1_endpoint_args() {
     "${P1_REKEY[@]}"
     "${P1_SUITE[@]}"
     --bind "$1" --peer "$2"
-    --static-seed "$(p1_static_for 1)" --peer-static "$(p1_static_public 2)"
+    --static-seed "$(p1_static_for 1)" --peer-static "$(p1_endpoint_peer_pin)"
     --gateway-public "$4" --capability "$5"
     --gateway-pseudonyms "$ENDPOINT_PSEUDONYMS"
     "${P1_ENDPOINT_EXTRA[@]}"
