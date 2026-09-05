@@ -78,6 +78,12 @@ unsafe extern "C" {
         key: *const c_uchar,
     ) -> c_int;
 
+    fn crypto_scalarmult_base(output: *mut c_uchar, scalar: *const c_uchar) -> c_int;
+    fn crypto_scalarmult(
+        output: *mut c_uchar,
+        scalar: *const c_uchar,
+        point: *const c_uchar,
+    ) -> c_int;
     fn crypto_core_ristretto255_is_valid_point(point: *const c_uchar) -> c_int;
     fn crypto_core_ristretto255_scalar_random(scalar: *mut c_uchar);
     fn crypto_core_ristretto255_scalar_mul(
@@ -350,6 +356,39 @@ fn valid_point(point: &[u8; 32]) -> Result<(), CryptoError> {
     } else {
         Err(CryptoError::InvalidEncoding)
     }
+}
+
+/// X25519 public key for a secret, as `crypto_scalarmult_base`.
+///
+/// Distinct from `scalar_base`, which is ristretto255. B1 handshake identities
+/// are X25519 so the Noise instantiation is the standard one; the reply path
+/// keeps ristretto255, whose group structure it needs.
+pub fn x25519_base(secret: &[u8; 32]) -> Result<[u8; 32], CryptoError> {
+    initialize()?;
+    let mut output = [0_u8; 32];
+    // SAFETY: both buffers are exactly the 32 bytes libsodium documents.
+    let result = unsafe { crypto_scalarmult_base(output.as_mut_ptr(), secret.as_ptr()) };
+    if result != 0 {
+        return Err(CryptoError::InvalidEncoding);
+    }
+    Ok(output)
+}
+
+/// X25519 Diffie-Hellman.
+///
+/// libsodium rejects the low-order points that produce an all-zero shared
+/// secret, so a contributory-behaviour failure surfaces as an error rather than
+/// as a silently predictable key.
+pub fn x25519(secret: &[u8; 32], public: &[u8; 32]) -> Result<[u8; 32], CryptoError> {
+    initialize()?;
+    let mut output = [0_u8; 32];
+    // SAFETY: all three buffers are exactly the 32 bytes libsodium documents.
+    let result =
+        unsafe { crypto_scalarmult(output.as_mut_ptr(), secret.as_ptr(), public.as_ptr()) };
+    if result != 0 {
+        return Err(CryptoError::InvalidEncoding);
+    }
+    Ok(output)
 }
 
 pub fn require_point(point: &[u8; 32]) -> Result<(), CryptoError> {
