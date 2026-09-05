@@ -118,6 +118,11 @@ jobs:
             --timeout-ms 20000 --output "$GITHUB_WORKSPACE/build/p1-expired-capability"
       # Gate line: success, cancellation, timeout, and transport failure all
       # reclaim remote state.
+      - name: Descriptor-unauthorized gateway pseudonym is refused
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 2 --loss 0 --scenario unauthorized-pseudonym \
+            --timeout-ms 20000 --output "$GITHUB_WORKSPACE/build/p1-unauthorized-pseudonym"
       - name: Exhausted ring schedule terminates with NO_CANDIDATE
         run: |
           sudo -E implementation/harness/netns-p1.sh \

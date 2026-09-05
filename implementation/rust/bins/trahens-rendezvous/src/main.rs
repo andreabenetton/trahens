@@ -176,7 +176,14 @@ fn run() -> Result<(), Box<dyn Error>> {
     // short-lived pseudonym together with the capability, and advertises that
     // same pseudonym in every candidate. It is a property of the
     // registration, not of an individual route.
-    let gateway_pseudonym = random_nonzero_16()?;
+    // A descriptor publishes the pseudonyms a destination will accept, so the
+    // gateway must be able to advertise a pseudonym the initiator was told
+    // about rather than one only it knows. P1 has no directory, so that comes
+    // from configuration; unset keeps the previous behaviour of minting one.
+    let gateway_pseudonym = match args.optional("gateway-pseudonym", "") {
+        "" => random_nonzero_16()?,
+        configured => parse_hex::<16>(configured)?,
+    };
     // Eligibility provider. r1 is the mandatory path; c1 is research and needs
     // the experimental profile, so selecting it takes two explicit choices.
     let suite_name = args.optional("eligibility-suite", "r1").to_owned();

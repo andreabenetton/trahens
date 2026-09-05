@@ -67,6 +67,12 @@ done
 
 SIGNING_SEED=$(printf '11%.0s' {1..32})
 CAPABILITY=$(printf '22%.0s' {1..32})
+# The pseudonym a descriptor would publish. Configured on both sides so the
+# initiator's authorisation check is actually exercised rather than skipped.
+# A scenario can move the gateway's advertised value away from the set the
+# initiator authorises while leaving the signing key alone.
+GATEWAY_PSEUDONYM=$(printf '33%.0s' {1..16})
+ENDPOINT_PSEUDONYMS=$GATEWAY_PSEUDONYM
 
 # Scenario wiring. Negative arms must still reclaim all remote state, which is
 # what the P1 gate requires of a rejected redemption.
@@ -129,6 +135,15 @@ case "$SCENARIO" in
     # only the recipient can tell, and the relays in between cannot.
     ELIGIBILITY_SUITE=c1
     INITIATOR_LABEL="not-this-gateway"
+    EXPECT_ENDPOINT_FAILURE=1 ;;
+  unauthorized-pseudonym)
+    # The gateway signs with the key the initiator expects but advertises a
+    # pseudonym the descriptor does not list, which is what a stale descriptor
+    # instance looks like. The signature verifies, so only the authorisation
+    # check can reject it; discovery then exhausts its schedule. Without that
+    # check the initiator would commit and spend its capability on the wrong
+    # instance.
+    GATEWAY_PSEUDONYM=$(printf '44%.0s' {1..16})
     EXPECT_ENDPOINT_FAILURE=1 ;;
   transport-failure)
     # The far link blackholes after setup begins, so a sender exhausts its T1

@@ -55,6 +55,7 @@ p1_endpoint_args() {
     "${P1_SUITE[@]}"
     --bind "$1" --peer "$2" --key "$(p1_key_for "$3")"
     --gateway-public "$4" --capability "$5"
+    --gateway-pseudonyms "$ENDPOINT_PSEUDONYMS"
     "${P1_ENDPOINT_EXTRA[@]}"
     --message "interoperable-p1" --timeout-ms "$TIMEOUT_MS"
     --metrics "$OUTPUT/endpoint.metrics.json"
@@ -81,6 +82,7 @@ p1_gateway_args() {
     "${P1_SUITE[@]}"
     --bind "$2" --peer "$3" --key "$(p1_key_for "$4")"
     --signing-seed "$SIGNING_SEED"
+    --gateway-pseudonym "$GATEWAY_PSEUDONYM"
     --capability "$CAPABILITY" --capability-ttl-ms "$5"
     --timeout-ms "$TIMEOUT_MS" --metrics "$OUTPUT/rendezvous.metrics.json"
   )

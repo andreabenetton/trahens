@@ -13,8 +13,8 @@ use node_runtime::{
 };
 use protocol_registry::{
     ERROR_AUTHENTICATION_FAILED, ERROR_CANCELLED, ERROR_CAPABILITY_INVALID, ERROR_EXPIRED,
-    ERROR_INTERNAL, ERROR_STATE_VIOLATION, ERROR_TIMEOUT, LIMIT_CAPABILITY_TTL_MS,
-    LIMIT_ROUTE_TTL_MS, SUITE_R1,
+    ERROR_INTERNAL, ERROR_NOT_ELIGIBLE, ERROR_STATE_VIOLATION, ERROR_TIMEOUT,
+    LIMIT_CAPABILITY_TTL_MS, LIMIT_ROUTE_TTL_MS,
 };
 use rendezvous_r1::suite::{require_provider, C1Suite, EligibilitySuite, Profile, R1Suite};
 use state_machine::{Event, RouteTable};
@@ -184,6 +184,21 @@ fn run() -> Result<(), Box<dyn Error>> {
     let peer_id = args.u32("peer-id")?;
     let base_key = parse_hex::<32>(args.required("key")?)?;
     let expected_gateway_public = parse_hex::<32>(args.required("gateway-public")?)?;
+    // The pseudonyms this destination's descriptor authorises. The gateway
+    // signature proves a pseudonym was asserted by that gateway key; it does
+    // not prove the pseudonym is one the initiator meant to use, which is what
+    // separates a current descriptor instance from a stale one. P1 has no
+    // directory, so the set arrives as configuration. Empty means unenforced,
+    // and the initiator says so rather than implying a check it is not making.
+    let authorized_pseudonyms: Vec<[u8; 16]> = args
+        .optional("gateway-pseudonyms", "")
+        .split(',')
+        .filter(|entry| !entry.is_empty())
+        .map(parse_hex::<16>)
+        .collect::<Result<_, _>>()?;
+    if authorized_pseudonyms.is_empty() {
+        structured_event("endpoint", "descriptor_pseudonyms_unenforced", &[]);
+    }
     let capability = SecretBytes(parse_hex::<32>(args.required("capability")?)?);
     let message = args.optional("message", "trahens-p1").as_bytes().to_vec();
     let timeout_ms = args.u64_or("timeout-ms", 20_000)?;
@@ -531,6 +546,21 @@ fn run() -> Result<(), Box<dyn Error>> {
                         drops.record("endpoint", ERROR_AUTHENTICATION_FAILED, "candidate_chain");
                         continue;
                     };
+                    // Reject a pseudonym the descriptor does not authorise
+                    // before the candidate is held or changes route phase.
+                    // Selecting an unauthorised one would spend a COMMIT and a
+                    // capability presentation on a stale descriptor instance.
+                    if !authorized_pseudonyms.is_empty()
+                        && !authorized_pseudonyms.contains(&opened.gateway_pseudonym)
+                    {
+                        candidates_dropped += 1;
+                        drops.record(
+                            "endpoint",
+                            ERROR_NOT_ELIGIBLE,
+                            "gateway_pseudonym_unauthorized",
+                        );
+                        continue;
+                    }
                     // An offer counts once however it was transmitted. A relay
                     // that has seen one legitimate candidate can resend it under
                     // a fresh tentative selector, so deduplicating on the
@@ -907,6 +937,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use protocol_registry::SUITE_R1;
 
     #[test]
     fn control_envelopes_carry_the_r1_suite() {
