@@ -510,6 +510,24 @@ fn run() -> Result<(), Box<dyn Error>> {
                         drops.record("endpoint", ERROR_AUTHENTICATION_FAILED, "candidate_chain");
                         continue;
                     };
+                    // An offer counts once however it was transmitted. A relay
+                    // that has seen one legitimate candidate can resend it under
+                    // a fresh tentative selector, so deduplicating on the
+                    // selector would not help; the identity has to come from the
+                    // signed offer itself. A gateway answers a branch once, and
+                    // the nonce is replaced at every hop, so two honest offers
+                    // never share these fields. Rejecting here also keeps a
+                    // duplicate from renewing route state below.
+                    if held.iter().any(|existing| {
+                        existing.opened.gateway_id == opened.gateway_id
+                            && existing.opened.gateway_pseudonym == opened.gateway_pseudonym
+                            && existing.opened.expires_at_ms == opened.expires_at_ms
+                            && existing.opened.routing_nonce == opened.routing_nonce
+                    }) {
+                        candidates_dropped += 1;
+                        drops.record("endpoint", ERROR_STATE_VIOLATION, "candidate_replay");
+                        continue;
+                    }
                     if state
                         .apply(branch_token, Event::CandidateAccepted, clock.now_ms())
                         .is_err()
