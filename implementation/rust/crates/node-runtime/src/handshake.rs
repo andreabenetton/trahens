@@ -240,6 +240,13 @@ fn exchange(
 ///
 /// `previous_export` chains a rekey to the session it replaces; `None` is an
 /// initial handshake.
+/// Returns the session and, for the initiator, the final record.
+///
+/// The final record has to be retained. It is sent once and nothing in the
+/// exchange acknowledges it, so if that datagram is lost the responder waits
+/// for a message the initiator believes it has already delivered. The caller
+/// keeps it and resends it when the peer repeats its reply, which is the only
+/// signal that it never arrived.
 pub fn run(
     socket: &UdpSocket,
     local_id: u32,
@@ -248,7 +255,7 @@ pub fn run(
     static_secret: [u8; 32],
     peer_static: [u8; 32],
     previous_export: Option<&[u8; 32]>,
-) -> Option<Session> {
+) -> Option<(Session, Option<Vec<u8>>)> {
     let profile = profile(suite);
     let deadline = Instant::now() + Duration::from_millis(LIMIT_HANDSHAKE_TIMEOUT_MS as u64);
     let attempts = LIMIT_MAX_HANDSHAKE_RETRANSMITS;
@@ -277,7 +284,7 @@ pub fn run(
         }
         let (finish, session) = initiator.write_finish().ok()?;
         let _ = socket.send(&finish);
-        Some(session)
+        Some((session, Some(finish)))
     } else {
         let mut responder = Responder::new(
             profile,
@@ -296,7 +303,7 @@ pub fn run(
         loop {
             let finish = exchange(socket, Some(&respond), deadline, attempts)?;
             if let Ok(session) = responder.read_finish(&finish) {
-                return Some(session);
+                return Some((session, None));
             }
         }
     }

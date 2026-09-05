@@ -224,6 +224,7 @@ fn advance_rekey(
     initiator: bool,
     export_key: &[u8; 32],
     state: &mut RekeyState,
+    finish_record: &mut Option<Vec<u8>>,
     install: &mut dyn FnMut(handshake::LinkSession),
 ) {
     use link_handshake_b1::Stage;
@@ -250,6 +251,7 @@ fn advance_rekey(
             if initiator.read_respond(record).is_ok() {
                 if let Ok((finish, session)) = initiator.write_finish() {
                     let _ = socket.send(&finish);
+                    *finish_record = Some(finish);
                     install(handshake::directional(&session, true));
                 }
             } else {
@@ -593,7 +595,7 @@ fn run_link(
     // handshake completes, so it runs first and its failure stops the link.
     // Both directional keys and the epoch come out of it; nothing here is
     // configured, which is what makes restarting into a used epoch impossible.
-    let Some(session) = handshake::run(
+    let Some((session, mut finish_record)) = handshake::run(
         &socket,
         config.local_id,
         config.peer_id,
@@ -828,6 +830,16 @@ fn run_link(
                     // zero byte is a handshake record and never a cell. No
                     // trial decryption is needed to tell them apart.
                     if let Some((is_rekey, stage)) = handshake::record_stage(&buffer[..length]) {
+                        // The peer repeating its reply means our final record
+                        // never arrived: nothing acknowledges that record, so
+                        // the repeat is the only signal it was lost. Resending
+                        // is what stops a lossy link from stranding a peer that
+                        // is still waiting to finish.
+                        if matches!(stage, link_handshake_b1::Stage::Respond) {
+                            if let Some(record) = finish_record.as_ref() {
+                                let _ = socket.send(record);
+                            }
+                        }
                         if is_rekey {
                             // Copied out first: the installer below replaces
                             // it, and the chain a rekey uses is the one in
@@ -841,6 +853,7 @@ fn run_link(
                                 initiator,
                                 &chain,
                                 &mut rekey,
+                                &mut finish_record,
                                 &mut |installed: handshake::LinkSession| {
                                     previous = Some((
                                         (receive_key, epoch),

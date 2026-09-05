@@ -98,6 +98,14 @@ No key is derived and no W2 or P1 state is allocated until the third message
 has authenticated. Every failure is one generic outcome to the peer: the
 receiver does not say why.
 
+Nothing acknowledges the third message, so an initiator that sent it cannot
+know it arrived. A responder that has not received it MUST keep resending its
+second message, and an initiator MUST resend its third on receiving a repeated
+second — that repeat is the only signal the record was lost. Without this a
+single dropped datagram strands a responder that is still waiting while the
+initiator believes the link is up, and on a path of several links the chance of
+that is not small.
+
 ## 5. Negotiation
 
 The initiator's offer is:
