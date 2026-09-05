@@ -62,6 +62,10 @@ def run_handshake(profile, label: bytes, previous_export: bytes | None) -> dict[
     return {
         "label": label.decode(),
         "rekey": previous_export is not None,
+        # The export key this exchange chains to, i.e. the psk0 pre-shared key.
+        # Empty for an initial handshake. Published so an independent
+        # implementation can replay the rekey without deriving it first.
+        "chained_export_key": (previous_export or b"").hex(),
         "initiator_static_secret": initiator_static.secret.hex(),
         "initiator_static_public": initiator_static.public.hex(),
         "responder_static_secret": responder_static.secret.hex(),

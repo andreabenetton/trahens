@@ -370,6 +370,20 @@ def prologue(profile: B1Profile, rekey: bool) -> bytes:
     return profile.rekey_chain_domain if rekey else profile.prologue_domain
 
 
+def _mix_ephemeral(state: SymmetricState, public: bytes, psk_mode: bool) -> None:
+    """Process an `e` token.
+
+    Noise section 9: in a PSK handshake an `e` token must also `MixKey` the
+    public ephemeral, not only `MixHash` it. The PSK supplies key material
+    before any Diffie-Hellman has happened, so without this the ephemeral would
+    contribute nothing to the chaining key for the first message and two
+    exchanges differing only in their ephemerals could share a key stream.
+    """
+    state.mix_hash(public)
+    if psk_mode:
+        state.mix_key(public)
+
+
 def _begin(profile: B1Profile, previous_export: bytes | None) -> SymmetricState:
     rekey = previous_export is not None
     name = profile.noise_protocol_rekey if rekey else profile.noise_protocol
@@ -440,7 +454,7 @@ class Initiator:
 
     def write_message_1(self) -> bytes:
         # -> e
-        self.state.mix_hash(self.ephemeral.public)
+        _mix_ephemeral(self.state, self.ephemeral.public, self.rekey)
         payload = _frame_payload(self.offer.encode(self.profile), self._initiate_width())
         record = _record_prefix(self.profile, self._type("initiate")) + self.ephemeral.public
         record += self.state.encrypt_and_hash(payload)
@@ -456,7 +470,7 @@ class Initiator:
         cursor = 2
         re = record[cursor : cursor + DHLEN]
         cursor += DHLEN
-        self.state.mix_hash(re)
+        _mix_ephemeral(self.state, re, self.rekey)
         self.state.mix_key(dh(self.ephemeral, re))
         rs = self.state.decrypt_and_hash(record[cursor : cursor + DHLEN + TAGLEN])
         cursor += DHLEN + TAGLEN
@@ -521,7 +535,7 @@ class Responder:
         if len(record) != p.record_bytes or record[:2] != _record_prefix(p, self._type("initiate")):
             raise HandshakeError("unexpected record")
         re = record[2 : 2 + DHLEN]
-        self.state.mix_hash(re)
+        _mix_ephemeral(self.state, re, self.rekey)
         framed = self.state.decrypt_and_hash(record[2 + DHLEN :])
         offer = Offer.decode(p, _unframe_payload(framed, self._initiate_width()))
         self.remote_ephemeral = re
@@ -534,7 +548,7 @@ class Responder:
             raise HandshakeError("message 1 not processed")
         if not selection.within(self.offer):
             raise HandshakeError("selection is not within the offer")
-        self.state.mix_hash(self.ephemeral.public)
+        _mix_ephemeral(self.state, self.ephemeral.public, self.rekey)
         self.state.mix_key(dh(self.ephemeral, self.remote_ephemeral))
         record = _record_prefix(p, self._type("respond")) + self.ephemeral.public
         record += self.state.encrypt_and_hash(self.static.public)

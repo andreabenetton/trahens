@@ -71,6 +71,11 @@ The framed widths are `b1_initiate_payload`, `b1_respond_payload` and
 payload is encrypted and its ciphertext carries a 16-byte tag. The record is
 one cell in both cases; only the framed body region differs.
 
+In a rekey, every `e` token also mixes the public ephemeral into the chaining
+key, not only into the hash, as Noise section 9 requires of a PSK handshake.
+Without it the ephemeral would contribute nothing to the key for the first
+message, since under `psk0` a key already exists before any Diffie-Hellman.
+
 In an initial handshake the first message's payload is transmitted in the
 clear, because `XX` has no encryption key at that point. It is still mixed into
 the transcript hash, so altering it fails authentication of the second message:
@@ -182,9 +187,11 @@ every key, both negotiation payloads, all three records, the handshake hash,
 both directional keys, the epoch, and the export key. An implementation MUST
 reproduce every record byte for byte and derive identical outputs.
 
-**The vectors are not yet independently checked.** They are produced by the
-Python reference and only verified to be reproducible, so a mistake in that
-reference would be shared by anything built against them rather than exposed.
-Cross-checking the `XX` and `XXpsk0` exchanges against an independent Noise
-implementation is a required deliverable of the Rust stage and MUST land before
-these vectors are treated as normative.
+Both exchanges are additionally replayed through an independent Noise
+implementation, which is given the same statics, ephemerals, prologue, chained
+key and payloads and must produce the same message bytes and the same handshake
+hash (`implementation/rust/crates/link-handshake-b1/tests/cross_check_snow.rs`).
+That check is what makes the reference trustworthy rather than merely
+self-consistent: it found a real defect in the `psk0` path, where the reference
+had omitted the `MixKey(e.public_key)` that Noise section 9 requires of an `e`
+token in a PSK handshake.

@@ -44,6 +44,26 @@ pub fn r1() -> Result<Value, VectorError> {
     )
 }
 
+/// `spec/b1-test-vectors.json`.
+pub fn b1() -> Result<Value, VectorError> {
+    parse(
+        "b1",
+        include_str!("../../../../../spec/b1-test-vectors.json"),
+    )
+}
+
+/// `spec/protocol-registry-v1.8.json`, the B1.1 draft.
+///
+/// v1.8 is not the active profile and generates no bindings, so a test that
+/// needs a v1.8 width reads it from here rather than hardcoding a number the
+/// registry is supposed to own.
+pub fn protocol_registry_v18() -> Result<Value, VectorError> {
+    parse(
+        "protocol-registry-v1.8",
+        include_str!("../../../../../spec/protocol-registry-v1.8.json"),
+    )
+}
+
 /// `spec/crypto-test-vectors-c1.json`.
 pub fn crypto_c1() -> Result<Value, VectorError> {
     parse(
