@@ -546,8 +546,8 @@ The gateway computes $h_\tau$, locates a live record, verifies the interval and 
 \end{algorithmic}
 \end{algorithm}
 
-\begin{property}[Single successful redemption]
-Under atomic lookup-and-delete semantics, at most one concurrent request for one capability commitment can obtain the endpoint handle.
+\begin{property}[Single successful redemption, per gateway]
+Under atomic lookup-and-delete semantics, at most one request for a given capability commitment \emph{at a given gateway} can obtain the endpoint handle. Registrations are keyed by $(\text{gateway}, h_\tau)$, so a destination that registers one $\tau$ at $k$ gateways as above admits one successful redemption at each. Global one-shot semantics across independent gateways are not claimed and are not implemented: they would require cross-gateway spent-token state, which R1 does not specify. A destination wanting a single global use must register distinct per-gateway capabilities.
 \end{property}
 
 \section{Protocol overview}
@@ -679,10 +679,12 @@ Tokens, routing nonces, message identifiers, padding, and link nonces are freshl
 
 A gateway that admits the branch constructs
 \begin{equation}
-P_G=(\pi_G,t_{\mathrm{offer}},X_d,c_G,n_G,\mathsf{params}),
+P_G=(\mathrm{id}_G,\pi_G,t_{\mathrm{offer}},s,c_G,n_G,\mathsf{vk}_G),
 \label{eq:candidatepayload}
 \end{equation}
-where $c_G$ is a commit challenge and $n_G$ is a fresh nonce. It signs the domain-separated transcript with its descriptor-authenticated Ed25519 key and seals the result to $X_d$ using the retained reply KEM.
+where $s$ is the route secret, $c_G$ is a commit challenge, $n_G$ is a fresh nonce, and $\mathsf{vk}_G$ is the gateway's signing key. It signs a domain-separated transcript over these fields with its descriptor-authenticated Ed25519 key and seals the result to $X_d$ using the retained reply KEM.
+
+The transcript binds more than the payload carries: the protocol version, the suite, the reply key $X_d$ the offer is sealed to, and a digest of the selected profile parameters. Binding $X_d$ matters because the initiator can recompute it as the public counterpart of the secret that opened the gateway layer, so it verifies a transcript it reconstructs rather than one it is handed. Binding the version, suite, and parameter digest makes the agreed parameter set part of what the signature covers instead of something each side assumes from its own registry.
 
 The gateway pseudonym is protected inside the sealed payload. Relays learn only that a candidate is returning on a live branch.
 
@@ -1402,7 +1404,7 @@ This mirrors the multiplicative-blinding pattern used by Sphinx~\cite{sphinx}, b
 
 \subsection{Reply KEM and nested encryption}
 
-For encapsulation $R=eB$ and shared point $Z=eX$, the custom reply seal constructs a domain-separated context and performs one HKDF-Extract followed by one HKDF-Expand of 44 bytes. The output is split into a 32-byte ChaCha20-Poly1305 key and a 12-byte nonce, following the Extract-then-Expand structure of RFC~5869~\cite{hkdf}. No Expand output is reused as a new pseudorandom key.
+For encapsulation $R=eB$ and shared point $Z=eX$, the custom reply seal constructs a domain-separated context and performs one HKDF-Extract followed by one HKDF-Expand of 76 bytes. The output is split into a 32-byte ChaCha20-Poly1305 key, a 12-byte nonce, and a 32-byte commitment key, following the Extract-then-Expand structure of RFC~5869~\cite{hkdf}. No Expand output is reused as a new pseudorandom key. The commitment key produces the recipient-bound commitment carried alongside the ciphertext, so a reply ciphertext is $32$-byte encapsulation, then AEAD ciphertext and tag, then a $32$-byte commitment.
 
 The construction is HPKE-inspired because it combines ephemeral group agreement, a labeled KDF, and AEAD context binding~\cite{hpke,chacha}; it is not RFC~9180 HPKE and inherits no HPKE interoperability or receiver-anonymity claim. Context binds protocol version, C1 encoding version, message class, suite, direction, route stage, encapsulated point, recipient public key, and application information.
 
@@ -1412,7 +1414,7 @@ Fresh encapsulation randomness is required for every layer. Decryption, point-va
 
 \subsection{Gateway authentication}
 
-The signed candidate transcript includes, in fixed order, the protocol domain, version, suite, gateway pseudonym, offer deadline, final reply public key, commit challenge, candidate nonce, and selected parameter digest. Ed25519 verification follows RFC~8032~\cite{eddsa}. The descriptor must bind the verification key to the accepted short-lived pseudonym.
+The signed candidate transcript includes, in fixed order and each length-prefixed after a domain prefix: the protocol version, suite, gateway identifier, gateway pseudonym, offer deadline, the reply public key the offer is sealed to, route secret, commit challenge, candidate nonce, gateway signing key, and a digest of the selected profile parameters. Ed25519 verification follows RFC~8032~\cite{eddsa}. The descriptor must bind the verification key to the accepted short-lived pseudonym, and the initiator must check the advertised pseudonym against that descriptor: the signature establishes only that the gateway asserted it. The hash of this transcript is the value the route channel keys are derived against, so a route secret is unusable under any other offer.
 
 \subsection{Adjacent-link protection}
 
@@ -1483,7 +1485,15 @@ At an honest relay, all adjacent capabilities and wire representations are repla
 
 \subsection{Capability confidentiality and replay}
 
-The capability is absent from discovery and candidate traffic. It is sent only after \textsc{Ready} inside end-to-end route protection. Atomic commitment lookup and deletion enforce at most one successful redemption. This does not protect a capability stolen from an initiator before first use; the attacker may race the legitimate user. A production descriptor profile should bind redemption to an authenticated client handshake and use short expiries.
+The capability is absent from discovery and candidate traffic. It is sent only after \textsc{Ready} inside end-to-end route protection. Atomic commitment lookup and deletion enforce at most one successful redemption at each gateway the capability is registered with; see the per-gateway scope above. A redemption presenting the right capability with a pseudonym the registration does not match fails without consuming the record, so an attacker who learns the capability alone cannot destroy a live registration. None of this protects a capability stolen from an initiator before first use; the attacker may race the legitimate user. A production descriptor profile should bind redemption to an authenticated client handshake and use short expiries.
+
+\subsection{End-to-end route channel}
+
+The route channel spans the initiator and the gateway and is the only layer whose key both of them hold. It derives two keys from the route secret by HKDF-Extract followed by one HKDF-Expand per direction, with the selected offer's transcript hash as expansion context, so a route secret presented under any other offer derives different keys. Each record's AEAD nonce is a direction code followed by a monotonic sequence, and each receiver keeps a bounded acceptance window per direction that it commits to only after the record authenticates.
+
+The window is load-bearing rather than defensive depth. A relay on the path cannot read a protected body, but the threat model admits one that duplicates traffic, and such a relay can re-send a recorded body inside a transmission it generates itself. That transmission carries a fresh adjacent-link sequence and ciphertext, so the link replay window correctly admits it as new traffic. Hop-by-hop replay protection is structurally unable to reject an end-to-end replay, and only a window keyed at the two endpoints can.
+
+The counter nonce is visible to a relay that decrypts the link layer, so a relay learns the direction and a per-route record count where a random nonce disclosed neither. A relay can already count records and infer direction from their travel, so the marginal disclosure is small, but it is a deliberate exchange of a little metadata for end-to-end replay resistance rather than a free improvement.
 
 \subsection{Gateway and directory exposure}
 
@@ -2018,7 +2028,7 @@ An implementation claiming \Uone{}, \Eone{}, \Rone{}, \Mtwo{}, \Wtwo{}, \Tone{},
   \item bind each link of the returned candidate chain with parent and child routing nonces, and derive per-offer labels from the child routing nonce so that selecting one candidate releases its siblings;
   \item use an independent root reply key for every first-hop branch and update child keys as $X_{i+1}=b_iX_i$ for independently sampled non-zero $b_i$;
   \item recover reverse-layer secrets as $x_{i+1}=b_ix_i\bmod q$ and reject zero factors, identity keys, and non-canonical encodings;
-  \item derive each reply-layer AEAD key and nonce with one HKDF-Extract and one 44-byte HKDF-Expand, and expose no deterministic-ephemeral input in the production API;
+  \item derive each reply-layer AEAD key, nonce, and commitment key with one HKDF-Extract and one 76-byte HKDF-Expand, and expose no deterministic-ephemeral input in the production API;
   \item verify the gateway pseudonym only inside the authenticated candidate payload and only against the private descriptor;
   \item create tentative state on \textsc{Candidate}, reserve pending state on \textsc{Commit}, and authorize data only after final \textsc{Ready};
   \item transmit the rendezvous capability only inside an end-to-end protected active route;
