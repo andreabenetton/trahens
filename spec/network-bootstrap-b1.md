@@ -302,6 +302,10 @@ Keep peers manually named, but replace pre-shared W2 base keys with a reviewed
 authenticated key exchange and explicit profile negotiation. Add restart,
 rekey, replay, downgrade, and exhaustion tests.
 
+`docs/b1.1-scope.md` scopes this stage: boundary, six decisions awaiting
+sign-off, deliverables, and staging. It proposes Noise `KK` over X25519 and
+lands as Core v1.8.
+
 ### B1.2 — Seeded peer discovery
 
 Add signed seed manifests and optional local-link discovery, both feeding the
