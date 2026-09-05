@@ -156,20 +156,32 @@ case "$SCENARIO" in
     EXPECT_ENDPOINT_FAILURE=1 ;;
   late-peer)
     # The initiator's link is dead for longer than one whole handshake attempt,
-    # then recovers. The gate is that every link still comes up: with a single
-    # attempt the two ends of that link stay down for the rest of the run, so
-    # only four of the six link metrics appear.
+    # then recovers. Two things are asserted, and they fail for different
+    # reasons.
     #
-    # The route does NOT establish, and that is a separate finding rather than
-    # a flaw in this scenario. spawn_link returns before the handshake
-    # completes, so the endpoint opens its branch and starts a route TTL while
-    # the link is still down; the TTL is shorter than this outage, so the state
-    # has expired by the time the DISCOVER is actually carried. The run
-    # therefore ends in NO_CANDIDATE even though the link recovered.
-    HANDSHAKE_OUTAGE_MS=4000
-    P1_EXPECT_ALL_LINKS=1
-    ENDPOINT_EXTRA=(--rings "16:20000")
-    EXPECT_ENDPOINT_FAILURE=1 ;;
+    # Every link comes up: with a single handshake attempt the two ends of that
+    # link stay down for the rest of the run, so only four of the six link
+    # metrics appear.
+    #
+    # And the route establishes, on the ordinary success gate. That is the
+    # assertion for a node's timers being tied to its links. spawn_link returns
+    # before the handshake completes, so a node that opened its branch there
+    # would start a route TTL against a link that is still down -- and this
+    # outage outlasts that TTL, so the DISCOVER would be carried after its own
+    # branch state expired and the run would end in NO_CANDIDATE with every
+    # link up. Waiting for readiness is what closes the window; the default
+    # ring window applies deliberately, so a run cannot pass by outlasting the
+    # outage instead.
+    #
+    # The outage outlasts one whole handshake attempt (handshake_timeout_ms,
+    # 3s), so a retry is necessary; and it outlasts both five-second clocks a
+    # route depends on -- the initiator's branch TTL (route_ttl_ms) and the
+    # gateway's registration (capability_ttl_ms) -- so a node that started
+    # either of them at process start reaches the end of the outage with it
+    # already spent. That is what makes the route assertion below a test of
+    # where those clocks start rather than of how long the outage was.
+    HANDSHAKE_OUTAGE_MS=6000
+    P1_EXPECT_ALL_LINKS=1 ;;
   wrong-pin)
     # The initiator is given a static key for its peer that the peer does not
     # hold. Under Noise XX the peer's real key still authenticates, so only the
@@ -247,9 +259,16 @@ for ((i=0; i<NODES-1; i++)); do
     # 1,052-byte record assertion with nothing to check. Scope it to the
     # gateway-facing link: one sender still starves, and every other link
     # keeps emitting on schedule so the captures stay meaningful.
-    if (( HANDSHAKE_OUTAGE_MS > 0 )) && [[ $i -eq 0 ]]; then
-      # Total outage on the initiator's own link, cleared partway through, so
-      # its first handshake attempt cannot succeed and a later one must.
+    if (( HANDSHAKE_OUTAGE_MS > 0 )); then
+      # Total outage on every link, cleared partway through, so no node's first
+      # handshake attempt can succeed and a later one must. It covers the whole
+      # graph rather than one link because what is under test is every node's
+      # timers, and a node whose own link came up straight away would start its
+      # clock on time no matter what the rest of the path was doing.
+      #
+      # Captures survive it: nothing is emitted while it holds, and every link
+      # runs its ordinary schedule afterwards, so the 1,052-byte assertion
+      # still has traffic to check.
       ip netns exec "$ns" tc qdisc add dev "$dev" root netem loss 100%
     elif [[ -n "$BURST_LOSS" && $i -eq $((NODES-2)) && $BURST_AFTER_MS -eq 0 ]]; then
       ip netns exec "$ns" tc qdisc add dev "$dev" root netem \
@@ -355,9 +374,11 @@ run_node "${NAMES[0]}" endpoint -7 \
 if (( HANDSHAKE_OUTAGE_MS > 0 )); then
   (
     sleep "$(python3 -c "print(${HANDSHAKE_OUTAGE_MS}/1000)")"
-    for side in "0:t${TAG}0a" "1:t${TAG}0b"; do
-      ip netns exec "${NAMES[${side%%:*}]}" tc qdisc change dev "${side#*:}" root netem \
-        loss "${LOSS}%" delay "$DELAY" "$JITTER" >/dev/null 2>&1 || true
+    for ((j=0; j<NODES-1; j++)); do
+      for side in "${j}:t${TAG}${j}a" "$((j+1)):t${TAG}${j}b"; do
+        ip netns exec "${NAMES[${side%%:*}]}" tc qdisc change dev "${side#*:}" root netem \
+          loss "${LOSS}%" delay "$DELAY" "$JITTER" >/dev/null 2>&1 || true
+      done
     done
   ) &
   PIDS+=("$!")

@@ -8,8 +8,8 @@ use node_runtime::p1::{
 };
 use node_runtime::{
     drain_links, event_channel, parse_hex, spawn_link, structured_event, unix_time_ms,
-    write_link_metrics, CliArgs, Clock, LinkConfig, LinkEvent, LinkMetrics, NodeQueueBudget,
-    RemoteInputDrops,
+    wait_links_ready, write_link_metrics, CliArgs, Clock, LinkConfig, LinkEvent, LinkMetrics,
+    NodeQueueBudget, RemoteInputDrops, LINK_READY_TIMEOUT_MS,
 };
 use protocol_registry::{
     ERROR_AUTHENTICATION_FAILED, ERROR_CANCELLED, ERROR_CAPABILITY_INVALID, ERROR_EXPIRED,
@@ -279,6 +279,25 @@ fn run() -> Result<(), Box<dyn Error>> {
         .as_bytes()
         .to_vec();
     let generation = 0_u32;
+    // Every timer below -- the run deadline, the ring window, the branch TTL --
+    // starts here, so the link has to be up here. spawn_link returns before the
+    // handshake runs, and opening ring 0 against a link that is still
+    // handshaking starts a route TTL the link cannot beat: the DISCOVER is
+    // carried after its own branch state expired and the run reports
+    // NO_CANDIDATE although the link came up. Setup latency measures route
+    // setup, not link setup, for the same reason.
+    let link_down = wait_links_ready(&[&link], Duration::from_millis(LINK_READY_TIMEOUT_MS));
+    if !link_down.is_empty() {
+        // Not fatal here: the run continues and ends through the ordinary
+        // NO_CANDIDATE or transport-failure path, which is what writes metrics.
+        // Saying so is what distinguishes a link that never came up from a
+        // route that was never offered one.
+        structured_event(
+            "endpoint",
+            "link_not_ready",
+            &[("peer_id", peer_id.to_string())],
+        );
+    }
     let setup_started = Instant::now();
     let clock = Clock::start();
     let absolute_deadline = clock.now_ms().saturating_add(timeout_ms);

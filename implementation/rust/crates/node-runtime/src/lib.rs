@@ -11,9 +11,10 @@ use protocol_registry::{
     ERROR_MALFORMED, ERROR_REPLAY, ERROR_RESOURCE_EXHAUSTED, ERROR_UNSUPPORTED_PROFILE,
     ERROR_UNSUPPORTED_SUITE, ERROR_UNSUPPORTED_VERSION, FIXED_T2_ACK_RESERVE_PER_EPOCH,
     FIXED_T2_CELLS_PER_EPOCH, FIXED_T2_EPOCH_MS, FIXED_T2_QUEUE_CELLS_GLOBAL,
-    FIXED_T2_QUEUE_CELLS_PER_PEER, FIXED_T2_RETRANSMIT_RESERVE_PER_EPOCH, LIMIT_MAX_T1_RETRIES,
-    LIMIT_REKEY_AFTER_CELLS, LIMIT_REKEY_AFTER_MS, LIMIT_REKEY_OVERLAP_MS,
-    LIMIT_T1_ACK_DELAY_MAX_MS, LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS,
+    FIXED_T2_QUEUE_CELLS_PER_PEER, FIXED_T2_RETRANSMIT_RESERVE_PER_EPOCH,
+    LIMIT_HANDSHAKE_TIMEOUT_MS, LIMIT_MAX_T1_RETRIES, LIMIT_REKEY_AFTER_CELLS,
+    LIMIT_REKEY_AFTER_MS, LIMIT_REKEY_OVERLAP_MS, LIMIT_T1_ACK_DELAY_MAX_MS,
+    LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS,
 };
 use scheduling_t2::{
     decode_schedule_header, encode_schedule_header, FixedSchedule, QueueBudget, RateNegotiation,
@@ -24,7 +25,7 @@ use std::io::ErrorKind;
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver as ChannelReceiver, SyncSender, TryRecvError};
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use trahens_crypto::{hmac_sha256, random_bytes, zeroize};
@@ -128,12 +129,79 @@ enum LinkCommand {
     Shutdown,
 }
 
+/// Whether a link's B1.1 handshake has completed, so the link can carry a cell.
+///
+/// `spawn_link` returns as soon as the worker starts, which is before the
+/// handshake has run. A node that begins protocol work at that point starts
+/// route timers against a link that is not up: the branch state a DISCOVER
+/// belongs to can expire before the link ever carries it, and the run ends in
+/// `NO_CANDIDATE` although every link recovered. This is what lets a node tie
+/// its timers to a live link instead.
+///
+/// It is deliberately not a [`LinkEvent`]: readiness carries no ordering
+/// against protocol events, and a node that had to drain the event channel to
+/// find it would have to replay everything else it drained.
+#[derive(Debug, Default)]
+struct Readiness {
+    /// `None` while the handshake is still running.
+    settled: Mutex<Option<bool>>,
+    changed: Condvar,
+}
+
+impl Readiness {
+    /// Record the outcome. The first call wins: a link that came up and later
+    /// stopped is still a link that came up, and its stopping is reported as
+    /// `LinkEvent::Stopped`.
+    fn settle(&self, ready: bool) {
+        if let Ok(mut settled) = self.settled.lock() {
+            settled.get_or_insert(ready);
+            self.changed.notify_all();
+        }
+    }
+
+    fn wait(&self, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        let Ok(mut settled) = self.settled.lock() else {
+            return false;
+        };
+        while settled.is_none() {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return false;
+            }
+            let Ok((next, _)) = self.changed.wait_timeout(settled, remaining) else {
+                return false;
+            };
+            settled = next;
+        }
+        settled.unwrap_or(false)
+    }
+}
+
+/// The worker's end of [`Readiness`], which settles to "not ready" if the
+/// worker exits without settling it. Without that a waiter would block for its
+/// whole timeout on a link whose thread has already gone.
+struct ReadinessSignal(Arc<Readiness>);
+
+impl ReadinessSignal {
+    fn ready(&self) {
+        self.0.settle(true);
+    }
+}
+
+impl Drop for ReadinessSignal {
+    fn drop(&mut self) {
+        self.0.settle(false);
+    }
+}
+
 pub struct LinkHandle {
     peer_id: u32,
     commands: SyncSender<LinkCommand>,
     /// Set by the worker when it could not hand over a lifecycle event and
     /// stopped rather than continue with a hole in the link's history.
     lifecycle_lost: Arc<AtomicBool>,
+    readiness: Arc<Readiness>,
     worker: Option<JoinHandle<()>>,
 }
 
@@ -161,6 +229,16 @@ impl LinkHandle {
 
     pub fn peer_id(&self) -> u32 {
         self.peer_id
+    }
+
+    /// Block until this link's handshake has completed, and report whether it
+    /// did. Returns false on timeout and on a link whose handshake failed for
+    /// good.
+    ///
+    /// A node MUST wait here before starting any protocol state that carries a
+    /// deadline; see [`Readiness`] for why the two cannot be reordered.
+    pub fn wait_ready(&self, timeout: Duration) -> bool {
+        self.readiness.wait(timeout)
     }
 
     /// True when this link stopped because a lifecycle event could not be
@@ -428,6 +506,8 @@ pub fn spawn_link(
     let peer_id = config.peer_id;
     let lifecycle_lost = Arc::new(AtomicBool::new(false));
     let worker_lifecycle_lost = Arc::clone(&lifecycle_lost);
+    let readiness = Arc::new(Readiness::default());
+    let worker_readiness = ReadinessSignal(Arc::clone(&readiness));
     let worker = thread::Builder::new()
         .name(format!(
             "trahens-link-{}-{}",
@@ -441,12 +521,14 @@ pub fn spawn_link(
                 events,
                 budget,
                 worker_lifecycle_lost,
+                worker_readiness,
             )
         })?;
     Ok(LinkHandle {
         peer_id,
         commands: command_sender,
         lifecycle_lost,
+        readiness,
         worker: Some(worker),
     })
 }
@@ -579,6 +661,15 @@ const T2_REKEY_RESEND_MS: u64 = 200;
 /// unreachable link takes.
 const LINK_HANDSHAKE_ATTEMPTS: usize = 3;
 
+/// How long a node waits for its links before starting protocol work.
+///
+/// It only has to outlast the worker's own bound, because a worker that gives
+/// up settles readiness as it exits and wakes every waiter then. It is a
+/// backstop against a worker that neither comes up nor exits, not the normal
+/// path.
+pub const LINK_READY_TIMEOUT_MS: u64 =
+    (LIMIT_HANDSHAKE_TIMEOUT_MS * LINK_HANDSHAKE_ATTEMPTS) as u64 + 1_000;
+
 /// Pad a 32-byte SCHEDULE header out to a full cell body.
 ///
 /// Every frame class is the same length on the wire, so a rate negotiation is
@@ -597,6 +688,7 @@ fn run_link(
     events: SyncSender<LinkEvent>,
     node_budget: NodeQueueBudget,
     lifecycle_lost: Arc<AtomicBool>,
+    readiness: ReadinessSignal,
 ) {
     let mut sink = EventSink::new(events, lifecycle_lost);
 
@@ -645,6 +737,7 @@ fn run_link(
         });
         return;
     };
+    readiness.ready();
     let initiator = handshake::is_initiator(config.local_id, config.peer_id);
     let opened = handshake::directional(&session, initiator);
     let mut send_key = opened.send;
@@ -1391,6 +1484,20 @@ pub fn drain_budget() -> Duration {
 ///
 /// Replaces a fixed sleep: returns as soon as the senders are idle, and caps
 /// the wait when a peer has stopped responding.
+/// Wait until every link has completed its handshake, or the timeout passes.
+///
+/// Returns the peers whose links never came up. A node calls this before
+/// starting protocol work whose state carries a deadline: see
+/// [`LinkHandle::wait_ready`].
+pub fn wait_links_ready(links: &[&LinkHandle], timeout: Duration) -> Vec<u32> {
+    let deadline = Instant::now() + timeout;
+    links
+        .iter()
+        .filter(|link| !link.wait_ready(deadline.saturating_duration_since(Instant::now())))
+        .map(|link| link.peer_id())
+        .collect()
+}
+
 pub fn drain_links(links: &[&LinkHandle], events: &ChannelReceiver<LinkEvent>) -> usize {
     for link in links {
         let _ = link.request_drain();
@@ -1619,6 +1726,46 @@ pub fn write_link_metrics(
 mod tests {
     use super::*;
     use protocol_registry::{ERROR_AUTHENTICATION_FAILED, ERROR_MALFORMED, SUITE_R1};
+
+    #[test]
+    fn readiness_blocks_until_the_handshake_settles_it() {
+        let readiness = Arc::new(Readiness::default());
+        assert!(!readiness.wait(Duration::from_millis(10)));
+
+        let signal = ReadinessSignal(Arc::clone(&readiness));
+        let waiter = Arc::clone(&readiness);
+        let worker = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            signal.ready();
+        });
+        let started = Instant::now();
+        assert!(waiter.wait(Duration::from_secs(5)));
+        assert!(started.elapsed() >= Duration::from_millis(50));
+        assert!(worker.join().is_ok());
+    }
+
+    #[test]
+    fn readiness_settles_when_the_worker_exits_without_coming_up() {
+        // A link whose handshake never succeeds must not hold its node for the
+        // whole timeout: the worker's exit is the answer.
+        let readiness = Arc::new(Readiness::default());
+        let signal = ReadinessSignal(Arc::clone(&readiness));
+        drop(signal);
+        let started = Instant::now();
+        assert!(!readiness.wait(Duration::from_secs(5)));
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn readiness_keeps_the_first_outcome() {
+        // A link that came up and then stopped still came up; the stopping is
+        // reported as LinkEvent::Stopped, not by rewriting readiness.
+        let readiness = Arc::new(Readiness::default());
+        let signal = ReadinessSignal(Arc::clone(&readiness));
+        signal.ready();
+        drop(signal);
+        assert!(readiness.wait(Duration::from_millis(10)));
+    }
 
     #[test]
     fn equal_time_events_follow_the_specified_precedence() {

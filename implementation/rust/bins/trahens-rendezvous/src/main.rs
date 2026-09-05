@@ -8,8 +8,8 @@ use node_runtime::p1::{
 };
 use node_runtime::{
     drain_links, event_channel, parse_hex, spawn_link, structured_event, unix_time_ms,
-    write_link_metrics, CliArgs, Clock, LinkConfig, LinkEvent, LinkMetrics, NodeQueueBudget,
-    RemoteInputDrops,
+    wait_links_ready, write_link_metrics, CliArgs, Clock, LinkConfig, LinkEvent, LinkMetrics,
+    NodeQueueBudget, RemoteInputDrops, LINK_READY_TIMEOUT_MS,
 };
 use protocol_registry::{
     ERROR_AUTHENTICATION_FAILED, ERROR_CANCELLED, ERROR_CAPABILITY_INVALID, ERROR_INTERNAL,
@@ -172,10 +172,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     let signing_seed = SecretBytes(parse_hex::<32>(args.required("signing-seed")?)?);
     let (signing_public, signing_secret) = signing_keypair(&signing_seed.0)?;
     let capability = SecretBytes(parse_hex::<32>(args.required("capability")?)?);
-    // rendezvous-capability-r1.md section 3: the gateway registers its
-    // short-lived pseudonym together with the capability, and advertises that
-    // same pseudonym in every candidate. It is a property of the
-    // registration, not of an individual route.
+    // The pseudonym this gateway advertises in every candidate. It is a
+    // property of the registration below, not of an individual route.
     // A descriptor publishes the pseudonyms a destination will accept, so the
     // gateway must be able to advertise a pseudonym the initiator was told
     // about rather than one only it knows. P1 has no directory, so that comes
@@ -209,17 +207,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     // is what tells a decoder how to parse that field. Routing is
     // suite-independent since v1.6, so only this follows the selection.
     let wire_suite = eligibility.suite_id();
-    let mut registry = Registry::default();
-    registry.register(
-        gateway_id,
-        gateway_pseudonym,
-        &capability,
-        endpoint_handle,
-        unix_time_ms(),
-        args.u64_or("capability-ttl-ms", LIMIT_CAPABILITY_TTL_MS as u64)?,
-    )?;
-    drop(capability);
-
+    let capability_ttl_ms = args.u64_or("capability-ttl-ms", LIMIT_CAPABILITY_TTL_MS as u64)?;
     let (event_sender, event_receiver) = event_channel();
     let budget = NodeQueueBudget::new();
     let link = spawn_link(
@@ -247,6 +235,34 @@ fn run() -> Result<(), Box<dyn Error>> {
     // Published offer label -> branch it answered.
     let mut selectors: HashMap<[u8; 16], [u8; 16]> = HashMap::new();
     let mut drops = RemoteInputDrops::new();
+    // A gateway has no route timer that can run ahead of its link, because it
+    // only ever reacts to its parent. Its registration is a different matter:
+    // capability_ttl_ms is wall clock, it is the whole budget a route has to
+    // reach redemption, and a gateway that registers before its link is up
+    // spends part of that budget on its own handshake. Long enough an outage
+    // and every route is refused on a lapsed capability although none was
+    // late. So the wait comes first and the registration after it.
+    for peer in wait_links_ready(&[&link], Duration::from_millis(LINK_READY_TIMEOUT_MS)) {
+        structured_event(
+            "rendezvous",
+            "link_not_ready",
+            &[("peer_id", peer.to_string())],
+        );
+    }
+    // rendezvous-capability-r1.md section 3: the gateway registers its
+    // short-lived pseudonym together with the capability, and advertises that
+    // same pseudonym in every candidate. It is a property of the registration,
+    // not of an individual route.
+    let mut registry = Registry::default();
+    registry.register(
+        gateway_id,
+        gateway_pseudonym,
+        &capability,
+        endpoint_handle,
+        unix_time_ms(),
+        capability_ttl_ms,
+    )?;
+    drop(capability);
     let clock = Clock::start();
     let deadline = clock.now_ms().saturating_add(timeout_ms);
     // Set by any terminal control: CLOSE for a completed route, CANCEL or

@@ -391,6 +391,23 @@ fn run() -> Result<(), Box<dyn Error>> {
     // mandatory, while C1 is permitted only through the explicit experimental
     // profile.
     let mut admission = IngressAdmission::new();
+    // A relay deliberately does not wait for its links here, unlike the two
+    // nodes at the ends of the path.
+    //
+    // It has no timer of its own to protect: it allocates branch state when a
+    // DISCOVER arrives, and a DISCOVER cannot arrive before the link that
+    // carried it is up. What it would gain is that a branch is not forwarded
+    // into a child link that is still handshaking -- a real but narrower gap,
+    // since the send waits in the command channel and goes out when that link
+    // comes up.
+    //
+    // What it would cost is the reason not to. A relay has several links, and
+    // they do not come up together: blocking this thread leaves the ones that
+    // are already up with nothing reading their events, and a worker whose
+    // event channel fills stalls in delivery long enough to miss a scheduled
+    // slot. The fixed-T2 trace is then broken by the wait itself. The nodes
+    // that do wait each have exactly one link, so no link of theirs is running
+    // while they wait.
     let clock = Clock::start();
     let deadline = clock.now_ms().saturating_add(timeout_ms);
     let mut cleanup_started: Option<Instant> = None;

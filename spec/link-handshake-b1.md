@@ -203,10 +203,29 @@ of the process, so a peer briefly unreachable at startup would be unreachable
 permanently.
 
 Retrying does not by itself make a delayed link usable end to end. A node that
-starts route timers when it queues a message, rather than when its link is
-established, may find that state expired by the time the link carries it. B1.1
-does not address that; it is a property of how a node drives its links, not of
-the handshake.
+starts a protocol clock when it queues a message, rather than when its link is
+established, may find that state expired by the time the link carries it: the
+initiator's branch TTL and the gateway's capability registration are both
+wall-clock lifetimes that an outage can consume before the first cell moves. So
+a node MUST NOT start a lifetime whose expiry it does not control until the
+link that lifetime depends on has completed its handshake. This is a property
+of how a node drives its links rather than of the handshake, and B1.1 supplies
+only the signal: the link reports when it is up.
+
+A node with several links cannot obtain that by blocking. Its links do not come
+up together, and a node not reading events from the ones already up will stall
+their workers in delivery long enough to miss a scheduled slot, breaking the
+fixed-T2 trace with the wait itself. A relay therefore does not wait: it has no
+lifetime of its own to protect, because it allocates branch state when a
+DISCOVER arrives and a DISCOVER cannot arrive before the link that carried it
+is up. What remains is that a relay may forward a branch into a child link that
+is still handshaking. The send waits for the link rather than being lost, but
+the branch's TTL is running while it waits.
+
+`implementation/harness/netns-p1.sh --scenario late-peer` is the test. It holds
+every link down for longer than one handshake attempt and longer than both
+five-second lifetimes, so a run passes only if neither clock started at process
+start.
 
 Under `XX` a responder performs Diffie-Hellman work to answer any well-formed
 first message, before it knows who sent it, and its reply discloses its static
