@@ -213,6 +213,43 @@ duration (`handshake_timeout_ms`) and retransmissions
 (`max_handshake_retransmits`); and consecutive failures before backing off a
 source (`max_failed_handshakes_before_backoff`, `handshake_backoff_ms`).
 
+How the P1 prototype meets each of those is worth stating exactly, because only
+two are enforced by a counter and the rest are satisfied by its structure. A
+reader who assumes the counters exist will look for code that is not there.
+
+- `handshake_timeout_ms` and `max_handshake_retransmits` are enforced directly:
+  each attempt runs to a deadline and divides it into that many sends.
+- `max_handshake_contexts` has nothing to count. A P1 node opens exactly one
+  context per configured link, at startup, and accepts handshakes on no other
+  path: each link owns a UDP socket connected to its peer, so the kernel drops
+  anything from another address before the process sees it. There is no
+  listener, so there is no unsolicited context to exhaust. A node that accepted
+  a handshake from an unconfigured source would need the counter, and that is
+  B1.2.
+- `handshake_pubkey_ops_per_interval` is likewise bounded by construction: a
+  responder performs its Diffie-Hellman work in one `write_respond` per
+  attempt, and attempts are capped, so the ceiling is a few operations per link
+  rather than a rate to police. What the bound is really for — a responder
+  answering strangers — again arrives with B1.2.
+- `max_failed_handshakes_before_backoff` and `handshake_backoff_ms` are not
+  implemented, and P1 is stricter than they require: a link gives up after its
+  bounded attempts instead of backing off and retrying indefinitely.
+
+None of this is an argument that the registry values are unnecessary. It is a
+statement of what the P1 evidence covers, so that a deployment which adds a
+listening socket knows it has inherited requirements the prototype never had to
+meet.
+
+A peer that keeps waiting for a record MUST NOT be left worse off by the
+records it refuses. A reader commits nothing to its transcript until a whole
+record has validated, so a record that fails to open leaves the exchange
+exactly as it was. Without that the retry loops this section relies on are
+worthless: the transcript has already absorbed the bad record, so the genuine
+one that follows can no longer agree with the peer's, and a single malformed
+datagram ends the exchange. An initial handshake's first message is
+unencrypted, so producing one costs an attacker nothing, and ordinary loss
+produces them without an attacker at all.
+
 An implementation SHOULD retry a failed handshake a bounded number of times
 before treating the link as unusable. A single attempt is not enough: an outage
 that outlasts one attempt would otherwise leave the link down for the lifetime

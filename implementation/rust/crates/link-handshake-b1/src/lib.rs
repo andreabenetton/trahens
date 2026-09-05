@@ -132,10 +132,18 @@ fn noise_nonce(counter: u64) -> [u8; 12] {
     nonce
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct CipherState {
     key: Option<[u8; 32]>,
     counter: u64,
+}
+
+impl Drop for CipherState {
+    fn drop(&mut self) {
+        if let Some(key) = self.key.as_mut() {
+            zeroize_slice(key);
+        }
+    }
 }
 
 impl CipherState {
@@ -165,11 +173,21 @@ impl CipherState {
     }
 }
 
-#[derive(Debug)]
+/// Cloneable so a reader can validate a record against a scratch copy and
+/// commit only once the whole record has proved good; see `read_initiate`.
+/// Both copies wipe their key material on drop, so the scratch leaves nothing
+/// behind when a record is discarded.
+#[derive(Clone)]
 struct SymmetricState {
     cipher: CipherState,
     chaining_key: [u8; 32],
     handshake_hash: [u8; 32],
+}
+
+impl Drop for SymmetricState {
+    fn drop(&mut self) {
+        zeroize_slice(&mut self.chaining_key);
+    }
 }
 
 impl SymmetricState {
@@ -594,23 +612,24 @@ impl Initiator {
     }
 
     /// `<- e, ee, s, es`
+    /// A record that does not validate leaves this initiator exactly as it was,
+    /// for the reason given on [`Responder::read_initiate`]: the caller retries
+    /// on the same object while the peer resends, and a poisoned transcript
+    /// makes every one of those retries fail.
     pub fn read_respond(&mut self, record: &[u8]) -> Result<()> {
+        let mut state = self.state.clone();
         let body = split_record(&self.profile, record, self.rekey, Stage::Respond)?;
         let mut cursor = 0_usize;
         let remote_ephemeral = as_key(body.get(..DH_BYTES).ok_or(HandshakeError)?)?;
         cursor += DH_BYTES;
-        self.state.mix_ephemeral(&remote_ephemeral, self.rekey)?;
-        self.state
-            .mix_key(&x25519(&self.ephemeral_secret.0, &remote_ephemeral)?)?;
+        state.mix_ephemeral(&remote_ephemeral, self.rekey)?;
+        state.mix_key(&x25519(&self.ephemeral_secret.0, &remote_ephemeral)?)?;
 
         let sealed_static = take_static(body, &mut cursor)?;
-        let remote_static = as_key(&self.state.decrypt_and_hash(&sealed_static)?)?;
-        self.state
-            .mix_key(&x25519(&self.ephemeral_secret.0, &remote_static)?)?;
+        let remote_static = as_key(&state.decrypt_and_hash(&sealed_static)?)?;
+        state.mix_key(&x25519(&self.ephemeral_secret.0, &remote_static)?)?;
 
-        let framed = self
-            .state
-            .decrypt_and_hash(body.get(cursor..).ok_or(HandshakeError)?)?;
+        let framed = state.decrypt_and_hash(body.get(cursor..).ok_or(HandshakeError)?)?;
         let width = self.profile.payload_bytes(self.rekey, Stage::Respond);
         let selection = Selection::decode(&unframe(&framed, width)?)?;
 
@@ -622,6 +641,7 @@ impl Initiator {
         if !selection.within(&self.offer) {
             return Err(HandshakeError);
         }
+        self.state = state;
         self.remote_ephemeral = Some(remote_ephemeral);
         self.selection = Some(selection);
         Ok(())
@@ -696,15 +716,26 @@ impl Responder {
         })
     }
 
+    /// A record that does not validate leaves this responder exactly as it was.
+    ///
+    /// Callers retry on the same object -- section 4 has a responder keep
+    /// waiting rather than tear the link down, because a record that fails to
+    /// open is usually loss-induced garbage. Mixing the offered ephemeral into
+    /// the live state before the rest of the record has proved good makes that
+    /// retry useless: the transcript has already absorbed the bad record, so
+    /// the genuine one that follows can no longer agree with the peer's. One
+    /// malformed datagram would end the exchange. In an initial handshake the
+    /// first message is unencrypted, so producing one costs an attacker
+    /// nothing.
     pub fn read_initiate(&mut self, record: &[u8]) -> Result<Offer> {
+        let mut state = self.state.clone();
         let body = split_record(&self.profile, record, self.rekey, Stage::Initiate)?;
         let remote_ephemeral = as_key(body.get(..DH_BYTES).ok_or(HandshakeError)?)?;
-        self.state.mix_ephemeral(&remote_ephemeral, self.rekey)?;
-        let framed = self
-            .state
-            .decrypt_and_hash(body.get(DH_BYTES..).ok_or(HandshakeError)?)?;
+        state.mix_ephemeral(&remote_ephemeral, self.rekey)?;
+        let framed = state.decrypt_and_hash(body.get(DH_BYTES..).ok_or(HandshakeError)?)?;
         let width = self.profile.payload_bytes(self.rekey, Stage::Initiate);
         let offer = Offer::decode(&self.profile, &unframe(&framed, width)?)?;
+        self.state = state;
         self.remote_ephemeral = Some(remote_ephemeral);
         self.offer = Some(offer.clone());
         Ok(offer)
@@ -739,19 +770,22 @@ impl Responder {
         Ok(record)
     }
 
+    /// A record that does not validate leaves this responder exactly as it was,
+    /// for the reason given on [`Self::read_initiate`]. This one matters most:
+    /// the responder sits here resending its respond record until the finish
+    /// arrives, so a poisoned transcript strands it for the whole handshake
+    /// while the peer keeps answering.
     pub fn read_finish(&mut self, record: &[u8]) -> Result<Session> {
         let selection = self.selection.ok_or(HandshakeError)?;
+        let mut state = self.state.clone();
         let body = split_record(&self.profile, record, self.rekey, Stage::Finish)?;
         let mut cursor = 0_usize;
 
         let sealed_static = take_static(body, &mut cursor)?;
-        let remote_static = as_key(&self.state.decrypt_and_hash(&sealed_static)?)?;
-        self.state
-            .mix_key(&x25519(&self.ephemeral_secret.0, &remote_static)?)?;
+        let remote_static = as_key(&state.decrypt_and_hash(&sealed_static)?)?;
+        state.mix_key(&x25519(&self.ephemeral_secret.0, &remote_static)?)?;
 
-        let framed = self
-            .state
-            .decrypt_and_hash(body.get(cursor..).ok_or(HandshakeError)?)?;
+        let framed = state.decrypt_and_hash(body.get(cursor..).ok_or(HandshakeError)?)?;
         let width = self.profile.payload_bytes(self.rekey, Stage::Finish);
         if !unframe(&framed, width)?.is_empty() {
             return Err(HandshakeError);
@@ -759,6 +793,8 @@ impl Responder {
         if !constant_time_equal(&remote_static, &self.expected_peer_static) {
             return Err(HandshakeError);
         }
-        finish(&self.profile, &self.state, remote_static, selection)
+        let session = finish(&self.profile, &state, remote_static, selection)?;
+        self.state = state;
+        Ok(session)
     }
 }

@@ -311,6 +311,57 @@ fn an_initiator_static_outside_the_manifest_is_refused() -> Fallible<()> {
     Ok(())
 }
 
+/// A record that fails to open must leave the reader able to try again.
+///
+/// Section 4 has a peer keep waiting rather than tear the link down, because a
+/// record that does not open is usually loss-induced garbage. That is only true
+/// if the failed read committed nothing: a transcript that has already absorbed
+/// the bad record can never agree with the peer's again, so every retry fails
+/// and one datagram ends the exchange. An initial handshake's first message is
+/// unencrypted, so producing one costs an attacker nothing.
+#[test]
+fn a_record_that_fails_to_open_leaves_the_exchange_usable() -> Fallible<()> {
+    let (mut initiator, mut responder, selection) = parties(None, None)?;
+    let initiate = initiator.write_initiate()?;
+
+    // Well-framed enough to reach the transcript -- right length, right record
+    // type -- and rubbish after that. This is what a probe or a corrupted
+    // datagram looks like.
+    let mut garbage = initiate.clone();
+    for byte in garbage.iter_mut().skip(2) {
+        *byte ^= 0xff;
+    }
+    assert!(
+        responder.read_initiate(&garbage).is_err(),
+        "the garbage record must be refused"
+    );
+
+    // The genuine record now has to work, and the whole exchange after it.
+    responder.read_initiate(&initiate)?;
+    let respond = responder.write_respond(selection)?;
+
+    let mut garbage = respond.clone();
+    for byte in garbage.iter_mut().skip(2) {
+        *byte ^= 0xff;
+    }
+    assert!(initiator.read_respond(&garbage).is_err());
+    initiator.read_respond(&respond)?;
+    let (finish, initiator_session) = initiator.write_finish()?;
+
+    let mut garbage = finish.clone();
+    for byte in garbage.iter_mut().skip(2) {
+        *byte ^= 0xff;
+    }
+    assert!(responder.read_finish(&garbage).is_err());
+    let responder_session = responder.read_finish(&finish)?;
+
+    assert_eq!(
+        initiator_session.handshake_hash, responder_session.handshake_hash,
+        "both ends must reach the same transcript despite the refused records"
+    );
+    Ok(())
+}
+
 #[test]
 fn a_selection_outside_the_offer_is_refused() -> Fallible<()> {
     let (mut initiator, mut responder, selection) = parties(None, None)?;
