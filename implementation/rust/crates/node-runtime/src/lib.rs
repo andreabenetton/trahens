@@ -510,7 +510,24 @@ fn run_link(
     // unpredictable while leaving 2^64 - 2^32 sequence numbers of headroom, so
     // the wrap guard below is unreachable in any real run. An unbounded random
     // start could sit near u64::MAX and fail the link within a few cells.
-    let mut sequence = u64::from(u32::from_be_bytes(random_bytes::<4>().unwrap_or([0_u8; 4])));
+    //
+    // Fail closed if randomness is unavailable. Substituting a fixed start
+    // would be the worst possible fallback on this path: every node whose RNG
+    // failed would begin at the same sequence under a configured key and epoch,
+    // which is precisely the nonce reuse the epoch is there to prevent.
+    let Ok(sequence_seed) = random_bytes::<4>() else {
+        sink.report(LinkEvent::SecurityEvent {
+            peer_id: config.peer_id,
+            error_id: ERROR_INTERNAL,
+            detail: "sequence_seed_unavailable",
+        });
+        sink.deliver(LinkEvent::Stopped {
+            peer_id: config.peer_id,
+            metrics: LinkMetrics::default(),
+        });
+        return;
+    };
+    let mut sequence = u64::from(u32::from_be_bytes(sequence_seed));
     let mut replay = ReplayWindow::new(config.epoch);
     let mut sender = Sender::new();
     let mut receiver = Receiver::new();
