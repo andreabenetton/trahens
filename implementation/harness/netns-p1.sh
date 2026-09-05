@@ -81,6 +81,10 @@ ENDPOINT_CAPABILITY="$CAPABILITY"
 ENDPOINT_EXTRA=()
 EXPECT_ENDPOINT_FAILURE=0
 BLACKHOLE_AFTER_MS=0
+# Upper bound on waiting for the route to reach a candidate before a burst
+# channel replaces ordinary loss, so a scenario can let the links handshake
+# before the outage begins. Zero applies the burst from the start.
+BURST_AFTER_MS=0
 EXPECT_RETRY_EXHAUSTION=0
 case "$SCENARIO" in
   ok) ;;
@@ -125,6 +129,16 @@ case "$SCENARIO" in
     # the twelve seconds the budget takes). "20,20" averaged five-packet
     # bursts, which recovery absorbed, so exhaustion happened only by luck.
     BURST_LOSS="40,0.01"
+    # The burst starts after the route is up. Its bad state is a near-total
+    # outage lasting far longer than any handshake budget, so applying it from
+    # the start now prevents the link coming up at all: nothing establishes,
+    # nothing sends, and no sender ever reaches the retry exhaustion this
+    # scenario exists to observe. Before v1.8 there was no handshake to starve,
+    # which is why the same channel used to be survivable from t=0.
+    # An upper bound on the wait, not a delay: the burst is applied as soon as
+    # the initiator holds a candidate, and this only stops the wait hanging if
+    # discovery never gets that far.
+    BURST_AFTER_MS=10000
     ENDPOINT_EXTRA=(--rings "16:20000")
     EXPECT_ENDPOINT_FAILURE=1
     EXPECT_RETRY_EXHAUSTION=1 ;;
@@ -213,7 +227,7 @@ for ((i=0; i<NODES-1; i++)); do
     # 1,052-byte record assertion with nothing to check. Scope it to the
     # gateway-facing link: one sender still starves, and every other link
     # keeps emitting on schedule so the captures stay meaningful.
-    if [[ -n "$BURST_LOSS" && $i -eq $((NODES-2)) ]]; then
+    if [[ -n "$BURST_LOSS" && $i -eq $((NODES-2)) && $BURST_AFTER_MS -eq 0 ]]; then
       ip netns exec "$ns" tc qdisc add dev "$dev" root netem \
         loss gemodel "${BURST_LOSS%,*}%" "${BURST_LOSS#*,}%" \
         delay "$DELAY" "$JITTER" duplicate "${DUPLICATE}%" reorder "${REORDER}%"
@@ -314,6 +328,28 @@ p1_endpoint_args "10.200.0.1:${PORT}" "10.200.0.2:${PORT}" 0 \
 run_node "${NAMES[0]}" endpoint -7 \
   "${ENDPOINT_CMD[@]}" "${P1_NODE_ARGS[@]}"
 
+if [[ -n "$BURST_LOSS" ]] && (( BURST_AFTER_MS > 0 )); then
+  (
+    # Wait for the initiator to hold a candidate rather than sleeping a fixed
+    # interval. By then every link has handshaked and the route is about to be
+    # committed, so the outage lands on the senders carrying COMMIT and READY,
+    # which is where a starved retry budget is observable. A fixed delay cannot
+    # do this: too early and the handshakes starve so no route exists to break,
+    # too late and the run has already finished. Both were flaky.
+    waited=0
+    while (( waited < BURST_AFTER_MS )); do
+      grep -qs "candidate_held" "$OUTPUT/endpoint.log" && break
+      sleep 0.05
+      waited=$((waited + 50))
+    done
+    burst=$((NODES-2))
+    ip netns exec "${NAMES[$burst]}" tc qdisc change dev "t${TAG}${burst}a" root netem \
+      loss gemodel "${BURST_LOSS%,*}%" "${BURST_LOSS#*,}%" \
+      delay "$DELAY" "$JITTER" duplicate "${DUPLICATE}%" reorder "${REORDER}%" \
+      >/dev/null 2>&1 || true
+  ) &
+  PIDS+=("$!")
+fi
 if (( BLACKHOLE_AFTER_MS > 0 )); then
   (
     sleep "$(python3 -c "print(${BLACKHOLE_AFTER_MS}/1000)")"
