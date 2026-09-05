@@ -4,10 +4,16 @@
 
 ## Status
 
-Proposed. Supplies the explicit evaluation `network-bootstrap-b1.md` section 9
-requires before B1.1 can specify an epoch mechanism. No implementation follows
-from this ADR alone; it exists so the choice is made deliberately rather than
-inherited from whichever option happens to be easiest.
+Accepted in part, amended by ADR 0043. The key-derived epoch (option C) stands
+as the mechanism. The persistent high-water check (option A as a detector) is
+**dropped**: once every session derives its own keys, a repeated epoch under
+different keys is harmless, and a repeated epoch under the same keys requires
+the same ephemerals, which is an RNG failure that now fails closed. A detector
+would guard against nothing the keys do not already cover.
+
+Originally proposed to supply the explicit evaluation
+`network-bootstrap-b1.md` section 9 requires before B1.1 can specify an epoch
+mechanism.
 
 ## Context
 

@@ -302,9 +302,12 @@ Keep peers manually named, but replace pre-shared W2 base keys with a reviewed
 authenticated key exchange and explicit profile negotiation. Add restart,
 rekey, replay, downgrade, and exhaustion tests.
 
-`docs/b1.1-scope.md` scopes this stage: boundary, six decisions awaiting
-sign-off, deliverables, and staging. It proposes Noise `KK` over X25519 and
-lands as Core v1.8.
+`docs/b1.1-scope.md` scopes this stage and ADR 0043 records its seven
+decisions: Noise `XX` over X25519 with the presented static key pinned against
+the manifest, transcript-bound negotiation with no legacy path,
+handshake-derived epoch and keys, re-handshake rekey chained through an export
+key, and a hand-written state machine cross-checked against independent
+vectors. It lands as Core v1.8.
 
 ### B1.2 — Seeded peer discovery
 
