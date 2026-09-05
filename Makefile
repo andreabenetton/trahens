@@ -106,7 +106,7 @@ clean:
 	rm -rf build dist
 	find simulator -type d -name __pycache__ -prune -exec rm -rf {} +
 
-.PHONY: registry p1-vectors rust-test p1-harness
+.PHONY: registry p1-vectors b1-vectors rust-test p1-harness
 registry:
 	python tools/generate_protocol_registry.py --python-output simulator/trahens_spec/generated.py --rust-output implementation/rust/crates/protocol-registry/src/generated.rs --markdown-output spec/protocol-registry-v1.7.md
 	python tools/generate_protocol_registry.py --registry spec/protocol-registry-v1.6.json --markdown-output spec/protocol-registry-v1.6.md
@@ -114,6 +114,9 @@ registry:
 
 p1-vectors:
 	python tools/generate_p1_conformance.py
+
+b1-vectors:
+	PYTHONPATH=simulator python tools/generate_b1_vectors.py --output spec/b1-test-vectors.json
 
 rust-test:
 	cargo test --manifest-path implementation/rust/Cargo.toml --all-targets

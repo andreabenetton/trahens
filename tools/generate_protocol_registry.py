@@ -41,17 +41,23 @@ def generate_python(data: dict[str, Any]) -> str:
     for key, value in data["suites"].items():
         lines.append(f"SUITE_{_name(key)} = {_py_bytes(value, 2)}")
     lines.append("")
+    # b1_record_types exists only from the v1.8 draft on; retained registries
+    # regenerate without it, so every section lookup tolerates absence.
     for section, prefix in (
         ("message_types", "MESSAGE"),
         ("t1_frame_types", "T1_FRAME"),
         ("t2_frame_types", "T2_FRAME"),
         ("t2_schedule_actions", "T2_ACTION"),
         ("p1_payload_types", "P1_PAYLOAD"),
+        ("b1_record_types", "B1_RECORD"),
         ("error_ids", "ERROR"),
         ("widths_bytes", "BYTES"),
         ("limits", "LIMIT"),
     ):
-        for key, value in data[section].items():
+        entries = data.get(section, {})
+        if not entries:
+            continue
+        for key, value in entries.items():
             lines.append(f"{prefix}_{_name(key)} = {value!r}")
         lines.append("")
     for key, value in data["fixed_t2_p1"].items():
@@ -89,11 +95,15 @@ def generate_rust(data: dict[str, Any]) -> str:
         ("t2_frame_types", "T2_FRAME", "u8"),
         ("t2_schedule_actions", "T2_ACTION", "u8"),
         ("p1_payload_types", "P1_PAYLOAD", "u8"),
+        ("b1_record_types", "B1_RECORD", "u8"),
         ("error_ids", "ERROR", "u16"),
         ("widths_bytes", "BYTES", "usize"),
         ("limits", "LIMIT", "usize"),
     ):
-        for key, value in data[section].items():
+        entries = data.get(section, {})
+        if not entries:
+            continue
+        for key, value in entries.items():
             lines.append(f"pub const {prefix}_{_name(key)}: {ty} = {value};")
         lines.append("")
     for key, value in data["fixed_t2_p1"].items():
@@ -128,10 +138,14 @@ def generate_markdown(data: dict[str, Any]) -> str:
         ("Message types", "message_types"),
         ("T1 frame types", "t1_frame_types"),
         ("T2 frame types", "t2_frame_types"),
+        ("B1 handshake record types", "b1_record_types"),
         ("Stable error identifiers", "error_ids"),
     ):
+        entries = data.get(section, {})
+        if not entries:
+            continue
         out += [f"## {title}", "", "| Name | Decimal | Hex |", "|---|---:|---:|"]
-        for key, value in data[section].items():
+        for key, value in entries.items():
             out.append(f"| `{key}` | {value} | `0x{value:04x}` |")
         out.append("")
     out += ["## Widths", "", "| Field | Bytes |", "|---|---:|"]

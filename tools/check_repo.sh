@@ -66,6 +66,12 @@ spec/protocol-registry-v1.7.json
 spec/protocol-registry-v1.7.md
 spec/p1-conformance-vectors-v1.7.json
 spec/p1-conformance-corpus-v1.7.bin
+spec/protocol-registry-v1.8.json
+spec/link-handshake-b1.md
+spec/b1-test-vectors.json
+simulator/trahens_crypto/b1.py
+simulator/tests/test_b1_handshake.py
+tools/generate_b1_vectors.py
 reports/v1.5-bounded-state-models.json
 reports/v1.5-t3-anonymity-metrics.json
 simulator/trahens_spec/generated.py
@@ -298,6 +304,12 @@ PYTHONPATH=simulator python tools/generate_anonymity_metrics.py --output "$anony
 cmp reports/v1.5-t3-anonymity-metrics.json "$anonymity_tmp"
 PYTHONPATH=simulator python tools/generate_r1_vectors.py --output "$r1_vectors_tmp"
 cmp spec/r1-test-vectors.json "$r1_vectors_tmp"
+# v1.8 is a draft: it generates no bindings and is not the active profile, but
+# its handshake vectors must still regenerate exactly.
+b1_vectors_tmp=$(mktemp)
+PYTHONPATH=simulator python tools/generate_b1_vectors.py --output "$b1_vectors_tmp"
+cmp spec/b1-test-vectors.json "$b1_vectors_tmp"
+rm -f "$b1_vectors_tmp"
 PYTHONPATH=simulator python tools/generate_t1_vectors.py --output "$t1_vectors_tmp"
 cmp spec/t1-test-vectors.json "$t1_vectors_tmp"
 PYTHONPATH=simulator python tools/generate_t2_vectors.py --output "$t2_vectors_tmp"
