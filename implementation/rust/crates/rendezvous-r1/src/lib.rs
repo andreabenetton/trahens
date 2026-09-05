@@ -194,7 +194,10 @@ impl Registry {
         {
             return Ok(None);
         }
-        Ok(self.records.remove(&key).map(|record| record.endpoint_handle))
+        Ok(self
+            .records
+            .remove(&key)
+            .map(|record| record.endpoint_handle))
     }
 
     pub fn expire(&mut self, now_ms: u64) -> usize {
@@ -235,7 +238,11 @@ mod tests {
             Some(b"handle".to_vec()),
             "the second gateway's registration is independent"
         );
-        assert_eq!(registry.redeem(1, &token, 1)?, None, "neither redeems twice");
+        assert_eq!(
+            registry.redeem(1, &token, 1)?,
+            None,
+            "neither redeems twice"
+        );
         assert_eq!(registry.redeem(2, &token, 1)?, None);
         assert_eq!(registry.live_records(), 0);
         Ok(())

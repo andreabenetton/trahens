@@ -459,11 +459,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                             // Committed only after the record authenticates, so
                             // a forged sequence cannot burn a window slot.
                             if route.receive_window.admit(sequence).is_err() {
-                                drops.record(
-                                    "rendezvous",
-                                    ERROR_STATE_VIOLATION,
-                                    "route_replay",
-                                );
+                                drops.record("rendezvous", ERROR_STATE_VIOLATION, "route_replay");
                                 continue;
                             }
                             match (control_message.message_type, payload) {

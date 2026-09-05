@@ -500,7 +500,10 @@ impl RouteSequencer {
     /// closed rather than wrapping into a reused nonce.
     pub fn next(&mut self) -> Result<u64, P1Error> {
         let value = self.next;
-        self.next = self.next.checked_add(1).ok_or(P1Error::RouteSequenceExhausted)?;
+        self.next = self
+            .next
+            .checked_add(1)
+            .ok_or(P1Error::RouteSequenceExhausted)?;
         Ok(value)
     }
 }
@@ -558,8 +561,8 @@ mod tests {
     }
 
     #[test]
-    fn a_record_cannot_be_reflected_back_along_the_route(
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn a_record_cannot_be_reflected_back_along_the_route() -> Result<(), Box<dyn std::error::Error>>
+    {
         let keys = route_keys(&[7_u8; 32], &[9_u8; 32])?;
         let sealed = seal_control(
             keys.direction(RouteDirection::EndpointToGateway),
