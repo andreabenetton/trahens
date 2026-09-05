@@ -35,17 +35,18 @@
 18. One capability can succeed at most once and only before expiry at its registered gateway.
 19. CLOSE, CANCEL, ABORT, timeout, peer loss, and retry exhaustion reclaim all associated remote state.
 20. Secret wrappers are zeroized when released.
+21. A duplicate complete logical message creates no new protocol effect: it allocates no label, forwards nothing, counts toward no threshold, and renews no deadline.
 
 ## Bounds
 
-21. Every route, peer, reassembly, sender, queue, fragment, retry, replay, and candidate-layer count is bounded by the registry.
-22. Reassembly reserves bytes before storing a new fragment and releases them on every terminal path.
-23. The fixed T2 scheduler emits exactly 16 slots per 200 ms epoch while active.
-24. Queue or retry exhaustion fails closed; it never expands cadence or memory.
-25. Logs contain stable event data but no capability, route secret, private scalar, link key, or route mapping.
+22. Every route, peer, reassembly, sender, queue, fragment, retry, replay, and candidate-layer count is bounded by the registry.
+23. Reassembly reserves bytes before storing a new fragment and releases them on every terminal path.
+24. The fixed T2 scheduler emits exactly 16 slots per 200 ms epoch while active.
+25. Queue or retry exhaustion fails closed; it never expands cadence or memory.
+26. Logs contain stable event data but no capability, route secret, private scalar, link key, or route mapping.
 
 ## Evidence boundary
 
-26. Passing vectors and namespace tests establishes conformance only for the frozen profile and tested faults.
-27. Reply-public-key distributional unlinkability does not imply key privacy of reply ciphertexts.
-28. D1 and adaptive T2/T3/T4 are not mandatory P1 interoperability properties.
+27. Passing vectors and namespace tests establishes conformance only for the frozen profile and tested faults.
+28. Reply-public-key distributional unlinkability does not imply key privacy of reply ciphertexts.
+29. D1 and adaptive T2/T3/T4 are not mandatory P1 interoperability properties.
