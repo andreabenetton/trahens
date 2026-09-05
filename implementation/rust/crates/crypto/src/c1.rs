@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![doc = "C1 research-suite constructions: URE eligibility capsules and endpoint keys."]
 
-//! The C1 suite is a network-disabled negative control (ADR 0038): these
-//! constructions exist so the Rust side can check the published C1 vectors and
-//! so the eligibility-suite interface has a second provider. Nothing here is
-//! ever emitted on the P1 wire, which uses R1.
+//! C1 is a selectable experimental eligibility profile. It is not part of the
+//! mandatory P1 path, which uses R1, and it may not be cited as evidence for a
+//! mandatory gate line; but a node started with `--eligibility-suite c1` does
+//! emit these constructions on the wire under its own CI gate. ADR 0038
+//! originally barred C1 from the wire by construction; ADR 0040 replaced that
+//! with a profile restriction.
 
 use crate::{
     encode_fields, point_add, point_from_label, point_sub, require_point, scalar_base,

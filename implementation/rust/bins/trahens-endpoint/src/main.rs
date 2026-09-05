@@ -216,8 +216,9 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    // Eligibility provider. r1 is the mandatory path; c1 is research and needs
-    // the experimental profile, so selecting it takes two explicit choices.
+    // Eligibility provider. r1 is the mandatory path; selecting any other
+    // suite moves this node to the experimental profile, which is derived from
+    // the selection rather than asked for separately.
     let suite_name = args.optional("eligibility-suite", "r1").to_owned();
     let profile = if suite_name == "r1" {
         Profile::Mandatory
