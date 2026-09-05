@@ -33,6 +33,22 @@ graph**, not autonomous network bootstrap. `network-bootstrap-b1.md` records a
 non-normative future architecture. B1 work is not part of the v1.7 acceptance
 gate.
 
+### Operating precondition: never restart into a used epoch
+
+Because the link base key and epoch arrive by configuration, W2's guarantees
+hold only for as long as the operator keeps `(base key, epoch)` unique across
+process lifetimes. A pair of nodes restarted on the same key and epoch begins
+with an empty replay window and a freshly chosen starting sequence, so
+previously recorded records can authenticate again and a later record can repeat
+a nonce under a key that has already used it. Neither is a defect in W2, whose
+construction is sound within one correctly managed epoch; both follow from P1
+having no mechanism of its own to enforce the precondition.
+
+Until B1 supplies AKE-derived traffic keys per process session, an operator MUST
+advance the epoch on every restart, or provision a fresh base key, and MUST NOT
+treat epoch uniqueness as something the implementation checks. Nothing in the
+acceptance gate detects a violation.
+
 ## Interoperability path
 
 The minimum harness is:
