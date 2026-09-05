@@ -202,6 +202,9 @@ At minimum:
 
 Persistent counters, random epochs, and key-derived epochs each have different
 failure modes and must be evaluated explicitly.
+`docs/adr/0042-link-epoch-strategy.md` records that evaluation and proposes a
+key-derived epoch as the mechanism with a persistent high-water check as a
+detector. It depends on the B1.1 handshake and is not implemented.
 
 ## 10. Gateway-service discovery
 
