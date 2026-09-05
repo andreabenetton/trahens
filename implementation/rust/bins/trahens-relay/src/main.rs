@@ -396,10 +396,13 @@ fn run() -> Result<(), Box<dyn Error>> {
     //
     // It has no timer of its own to protect: it allocates branch state when a
     // DISCOVER arrives, and a DISCOVER cannot arrive before the link that
-    // carried it is up. What it would gain is that a branch is not forwarded
-    // into a child link that is still handshaking -- a real but narrower gap,
-    // since the send waits in the command channel and goes out when that link
-    // comes up.
+    // carried it is up. It may still forward that branch into a child link
+    // that is still handshaking, but that cannot be what fails a route. A
+    // relay's branch lives branch_ttl_ms (8,000) from a moment strictly later
+    // than the initiator began its own route_ttl_ms (5,000), and each further
+    // hop begins later again, so the initiator always expires first -- by at
+    // least three seconds. Waiting here would protect a lifetime that is never
+    // the binding one.
     //
     // What it would cost is the reason not to. A relay has several links, and
     // they do not come up together: blocking this thread leaves the ones that

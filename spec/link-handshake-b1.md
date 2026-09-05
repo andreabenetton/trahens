@@ -232,12 +232,17 @@ only the signal: the link reports when it is up.
 A node with several links cannot obtain that by blocking. Its links do not come
 up together, and a node not reading events from the ones already up will stall
 their workers in delivery long enough to miss a scheduled slot, breaking the
-fixed-T2 trace with the wait itself. A relay therefore does not wait: it has no
-lifetime of its own to protect, because it allocates branch state when a
-DISCOVER arrives and a DISCOVER cannot arrive before the link that carried it
-is up. What remains is that a relay may forward a branch into a child link that
-is still handshaking. The send waits for the link rather than being lost, but
-the branch's TTL is running while it waits.
+fixed-T2 trace with the wait itself. A relay therefore does not wait, and does
+not need to. It allocates branch state when a DISCOVER arrives, and a DISCOVER
+cannot arrive before the link that carried it is up. It may still forward that
+branch into a child link that is still handshaking — the send waits for the
+link rather than being lost, while the branch's TTL runs — but that cannot be
+what fails a route, because the initiator holds the binding lifetime: a relay's
+branch lives `branch_ttl_ms` (8,000) from a moment strictly later than the
+initiator began its own `route_ttl_ms` (5,000), and every further hop begins
+later still. Any delay long enough to expire a relay's branch expired the
+initiator's at least three seconds earlier. The ordering, not a wait, is what
+closes this.
 
 `implementation/harness/netns-p1.sh --scenario late-peer` is the test. It holds
 every link down for longer than one handshake attempt and longer than both
