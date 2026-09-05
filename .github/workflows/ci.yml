@@ -232,6 +232,30 @@ jobs:
       - name: Check fuzz crate formatting
         run: cargo fmt --manifest-path implementation/rust/fuzz/Cargo.toml --all --check
 
+  # The TLA+ models were committed but never executed by any pipeline, so a
+  # property could be weakened -- or become vacuous -- without anything
+  # failing. TLC exits 12 on an invariant violation and 0 on success, so these
+  # steps gate on the models rather than merely on the files existing.
+  formal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Pinned by tag and verified by digest: which states TLC explores depends
+      # on the checker version, so an unpinned jar would silently change what
+      # the invariants were checked against. Java is preinstalled on the runner.
+      - name: Install TLA+ tools
+        run: |
+          curl -fsSL -o /tmp/tla2tools.jar \
+            https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  /tmp/tla2tools.jar" \
+            | sha256sum --check --strict
+      - name: Check the R1 capability model
+        working-directory: formal
+        run: java -cp /tmp/tla2tools.jar tlc2.TLC -config R1Capability.cfg R1Capability.tla
+      - name: Check the E1 lifecycle model
+        working-directory: formal
+        run: java -cp /tmp/tla2tools.jar tlc2.TLC -config E1Lifecycle.cfg E1Lifecycle.tla
+
   paper:
     runs-on: ubuntu-latest
     steps:
