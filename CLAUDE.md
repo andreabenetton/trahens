@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Trahens is a research protocol for privacy-enabled route discovery in decentralized path-aware networks. The active profile is **Core v1.7 (P1)**; v1.5 and v1.6 are history and their files are retained only so those profiles stay reproducible. It is not a complete endpoint-anonymity system — private directory (D1), global-observer traffic-flow theorems, and production implementations are explicitly out of scope.
+Trahens is a research protocol for privacy-enabled route discovery in decentralized path-aware networks. The active profile is **Core v1.8 (P1)**; v1.5, v1.6 and v1.7 are history and their files are retained only so those profiles stay reproducible. It is not a complete endpoint-anonymity system — private directory (D1), global-observer traffic-flow theorems, and production implementations are explicitly out of scope.
 
 ## Commands
 
@@ -16,7 +16,8 @@ See the `trahens-commands` skill for build/test/vector-regeneration commands (Py
 
 The protocol is built from named profiles that stack on each other. Working top-down:
 
-- **Route channel (v1.7)** — directional HKDF keys bound to the selected offer transcript, counter nonces, per-direction replay window (`spec/core-v1.7.md` §7.1, ADR 0041)
+- **B1.1 (v1.8)** — authenticated adjacent-link handshake: Noise `XX` / `XXpsk0`, transcript-bound profile negotiation, derived directional W2 keys and epoch, in-band rekey (`spec/link-handshake-b1.md`, ADRs 0042 and 0043, TLA+ in `formal/B1Rekey.tla`). It replaces the pre-shared link key and configured epoch, which is what makes restart safety structural rather than an operator obligation.
+- **Route channel** — directional HKDF keys bound to the selected offer transcript, counter nonces, per-direction replay window; introduced in v1.7 (`spec/core-v1.8.md` §7.1, ADR 0041)
 
 - **U1** — branch-local unlinkable context replacement (identifiers, nonces, keys replaced per hop)
 - **E1** — deterministic event and route-state lifecycle (TLA+ in `formal/E1Lifecycle.tla`)
@@ -37,15 +38,16 @@ The protocol is built from named profiles that stack on each other. Working top-
 - **C2 k=2 audit (`0x7f02`)** — disabled transcription experiment; full rerandomization fails closed (`simulator/trahens_crypto/c2_klinear.py`).
 - **C1 v1 (`0x0001`)** — retired; MUST be rejected.
 
-Suite IDs and all numeric constants are generated from the single source of truth: `spec/protocol-registry-v1.7.json`. The v1.5 and v1.6 registries are historical and regenerate their own markdown only. Regenerate derived files with `make registry`.
+Suite IDs and all numeric constants are generated from the single source of truth: `spec/protocol-registry-v1.8.json`. The v1.5, v1.6 and v1.7 registries are historical and regenerate their own markdown only. Regenerate derived files with `make registry`.
 
 ### Repository layout
 
 | Path | Role |
 |---|---|
-| `spec/core-v1.7.md` | Normative semantics and evidence boundary |
-| `spec/protocol-registry-v1.7.json` | Single source of truth for all IDs, widths, and limits |
-| `spec/p1-prototype-profile-v1.7.md` | P1 acceptance gate and claim boundary |
+| `spec/core-v1.8.md` | Normative semantics and evidence boundary |
+| `spec/protocol-registry-v1.8.json` | Single source of truth for all IDs, widths, and limits |
+| `spec/p1-prototype-profile-v1.8.md` | P1 acceptance gate and claim boundary |
+| `spec/link-handshake-b1.md` | B1.1 handshake; vectors in `spec/b1-test-vectors.json` |
 | `simulator/trahens_sim/` | Python deterministic protocol models |
 | `simulator/trahens_crypto/` | Crypto providers (C1, C2-ideal, C2-k2, ristretto, tagging) |
 | `simulator/trahens_codec/` | M2/W2, T1, T2 codecs |
@@ -54,28 +56,29 @@ Suite IDs and all numeric constants are generated from the single source of trut
 | `implementation/rust/crates/` | One crate per protocol layer |
 | `implementation/rust/bins/` | `trahens-endpoint`, `trahens-relay`, `trahens-rendezvous` |
 | `implementation/rust/crates/protocol-registry/src/generated.rs` | Auto-generated from registry — do not edit |
+| `implementation/rust/crosscheck/` | Outside the workspace on purpose: replays B1.1 against an independent Noise implementation without that dependency reaching the implementation's tree |
 | `tools/` | Vector generators, experiment runners, repo integrity checks |
 | `reports/` | Committed reproducible outputs from comparisons and audits |
-| `formal/` | TLA+ models for E1 lifecycle and R1 capability redemption |
+| `formal/` | TLA+ models: E1 lifecycle, R1 capability redemption, B1.1 rekey generations |
 | `docs/adr/` | Architectural decision records |
 | `paper/rewrite/main.tex` | Current standalone paper (no historical narration) |
 
 ### Generated files — never edit directly
 
-Three files are mechanically derived from `spec/protocol-registry-v1.7.json` and must stay in sync:
+Three files are mechanically derived from `spec/protocol-registry-v1.8.json` and must stay in sync:
 
 1. `simulator/trahens_spec/generated.py`
 2. `implementation/rust/crates/protocol-registry/src/generated.rs`
-3. `spec/protocol-registry-v1.7.md`
+3. `spec/protocol-registry-v1.8.md`
 
 After any registry change, run `make registry` and commit all three outputs
 together. The registry is also embedded in the P1 conformance vectors, so a
 registry change needs `make p1-vectors` as well.
 
-`spec/protocol-registry-v1.6.md` and `spec/protocol-registry-v1.5.md` are also
-generated, from their own historical registries, and `check_repo.sh` still
-regenerates and compares both. Do not edit any v1.5 or v1.6 artifact: those
-profiles are history and their files exist so they stay reproducible.
+The v1.7, v1.6 and v1.5 registry markdowns are also generated, from their own
+historical registries, and `check_repo.sh` still regenerates and compares all
+three. Do not edit any v1.5, v1.6 or v1.7 artifact: those profiles are history
+and their files exist so they stay reproducible.
 
 ### `make check` integrity invariants
 
@@ -84,8 +87,8 @@ profiles are history and their files exist so they stay reproducible.
 - All required files exist and are committed
 - Every vector file matches a fresh generator run (`cmp` on regenerated output)
 - `simulator/trahens_spec/generated.py` and the Rust generated file match `make registry` output
-- **All three** registries regenerate: v1.7 produces the bindings and its markdown, and the historical v1.6 and v1.5 registries still produce their own markdown
-- P1 conformance vectors and corpus match `tools/generate_p1_conformance.py` for v1.7, v1.6, and v1.5
+- **All four** registries regenerate: v1.8 produces the bindings and its markdown, and the historical v1.7, v1.6 and v1.5 registries still produce their own markdown
+- P1 conformance vectors and corpus match `tools/generate_p1_conformance.py` for v1.8, v1.7, v1.6, and v1.5
 - Bounded state models and anonymity metrics match their generators
 - `paper/rewrite/main.tex` contains no forbidden historical terms (`Nexus`, `2020`, `W1`, `M1`, `Core v0.*`, etc.)
 - Python compiles cleanly; Rust tests pass if `cargo` is available
@@ -142,8 +145,9 @@ Either fold the cleanup into the same commit as the fix, or add a follow-up comm
 
 ## Key constraints
 
-- **Clippy `unwrap_used` and `expect_used` are denied** in Rust. Use `?` or explicit error handling.
+- **Clippy `unwrap_used` and `expect_used` are denied** in Rust, in tests too. Use `?` or explicit error handling.
 - **`unsafe_op_in_unsafe_fn` is denied** — unsafe blocks must be explicitly marked.
+- The Rust workspace has an **MSRV floor of 1.82**, and `fuzz` and `crosscheck` are excluded from it for that reason: their dependency trees reach crates that require a newer edition. A dependency needed only for cross-checking or fuzzing belongs in one of those, never in a workspace member — adding it to a member fails CI on the toolchain rather than on the code.
 - Python requires ≥3.11; only `cryptography>=43` is a runtime dependency.
 - `docs/review-log/` is an internal reconstruction — it must not be cited as independent external review. The independent reviews are `docs/external-review-2026-07-30.md` (v1.4) and `docs/external-review-2026-09-04.md` (v1.6/P1). `docs/review-verification-2026-09-04.md` is an internal verification pass over the latter's P0 findings and is likewise not independent review.
 - C1 v1 suite `0x0001`, symbolic C2 `0x0002`, and disabled C2 k=2 `0x7f02` must all be rejected by network decoders. The negative-control providers exist only in the simulator for measurement.
