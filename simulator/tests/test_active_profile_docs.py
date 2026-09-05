@@ -8,21 +8,26 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
+# Retained for reproducibility only. No current binary speaks these, so an
+# active document must never point an implementer at one of them.
+SUPERSEDED = ("1.5", "1.6")
+
 
 class ActiveProfileDocumentationTests(unittest.TestCase):
     """Keep active prose synchronized with the registry and executable CLI.
 
     These tests are intentionally precise rather than a broad ban on historical
-    version strings. The repository retains v1.5 artifacts for reproducibility,
-    so references to v1.5 are valid when they are explicitly historical. What
-    must fail is an active v1.6 document pointing an implementer at a v1.5
-    registry, corpus, acceptance gate, field model, or command-line option.
+    version strings. The repository retains v1.6 and v1.5 artifacts for
+    reproducibility, so references to them are valid when they are explicitly
+    historical. What must fail is an active v1.7 document pointing an implementer
+    at a superseded registry, corpus, acceptance gate, field model, or
+    command-line option.
     """
 
     @classmethod
     def setUpClass(cls) -> None:
         cls.registry = json.loads(
-            (ROOT / "spec/protocol-registry-v1.6.json").read_text(encoding="utf-8")
+            (ROOT / "spec/protocol-registry-v1.7.json").read_text(encoding="utf-8")
         )
         cls.version = cls.registry["registry_version"]
         cls.series = ".".join(cls.version.split(".")[:2])
@@ -45,21 +50,25 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
         for value in required:
             self.assertIn(value, core)
 
-        forbidden = (
-            "Core v1.5 freezes",
-            "Core v1.5 does not claim",
-            "`protocol-registry-v1.5.json` is normative",
-            "`p1-conformance-vectors-v1.5.json` and",
-            "acceptance gate is defined in `p1-prototype-profile-v1.5.md`",
+        forbidden = tuple(
+            value
+            for series in SUPERSEDED
+            for value in (
+                f"Core v{series} freezes",
+                f"Core v{series} does not claim",
+                f"`protocol-registry-v{series}.json` is normative",
+                f"`p1-conformance-vectors-v{series}.json` and",
+                f"acceptance gate is defined in `p1-prototype-profile-v{series}.md`",
+            )
         )
         for value in forbidden:
             self.assertNotIn(value, core)
 
-    def test_plain_language_overview_matches_v16(self) -> None:
+    def test_plain_language_overview_matches_active_profile(self) -> None:
         overview = self.read("FORDUMMY.md")
 
         for value in (
-            "Trahens Core v1.6",
+            f"Trahens Core v{self.series}",
             "Routing nonce",
             "Eligibility field",
             "network-bootstrap-b1.md",
@@ -68,9 +77,15 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
         ):
             self.assertIn(value, overview)
 
-        for value in (
-            "Trahens Core v1.5 and its P1 prototype",
-            "mandatory v1.5 path",
+        superseded_claims = tuple(
+            value
+            for series in SUPERSEDED
+            for value in (
+                f"Trahens Core v{series} and its P1 prototype",
+                f"mandatory v{series} path",
+            )
+        )
+        for value in superseded_claims + (
             "blocked from the live P1 network path",
             "cannot be converted to C1 by changing a configuration flag",
         ):
@@ -105,11 +120,13 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
     def test_spec_index_prioritizes_active_corpus(self) -> None:
         index = self.read("spec/README.md")
 
-        active = "p1-conformance-vectors-v1.6.json"
-        historical = "p1-conformance-vectors-v1.5.json"
+        active = f"p1-conformance-vectors-v{self.series}.json"
         self.assertIn(active, index)
-        self.assertIn(historical, index)
-        self.assertLess(index.index(active), index.index(historical))
+        for series in SUPERSEDED:
+            historical = f"p1-conformance-vectors-v{series}.json"
+            with self.subTest(historical=historical):
+                self.assertIn(historical, index)
+                self.assertLess(index.index(active), index.index(historical))
         self.assertIn("network-bootstrap-b1.md", index)
 
     def test_obsolete_adaptive_flag_is_absent_from_active_docs(self) -> None:
@@ -118,8 +135,8 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
             "FORDUMMY.md",
             "ROADMAP.md",
             "spec/README.md",
-            "spec/core-v1.6.md",
-            "spec/p1-prototype-profile-v1.6.md",
+            f"spec/core-v{self.series}.md",
+            f"spec/p1-prototype-profile-v{self.series}.md",
             "docs/implementing-trahens-p1.md",
             "docs/p1-acceptance-evidence.md",
         )
@@ -136,8 +153,8 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
             "FORDUMMY.md",
             "ROADMAP.md",
             "spec/README.md",
-            "spec/core-v1.6.md",
-            "spec/p1-prototype-profile-v1.6.md",
+            f"spec/core-v{self.series}.md",
+            f"spec/p1-prototype-profile-v{self.series}.md",
             "docs/implementing-trahens-p1.md",
         )
         for relative in directly_linked:

@@ -2,9 +2,9 @@
 
 # P1 acceptance evidence
 
-- Status: Evidence map for the acceptance gate in `spec/p1-prototype-profile-v1.6.md`
-- Registry: 1.6.1
-- Historical registry: v1.5 retained only for reproducibility
+- Status: Evidence map for the acceptance gate in `spec/p1-prototype-profile-v1.7.md`
+- Registry: 1.7.0
+- Historical registries: v1.6 and v1.5 retained only for reproducibility
 
 The profile requires a source-only revision to report runtime gates as pending
 until its Rust and Linux jobs execute. Every gate line below names the job or
@@ -16,7 +16,7 @@ passing result.
 | Gate line | Evidence |
 |---|---|
 | separately started processes interoperate using the active specification | `linux-interop`, direct arm (`--relays 0`) |
-| all canonical vectors pass and noncanonical encodings fail | `reference-and-spec`: `check_repo.sh` regenerates and byte-compares the 32-vector v1.6 corpus; the Rust `conformance` crate consumes it; Rust also consumes T1, T2, R1, and C1 component vectors |
+| all canonical vectors pass and noncanonical encodings fail | `reference-and-spec`: `check_repo.sh` regenerates and byte-compares the 32-vector v1.7 corpus; the Rust `conformance` crate consumes it; Rust also consumes T1, T2, R1, and C1 component vectors |
 | decoder fuzzing completes without crash or unbounded allocation | `fuzz-run`, both `cargo-fuzz` targets for 120 seconds with bounded input and RSS |
 | a 12-relay namespace path establishes, exchanges data, closes, and cleans up | `linux-interop`, twelve-relay arm |
 | 5% independent packet loss is recovered | `linux-interop`, two-relay and five-relay arms; the five-relay arm exercises selective recovery of a fragmented candidate blob |
@@ -76,9 +76,9 @@ Relays rerandomize the C1 capsule without deciding eligibility. C1 remains an
 experimental profile and is not evidence of complete endpoint anonymity. The
 retired C1 v1 and disabled C2 k=2 suite must be refused on every live profile.
 
-## v1.6 routing-nonce split
+## Routing-nonce split
 
-The active v1.6 `DISCOVER` carries:
+The active v1.7 `DISCOVER` carries, unchanged from v1.6:
 
 - one suite-independent 32-byte `routing_nonce`;
 - one suite-sized `eligibility_field`.
@@ -97,15 +97,16 @@ The candidate chain covers the routing-nonce replacements. It does not cover
 the eligibility field end to end; the active core specification states that
 boundary explicitly.
 
-## What retaining v1.5 means
+## What retaining v1.6 and v1.5 means
 
-The binaries implement **v1.6 only**. `DISCOVER` gained the separate 32-byte
-routing nonce, so v1.5 and v1.6 do not interoperate.
+The binaries implement **v1.7 only**. The protocol version byte is now `2`, so
+v1.6 and v1.7 do not interoperate; v1.6 had already broken with v1.5 when
+`DISCOVER` gained the separate 32-byte routing nonce.
 
-The v1.5 registry, vectors, corpus, and generated Markdown remain in the
-repository and `tools/check_repo.sh` regenerates and byte-compares them. This
-keeps the historical profile reproducible. It does not make the current code
-dual-stack or capable of speaking v1.5.
+The v1.6 and v1.5 registries, vectors, corpora, and generated Markdown remain in
+the repository and `tools/check_repo.sh` regenerates and byte-compares them.
+This keeps the historical profiles reproducible. It does not make the current
+code dual-stack or capable of speaking either.
 
 ## Known system-level gaps
 

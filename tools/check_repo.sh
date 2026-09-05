@@ -56,6 +56,16 @@ spec/protocol-registry-v1.6.json
 spec/protocol-registry-v1.6.md
 spec/p1-conformance-vectors-v1.6.json
 spec/p1-conformance-corpus-v1.6.bin
+spec/core-v1.7.md
+spec/messages-v1.7.md
+spec/state-machines-v1.7.md
+spec/invariants-v1.7.md
+spec/resource-accounting-v1.7.md
+spec/p1-prototype-profile-v1.7.md
+spec/protocol-registry-v1.7.json
+spec/protocol-registry-v1.7.md
+spec/p1-conformance-vectors-v1.7.json
+spec/p1-conformance-corpus-v1.7.bin
 reports/v1.5-bounded-state-models.json
 reports/v1.5-t3-anonymity-metrics.json
 simulator/trahens_spec/generated.py
@@ -252,30 +262,36 @@ python tools/generate_protocol_registry.py \
     --markdown-output "$registry_md_tmp"
 cmp simulator/trahens_spec/generated.py "$registry_py_tmp"
 cmp implementation/rust/crates/protocol-registry/src/generated.rs "$registry_rs_tmp"
-cmp spec/protocol-registry-v1.6.md "$registry_md_tmp"
-# v1.5 is retained and must still regenerate from its own registry, so the
-# frozen profile stays reproducible even though the binaries target v1.6.
-registry_md_v15_tmp=$(mktemp)
-python tools/generate_protocol_registry.py \
-    --registry spec/protocol-registry-v1.5.json \
-    --markdown-output "$registry_md_v15_tmp"
-cmp spec/protocol-registry-v1.5.md "$registry_md_v15_tmp"
-rm -f "$registry_md_v15_tmp"
+cmp spec/protocol-registry-v1.7.md "$registry_md_tmp"
+# v1.5 and v1.6 are retained and must still regenerate from their own
+# registries, so each frozen profile stays reproducible even though the
+# binaries target v1.7.
+registry_md_old_tmp=$(mktemp)
+for retired_series in 1.5 1.6; do
+    python tools/generate_protocol_registry.py \
+        --registry "spec/protocol-registry-v$retired_series.json" \
+        --markdown-output "$registry_md_old_tmp"
+    cmp "spec/protocol-registry-v$retired_series.md" "$registry_md_old_tmp"
+done
+rm -f "$registry_md_old_tmp"
 python tools/generate_p1_conformance.py \
     --json-output "$p1_vectors_tmp" \
     --corpus-output "$p1_corpus_tmp"
-cmp spec/p1-conformance-vectors-v1.6.json "$p1_vectors_tmp"
-cmp spec/p1-conformance-corpus-v1.6.bin "$p1_corpus_tmp"
-# v1.5 is retained and must still regenerate from its own registry.
-p1_vectors_v15_tmp=$(mktemp)
-p1_corpus_v15_tmp=$(mktemp)
-python tools/generate_p1_conformance.py \
-    --registry spec/protocol-registry-v1.5.json \
-    --json-output "$p1_vectors_v15_tmp" \
-    --corpus-output "$p1_corpus_v15_tmp"
-cmp spec/p1-conformance-vectors-v1.5.json "$p1_vectors_v15_tmp"
-cmp spec/p1-conformance-corpus-v1.5.bin "$p1_corpus_v15_tmp"
-rm -f "$p1_vectors_v15_tmp" "$p1_corpus_v15_tmp"
+cmp spec/p1-conformance-vectors-v1.7.json "$p1_vectors_tmp"
+cmp spec/p1-conformance-corpus-v1.7.bin "$p1_corpus_tmp"
+# v1.5 and v1.6 are retained and must still regenerate from their own
+# registries.
+p1_vectors_old_tmp=$(mktemp)
+p1_corpus_old_tmp=$(mktemp)
+for retired_series in 1.5 1.6; do
+    python tools/generate_p1_conformance.py \
+        --registry "spec/protocol-registry-v$retired_series.json" \
+        --json-output "$p1_vectors_old_tmp" \
+        --corpus-output "$p1_corpus_old_tmp"
+    cmp "spec/p1-conformance-vectors-v$retired_series.json" "$p1_vectors_old_tmp"
+    cmp "spec/p1-conformance-corpus-v$retired_series.bin" "$p1_corpus_old_tmp"
+done
+rm -f "$p1_vectors_old_tmp" "$p1_corpus_old_tmp"
 python tools/check_state_models.py --output "$state_models_tmp"
 cmp reports/v1.5-bounded-state-models.json "$state_models_tmp"
 PYTHONPATH=simulator python tools/generate_anonymity_metrics.py --output "$anonymity_tmp"

@@ -12,7 +12,7 @@ import struct
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REGISTRY = ROOT / "spec/protocol-registry-v1.6.json"
+REGISTRY = ROOT / "spec/protocol-registry-v1.7.json"
 
 
 def varuint(value: int) -> bytes:
@@ -155,8 +155,8 @@ def write_corpus(path: Path, vectors: list[dict]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--registry", type=Path, default=REGISTRY)
-    parser.add_argument("--json-output", type=Path, default=ROOT / "spec/p1-conformance-vectors-v1.6.json")
-    parser.add_argument("--corpus-output", type=Path, default=ROOT / "spec/p1-conformance-corpus-v1.6.bin")
+    parser.add_argument("--json-output", type=Path, default=ROOT / "spec/p1-conformance-vectors-v1.7.json")
+    parser.add_argument("--corpus-output", type=Path, default=ROOT / "spec/p1-conformance-corpus-v1.7.bin")
     args = parser.parse_args()
     reg = json.loads(args.registry.read_text(encoding="utf-8"))
     vectors = build_vectors(reg)

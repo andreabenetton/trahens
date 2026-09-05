@@ -1,0 +1,240 @@
+{
+  "schema": "trahens-p1-conformance-v1",
+  "registry_version": "1.7.0",
+  "generator_independence": "manual encoder reads only protocol-registry-v1.7.json",
+  "vectors": [
+    {
+      "name": "chaff-positive",
+      "message": "CHAFF",
+      "valid": true,
+      "encoding_hex": "000201010101020000"
+    },
+    {
+      "name": "chaff-negative-reserved",
+      "message": "CHAFF",
+      "valid": false,
+      "encoding_hex": "000201010101020100",
+      "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "discover-positive",
+      "message": "DISCOVER",
+      "valid": true,
+      "encoding_hex": "2002010101010200750102030405060708090a0b0c0d0e0f100c010100e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0204142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f60"
+    },
+    {
+      "name": "discover-negative-reserved",
+      "message": "DISCOVER",
+      "valid": false,
+      "encoding_hex": "2002010101010201750102030405060708090a0b0c0d0e0f100c010100e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0204142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f60",
+      "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "discover-negative-expiry-class",
+      "message": "DISCOVER",
+      "valid": false,
+      "encoding_hex": "2002010101010200750102030405060708090a0b0c0d0e0f100c010200e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0204142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f60",
+      "expected_error": "malformed"
+    },
+    {
+      "name": "candidate-positive",
+      "message": "CANDIDATE",
+      "valid": true,
+      "encoding_hex": "2102010101010200530102030405060708090a0b0c0d0e0f100102406162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0"
+    },
+    {
+      "name": "candidate-negative-reserved",
+      "message": "CANDIDATE",
+      "valid": false,
+      "encoding_hex": "2102010101010201530102030405060708090a0b0c0d0e0f100102406162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0",
+      "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "candidate-negative-expiry-class",
+      "message": "CANDIDATE",
+      "valid": false,
+      "encoding_hex": "2102010101010200530102030405060708090a0b0c0d0e0f100202406162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0",
+      "expected_error": "malformed"
+    },
+    {
+      "name": "commit-positive",
+      "message": "COMMIT",
+      "valid": true,
+      "encoding_hex": "2202010101010200381112131415161718191a1b1c1d1e1f20000000070122220102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021"
+    },
+    {
+      "name": "commit-negative-reserved",
+      "message": "COMMIT",
+      "valid": false,
+      "encoding_hex": "2202010101010201381112131415161718191a1b1c1d1e1f20000000070122220102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "commit-negative-expiry-class",
+      "message": "COMMIT",
+      "valid": false,
+      "encoding_hex": "2202010101010200381112131415161718191a1b1c1d1e1f20000000070222220102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
+    },
+    {
+      "name": "ready-positive",
+      "message": "READY",
+      "valid": true,
+      "encoding_hex": "2302010101010200381112131415161718191a1b1c1d1e1f20000000070122230102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021"
+    },
+    {
+      "name": "ready-negative-reserved",
+      "message": "READY",
+      "valid": false,
+      "encoding_hex": "2302010101010201381112131415161718191a1b1c1d1e1f20000000070122230102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "ready-negative-expiry-class",
+      "message": "READY",
+      "valid": false,
+      "encoding_hex": "2302010101010200381112131415161718191a1b1c1d1e1f20000000070222230102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
+    },
+    {
+      "name": "cancel-positive",
+      "message": "CANCEL",
+      "valid": true,
+      "encoding_hex": "2402010101010200381112131415161718191a1b1c1d1e1f20000000070122240102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021"
+    },
+    {
+      "name": "cancel-negative-reserved",
+      "message": "CANCEL",
+      "valid": false,
+      "encoding_hex": "2402010101010201381112131415161718191a1b1c1d1e1f20000000070122240102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "cancel-negative-expiry-class",
+      "message": "CANCEL",
+      "valid": false,
+      "encoding_hex": "2402010101010200381112131415161718191a1b1c1d1e1f20000000070222240102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
+    },
+    {
+      "name": "abort-positive",
+      "message": "ABORT",
+      "valid": true,
+      "encoding_hex": "2502010101010200381112131415161718191a1b1c1d1e1f20000000070122250102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021"
+    },
+    {
+      "name": "abort-negative-reserved",
+      "message": "ABORT",
+      "valid": false,
+      "encoding_hex": "2502010101010201381112131415161718191a1b1c1d1e1f20000000070122250102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "abort-negative-expiry-class",
+      "message": "ABORT",
+      "valid": false,
+      "encoding_hex": "2502010101010200381112131415161718191a1b1c1d1e1f20000000070222250102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
+    },
+    {
+      "name": "close-positive",
+      "message": "CLOSE",
+      "valid": true,
+      "encoding_hex": "2602010101010200381112131415161718191a1b1c1d1e1f20000000070122260102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021"
+    },
+    {
+      "name": "close-negative-reserved",
+      "message": "CLOSE",
+      "valid": false,
+      "encoding_hex": "2602010101010201381112131415161718191a1b1c1d1e1f20000000070122260102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "close-negative-expiry-class",
+      "message": "CLOSE",
+      "valid": false,
+      "encoding_hex": "2602010101010200381112131415161718191a1b1c1d1e1f20000000070222260102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
+    },
+    {
+      "name": "rendezvous_open-positive",
+      "message": "RENDEZVOUS_OPEN",
+      "valid": true,
+      "encoding_hex": "2702010101010200381112131415161718191a1b1c1d1e1f20000000070122270102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021"
+    },
+    {
+      "name": "rendezvous_open-negative-reserved",
+      "message": "RENDEZVOUS_OPEN",
+      "valid": false,
+      "encoding_hex": "2702010101010201381112131415161718191a1b1c1d1e1f20000000070122270102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "rendezvous_open-negative-expiry-class",
+      "message": "RENDEZVOUS_OPEN",
+      "valid": false,
+      "encoding_hex": "2702010101010200381112131415161718191a1b1c1d1e1f20000000070222270102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
+    },
+    {
+      "name": "rendezvous_result-positive",
+      "message": "RENDEZVOUS_RESULT",
+      "valid": true,
+      "encoding_hex": "2802010101010200381112131415161718191a1b1c1d1e1f20000000070122280102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021"
+    },
+    {
+      "name": "rendezvous_result-negative-reserved",
+      "message": "RENDEZVOUS_RESULT",
+      "valid": false,
+      "encoding_hex": "2802010101010201381112131415161718191a1b1c1d1e1f20000000070122280102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "rendezvous_result-negative-expiry-class",
+      "message": "RENDEZVOUS_RESULT",
+      "valid": false,
+      "encoding_hex": "2802010101010200381112131415161718191a1b1c1d1e1f20000000070222280102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
+    },
+    {
+      "name": "data-positive",
+      "message": "DATA",
+      "valid": true,
+      "encoding_hex": "2902010101010200381112131415161718191a1b1c1d1e1f20000000070122290102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021"
+    },
+    {
+      "name": "data-negative-reserved",
+      "message": "DATA",
+      "valid": false,
+      "encoding_hex": "2902010101010201381112131415161718191a1b1c1d1e1f20000000070122290102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "unsupported_profile"
+    },
+    {
+      "name": "data-negative-expiry-class",
+      "message": "DATA",
+      "valid": false,
+      "encoding_hex": "2902010101010200381112131415161718191a1b1c1d1e1f20000000070222290102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
+      "expected_error": "malformed"
+    }
+  ],
+  "field_protection": {
+    "link_epoch": "public",
+    "link_sequence": "public",
+    "t1_frame_type": "link-encrypted",
+    "m2_message_type": "link-encrypted",
+    "m2_suite_id": "link-encrypted",
+    "fragment_metadata": "link-encrypted",
+    "branch_token": "link-encrypted-hop-local",
+    "candidate_token": "link-encrypted-hop-local",
+    "local_label": "link-encrypted-hop-local",
+    "r1_discovery_nonce": "link-encrypted-replaced-each-hop",
+    "gateway_pseudonym": "end-to-end-encrypted",
+    "r1_capability": "end-to-end-encrypted",
+    "route_secret": "end-to-end-encrypted",
+    "application_data": "end-to-end-encrypted",
+    "retransmission_counters": "local-only",
+    "queue_depth": "local-only",
+    "route_mapping": "local-only",
+    "keys_and_capabilities": "never-logged"
+  }
+}

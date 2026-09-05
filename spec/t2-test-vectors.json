@@ -1,26 +1,26 @@
 {
   "accept": {
     "action": "ACCEPT",
-    "body_sha256": "22d2be8f65124b4dd03b8c8f8b2ad2aae58164236f6ea1b7c11683dd01a739d9",
+    "body_sha256": "21e660b6a2d8ba0012b0c337045726debd81066d67c16228ca99917bda4dce35",
     "effective_epoch": 19,
     "epoch": 5,
     "maximum_rate_class": 2,
-    "record_sha256": "39185d9237f1d29955ef64ea31792a9ab54f526b43a0f03ab401a4c150965ca5",
+    "record_sha256": "9178f9ddee2b14200452b323e5a59b3d7168ef3cda50dc0954992f21668c20cc",
     "requested_rate_class": 2,
     "sequence": 82
   },
   "different_ciphertext": true,
   "offer": {
     "action": "OFFER",
-    "body_sha256": "f51c8b9fd67e7ed0e99c45e36505424fffd56059ab7cc7638156b2325ff967ce",
+    "body_sha256": "cc48c331ebb78517a890bcabad8eb9c21079a39a9bb7b20795e1369846eca2f8",
     "current_rate_class": 1,
     "decoded_equal": true,
     "effective_epoch": 19,
-    "encrypted_header_plaintext": "040101010101030011223344556677889900aabbccddeeff0000001301020300",
+    "encrypted_header_plaintext": "040201010101030011223344556677889900aabbccddeeff0000001301020300",
     "epoch": 5,
     "maximum_rate_class": 3,
     "negotiation_id": "11223344556677889900aabbccddeeff",
-    "record_sha256": "ff60c3a3cb530a222bbbacca9b1f135ade1050a3263c961b9d7b6f248a0201a6",
+    "record_sha256": "67ade9afc658968cda4bd93164607baeb7fafc8a15e844592ed98d79c0eba140",
     "requested_rate_class": 2,
     "sequence": 81
   },

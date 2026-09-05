@@ -4,6 +4,7 @@
 use codec_m2::{Candidate, Control, Discover, Envelope, Message, MessageType, P1Payload};
 use node_runtime::p1::{
     commit_proof, open_candidate_chain, open_control, ready_proof, seal_control, verify_proof,
+    RouteReplayWindow, RouteSequencer,
 };
 use node_runtime::{
     drain_links, event_channel, parse_hex, spawn_link, structured_event, unix_time_ms,
@@ -21,7 +22,8 @@ use std::error::Error;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
 use trahens_crypto::{
-    initialize, random_bytes, random_nonzero_16, random_scalar, scalar_base, SecretBytes,
+    initialize, random_bytes, random_nonzero_16, random_scalar, route_keys, scalar_base,
+    RouteDirection, RouteKeys, SecretBytes,
 };
 
 struct ActiveRoute {
@@ -30,11 +32,17 @@ struct ActiveRoute {
     /// Branch this route came from, which keys the local route state.
     state_label: [u8; 16],
     generation: u32,
+    /// Retained for the COMMIT and READY keyed proofs, which are computed from
+    /// the secret itself rather than from the channel keys derived below.
     route_secret: SecretBytes<32>,
     // The commit challenge is a keyed-proof input shared with the gateway;
     // Core v1.5 section 8.4 requires it to be wiped when the route ends.
     challenge: SecretBytes<32>,
     pseudonym: [u8; 16],
+    /// Directional channel keys bound to the selected offer's transcript.
+    keys: RouteKeys,
+    send_sequence: RouteSequencer,
+    receive_window: RouteReplayWindow,
 }
 
 fn control(
@@ -59,12 +67,17 @@ fn control(
 fn send_control(
     suite_id: [u8; 2],
     link: &node_runtime::LinkHandle,
-    route: &ActiveRoute,
+    route: &mut ActiveRoute,
     message_type: MessageType,
     payload: &P1Payload,
 ) -> Result<(), Box<dyn Error>> {
+    // The initiator only ever seals towards the gateway, and every record it
+    // sends takes the next sequence, so no nonce repeats under this key.
+    let sequence = route.send_sequence.next()?;
     let protected = seal_control(
-        &route.route_secret.0,
+        route.keys.direction(RouteDirection::EndpointToGateway),
+        RouteDirection::EndpointToGateway,
+        sequence,
         message_type,
         route.generation,
         payload,
@@ -404,20 +417,27 @@ fn run() -> Result<(), Box<dyn Error>> {
                     // The offer is consumed, not copied: its secrets move
                     // into the route, and every candidate not selected is
                     // dropped with its own secrets wiped.
-                    let route = ActiveRoute {
+                    let keys = route_keys(
+                        &chosen.opened.route_secret.0,
+                        &chosen.opened.transcript_hash,
+                    )?;
+                    let mut route = ActiveRoute {
                         local_label: chosen.selector,
                         state_label: chosen.branch_token,
                         generation,
                         route_secret: chosen.opened.route_secret,
                         challenge: chosen.opened.commit_challenge,
                         pseudonym: chosen.opened.gateway_pseudonym,
+                        keys,
+                        send_sequence: RouteSequencer::new(),
+                        receive_window: RouteReplayWindow::new(),
                     };
                     let proof =
                         commit_proof(&route.route_secret.0, &route.challenge.0, &route.pseudonym)?;
                     send_control(
                         wire_suite,
                         &link,
-                        &route,
+                        &mut route,
                         MessageType::Commit,
                         &P1Payload::Commit { proof },
                     )?;
@@ -498,6 +518,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     let Some((ring, branch_token, opened)) = contexts.iter().find_map(|context| {
                         open_candidate_chain(
                             &context.root_secret.0,
+                            &wire_suite,
                             &candidate_blob,
                             layer_count,
                             &expected_gateway_public,
@@ -566,7 +587,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                 }
                 Message::Control(control_message) => {
-                    let Some(route) = active.as_ref() else {
+                    let Some(route) = active.as_mut() else {
                         continue;
                     };
                     if control_message.local_label != route.local_label
@@ -588,8 +609,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                     // Sealed control bodies are remote input: authentication
                     // failure drops the message, never the process.
-                    let Ok(payload) = open_control(
-                        &route.route_secret.0,
+                    let Ok((sequence, payload)) = open_control(
+                        route.keys.direction(RouteDirection::GatewayToEndpoint),
+                        RouteDirection::GatewayToEndpoint,
                         control_message.message_type,
                         route.generation,
                         &control_message.protected_body,
@@ -597,6 +619,12 @@ fn run() -> Result<(), Box<dyn Error>> {
                         drops.record("endpoint", ERROR_AUTHENTICATION_FAILED, "control_body");
                         continue;
                     };
+                    // Committed only after the record authenticates, so a forged
+                    // sequence cannot burn a slot in the window.
+                    if route.receive_window.admit(sequence).is_err() {
+                        drops.record("endpoint", ERROR_STATE_VIOLATION, "route_replay");
+                        continue;
+                    }
                     match (control_message.message_type, payload) {
                         (MessageType::Ready, P1Payload::Ready { proof }) => {
                             let expected = ready_proof(

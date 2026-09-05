@@ -667,43 +667,145 @@ pub fn reply_open(
     }
 }
 
-fn route_key(route_secret: &[u8; 32]) -> Result<SecretBytes<32>, CryptoError> {
+/// Which way along a route a record travels.
+///
+/// The code is the leading quarter of the AEAD nonce and selects the key, so
+/// the two directions can never collide under one key even if their sequence
+/// spaces do, and a reflected record cannot open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RouteDirection {
+    EndpointToGateway,
+    GatewayToEndpoint,
+}
+
+impl RouteDirection {
+    pub fn code(self) -> u32 {
+        match self {
+            Self::EndpointToGateway => 0,
+            Self::GatewayToEndpoint => 1,
+        }
+    }
+
+    fn domain(self) -> &'static [u8] {
+        match self {
+            Self::EndpointToGateway => protocol_registry::DOMAIN_P1_ROUTE_KEY_E2G,
+            Self::GatewayToEndpoint => protocol_registry::DOMAIN_P1_ROUTE_KEY_G2E,
+        }
+    }
+}
+
+/// The two directional keys of one route channel.
+pub struct RouteKeys {
+    pub endpoint_to_gateway: SecretBytes<32>,
+    pub gateway_to_endpoint: SecretBytes<32>,
+}
+
+impl RouteKeys {
+    pub fn direction(&self, direction: RouteDirection) -> &[u8; 32] {
+        match direction {
+            RouteDirection::EndpointToGateway => &self.endpoint_to_gateway.0,
+            RouteDirection::GatewayToEndpoint => &self.gateway_to_endpoint.0,
+        }
+    }
+}
+
+/// Derive both directional route keys from the route secret.
+///
+/// The selected offer's transcript hash is bound into the expansion, so the
+/// keys are valid only for the offer that was actually chosen: a route secret
+/// presented under any other offer derives different keys and fails closed.
+pub fn route_keys(
+    route_secret: &[u8; 32],
+    offer_transcript_hash: &[u8; 32],
+) -> Result<RouteKeys, CryptoError> {
     if *route_secret == [0_u8; 32] {
         return Err(CryptoError::InvalidEncoding);
     }
-    let mut input =
-        Vec::with_capacity(protocol_registry::DOMAIN_P1_ROUTE_KEY.len() + route_secret.len());
-    input.extend_from_slice(protocol_registry::DOMAIN_P1_ROUTE_KEY);
-    input.extend_from_slice(route_secret);
-    Ok(SecretBytes(hmac_sha256(route_secret, &input)?))
+    let mut ikm =
+        Vec::with_capacity(protocol_registry::DOMAIN_P1_ROUTE_EXTRACT.len() + route_secret.len());
+    ikm.extend_from_slice(protocol_registry::DOMAIN_P1_ROUTE_EXTRACT);
+    ikm.extend_from_slice(route_secret);
+    let prk = hkdf_extract(&ikm)?;
+    Ok(RouteKeys {
+        endpoint_to_gateway: SecretBytes(expand_route_key(
+            &prk,
+            RouteDirection::EndpointToGateway,
+            offer_transcript_hash,
+        )?),
+        gateway_to_endpoint: SecretBytes(expand_route_key(
+            &prk,
+            RouteDirection::GatewayToEndpoint,
+            offer_transcript_hash,
+        )?),
+    })
+}
+
+fn expand_route_key(
+    prk: &[u8; 32],
+    direction: RouteDirection,
+    offer_transcript_hash: &[u8; 32],
+) -> Result<[u8; 32], CryptoError> {
+    let domain = direction.domain();
+    let mut info = Vec::with_capacity(domain.len() + offer_transcript_hash.len());
+    info.extend_from_slice(domain);
+    info.extend_from_slice(offer_transcript_hash);
+    let bytes = hkdf_expand(prk, &info, 32)?;
+    let mut key = [0_u8; 32];
+    key.copy_from_slice(&bytes);
+    Ok(key)
+}
+
+/// Deterministic route nonce: direction then sequence, filling the AEAD nonce
+/// exactly. A counter rather than randomness, so one key never repeats a nonce
+/// and the receiver can bound what it has already accepted.
+fn route_nonce(direction: RouteDirection, sequence: u64) -> [u8; NONCE_BYTES] {
+    let mut nonce = [0_u8; NONCE_BYTES];
+    nonce[..4].copy_from_slice(&direction.code().to_be_bytes());
+    nonce[4..].copy_from_slice(&sequence.to_be_bytes());
+    nonce
 }
 
 pub fn route_seal(
-    route_secret: &[u8; 32],
+    key: &[u8; 32],
+    direction: RouteDirection,
+    sequence: u64,
     plaintext: &[u8],
     aad: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
-    let key = route_key(route_secret)?;
-    let nonce = random_bytes::<12>()?;
-    let ciphertext = aead_seal(&key.0, &nonce, plaintext, aad)?;
-    let mut output = Vec::with_capacity(12 + ciphertext.len());
+    let nonce = route_nonce(direction, sequence);
+    let ciphertext = aead_seal(key, &nonce, plaintext, aad)?;
+    let mut output = Vec::with_capacity(NONCE_BYTES + ciphertext.len());
     output.extend_from_slice(&nonce);
     output.extend_from_slice(&ciphertext);
     Ok(output)
 }
 
+/// Open a route record, returning its authenticated sequence number.
+///
+/// The caller supplies the key for the direction it expects to receive, so a
+/// record travelling the other way cannot open. The sequence is returned rather
+/// than trusted from the payload: it is the value the caller must check against
+/// its replay window.
 pub fn route_open(
-    route_secret: &[u8; 32],
+    key: &[u8; 32],
+    expected_direction: RouteDirection,
     sealed: &[u8],
     aad: &[u8],
-) -> Result<Vec<u8>, CryptoError> {
+) -> Result<(u64, Vec<u8>), CryptoError> {
     if sealed.len() < NONCE_BYTES + TAG_BYTES {
         return Err(CryptoError::Authentication);
     }
-    let key = route_key(route_secret)?;
-    let mut nonce = [0_u8; 12];
-    nonce.copy_from_slice(&sealed[..12]);
-    aead_open(&key.0, &nonce, &sealed[12..], aad)
+    let mut nonce = [0_u8; NONCE_BYTES];
+    nonce.copy_from_slice(&sealed[..NONCE_BYTES]);
+    let mut code = [0_u8; 4];
+    code.copy_from_slice(&nonce[..4]);
+    if u32::from_be_bytes(code) != expected_direction.code() {
+        return Err(CryptoError::Authentication);
+    }
+    let mut sequence = [0_u8; 8];
+    sequence.copy_from_slice(&nonce[4..]);
+    let plaintext = aead_open(key, &nonce, &sealed[NONCE_BYTES..], aad)?;
+    Ok((u64::from_be_bytes(sequence), plaintext))
 }
 
 pub fn keyed_proof(

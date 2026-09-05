@@ -2,7 +2,7 @@
 
 # Trahens, explained in plain language
 
-This document explains **Trahens Core v1.6 and its P1 prototype** without
+This document explains **Trahens Core v1.7 and its P1 prototype** without
 requiring the reader to begin with cryptographic notation, packet layouts, or
 state-machine specifications.
 
@@ -165,7 +165,7 @@ for the destination.
 The initiator creates a bounded discovery branch and sends `DISCOVER` to one
 adjacent relay.
 
-A v1.6 `DISCOVER` contains two different per-hop values:
+A v1.7 `DISCOVER` contains two different per-hop values:
 
 ### Routing nonce
 
@@ -262,7 +262,7 @@ reply-key transformation for that hop.
 The initiator can verify the complete chain. Intermediate relays cannot open
 the final gateway offer.
 
-The v1.6 candidate chain binds the **routing nonce chain**. It does not bind the
+The v1.7 candidate chain binds the **routing nonce chain**. It does not bind the
 eligibility field end to end; that field is transformed hop by hop and protected
 on each adjacent W2 link. A future eligibility suite requiring end-to-end field
 binding must define it itself.
@@ -521,7 +521,7 @@ unimplemented.
 
 ## 19. Mandatory and experimental parts
 
-### Mandatory v1.6 interoperability path
+### Mandatory v1.7 interoperability path
 
 - **U1** — branch-local representation replacement;
 - **E1** — route lifecycle and cleanup;
@@ -536,7 +536,7 @@ unimplemented.
 - adaptive T2 scheduling;
 - C1 v2 eligibility.
 
-C1 is now a live experimental path in v1.6. It requires an explicit
+C1 is now a live experimental path in v1.7. It requires an explicit
 experimental profile and an explicit suite choice. It must not be cited as
 proof of endpoint anonymity, and its algebraic tagging negative control remains
 relevant.
@@ -554,7 +554,7 @@ relevant.
 
 The repository includes:
 
-- a normative v1.6 registry;
+- a normative v1.7 registry;
 - canonical and noncanonical conformance vectors;
 - Rust endpoint, relay, and rendezvous executables;
 - fuzz targets;
@@ -628,15 +628,15 @@ ensuring that:
 - the protocol states which privacy, directory, bootstrap, and cryptographic
   questions remain unresolved.
 
-That is the current contribution of Trahens Core v1.6.
+That is the current contribution of Trahens Core v1.7.
 
 ---
 
 ## Further reading
 
 1. [`README.md`](README.md) — current status and claim boundary.
-2. [`spec/core-v1.6.md`](spec/core-v1.6.md) — active interoperability profile.
-3. [`spec/p1-prototype-profile-v1.6.md`](spec/p1-prototype-profile-v1.6.md) — runtime acceptance gate.
+2. [`spec/core-v1.7.md`](spec/core-v1.7.md) — active interoperability profile.
+3. [`spec/p1-prototype-profile-v1.7.md`](spec/p1-prototype-profile-v1.7.md) — runtime acceptance gate.
 4. [`docs/implementing-trahens-p1.md`](docs/implementing-trahens-p1.md) — second-implementation guide.
 5. [`docs/threat-model.md`](docs/threat-model.md) — adversaries and exclusions.
 6. [`spec/rendezvous-capability-r1.md`](spec/rendezvous-capability-r1.md) — mandatory rendezvous model.

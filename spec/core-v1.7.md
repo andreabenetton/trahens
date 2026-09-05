@@ -1,30 +1,38 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 
-# Trahens Core v1.6 — P1 interoperability profile
+# Trahens Core v1.7 — P1 interoperability profile
 
-- Status: Frozen experimental wire profile. Superseded by v1.7, which is active.
-- Date: 2026-08-01
-- Registry version: 1.6.1
+- Status: Active experimental wire profile. Supersedes v1.6, which is history.
+- Date: 2026-09-05
+- Registry version: 1.7.0
 - Mandatory interoperability profiles: U1, E1, R1, M2, W2, T1, fixed T2/P1
 - Selectable experimental profiles: adaptive T2, C1 eligibility
 - Experimental analysis profiles: T3, T4, D1
-- Normative registry: `protocol-registry-v1.6.json`
+- Normative registry: `protocol-registry-v1.7.json`
 
-v1.6 separates the suite-independent routing nonce from the suite's eligibility
-field, which adds 32 bytes to `DISCOVER`. A v1.5 encoding does not decode under
-v1.6 and the two do not interoperate. `docs/adr/0040-routing-nonce-split.md`
+v1.7 rebuilds the end-to-end route channel and the signed gateway offer. The
+route channel gains a directional key schedule with counter nonces and a
+per-direction replay window, so a recorded protected body can no longer be
+replayed by an intermediate relay; the gateway offer is signed over a transcript
+that binds the protocol version, suite, reply key, and parameter digest. The
+protocol version byte becomes `2`, so a v1.6 encoding does not decode under v1.7
+and the two do not interoperate. `docs/adr/0041-directional-route-channel.md`
 records the decision and its consequences.
+
+v1.6 separated the suite-independent routing nonce from the suite's eligibility
+field, which added 32 bytes to `DISCOVER`; v1.7 keeps that encoding unchanged.
+`docs/adr/0040-routing-nonce-split.md` records that earlier decision.
 
 ## 1. Purpose
 
-Core v1.6 defines the smallest profile needed for independently started
+Core v1.7 defines the smallest profile needed for independently started
 user-space nodes to discover a rendezvous gateway, establish a bounded route,
 redeem a one-time capability, exchange bidirectional data, and reclaim all
 remote state. It is implemented over ordinary UDP so W2 framing, T1 recovery,
 retransmission, and fixed T2 scheduling remain observable and testable protocol
 behavior.
 
-Core v1.6 does not claim production readiness, global traffic-flow
+Core v1.7 does not claim production readiness, global traffic-flow
 unlinkability, a complete private-directory system, autonomous network
 bootstrap, or post-quantum security. Reply-layer privacy remains conditional on
 external review of key privacy and the nested multi-user composition.
@@ -37,7 +45,7 @@ remove the current static-configuration assumption.
 
 ## 2. Frozen protocol set
 
-The following are mandatory for v1.6 P1 interoperability:
+The following are mandatory for v1.7 P1 interoperability:
 
 - U1 branch-local replacement and no stable cross-hop route handle;
 - E1 typed route lifecycle and authoritative local expiry;
@@ -48,13 +56,13 @@ The following are mandatory for v1.6 P1 interoperability:
 - fixed T2/P1: 16 records per 200 ms epoch, one every 12,500 microseconds.
 
 Adaptive T2 and C1 eligibility are selectable experimental profiles with their
-own narrower gates. They MUST NOT be required for mandatory v1.6
+own narrower gates. They MUST NOT be required for mandatory v1.7
 interoperability and MUST NOT be cited as evidence for a mandatory gate line.
 T3 and T4 remain analysis profiles. D1 remains non-normative.
 
 ## 3. Registry authority
 
-`protocol-registry-v1.6.json` is normative for profile numbers, suite IDs,
+`protocol-registry-v1.7.json` is normative for profile numbers, suite IDs,
 message IDs, frame IDs, error IDs, byte order, widths, limits, fixed-T2
 parameters, domain separators, and field-protection classifications. Generated
 Python, Rust, and Markdown bindings MUST compare byte-for-byte with fresh
@@ -192,9 +200,9 @@ A conforming P1 implementation MUST:
 
 ## 9. Conformance
 
-`p1-conformance-vectors-v1.6.json` and
-`p1-conformance-corpus-v1.6.bin` are encoded by a generator that reads only the
-normative v1.6 registry, not either implementation. Every M2 message type has a
+`p1-conformance-vectors-v1.7.json` and
+`p1-conformance-corpus-v1.7.bin` are encoded by a generator that reads only the
+normative v1.7 registry, not either implementation. Every M2 message type has a
 positive and negative vector. Implementations MUST reject nonminimal lengths,
 reserved flags, retired or unknown suites, invalid widths, invalid points,
 impossible fragment metadata, and trailing bytes.
@@ -211,7 +219,7 @@ Endpoint -> Relay 1 -> ... -> Relay N -> Rendezvous Gateway
 
 Each node runs as a separate process in a separate network namespace with veth
 links, configurable MTU, `tc netem`, and per-link capture. The mandatory
-acceptance gate is defined in `p1-prototype-profile-v1.6.md`. Adaptive T2 and C1
+acceptance gate is defined in `p1-prototype-profile-v1.7.md`. Adaptive T2 and C1
 eligibility have separate experimental gates.
 
 ## 10. Evidence boundary

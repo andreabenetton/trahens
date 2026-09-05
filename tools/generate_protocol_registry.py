@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-REGISTRY = ROOT / "spec" / "protocol-registry-v1.6.json"
+REGISTRY = ROOT / "spec" / "protocol-registry-v1.7.json"
 
 
 def _name(value: str) -> str:
@@ -21,10 +21,15 @@ def _py_bytes(value: int, width: int) -> str:
     return repr(value.to_bytes(width, "big"))
 
 
+def _series(data: dict[str, Any]) -> str:
+    """Profile series, e.g. "1.7", taken from the registry being generated."""
+    return ".".join(data["registry_version"].split(".")[:2])
+
+
 def generate_python(data: dict[str, Any]) -> str:
     lines = [
         "# SPDX-License-Identifier: Apache-2.0",
-        '"""Generated from spec/protocol-registry-v1.6.json; do not edit."""',
+        f'"""Generated from spec/protocol-registry-v{_series(data)}.json; do not edit."""',
         "",
         f'REGISTRY_VERSION = {data["registry_version"]!r}',
         f'BYTE_ORDER = {data["byte_order"]!r}',
@@ -68,7 +73,7 @@ def _rust_array(value: int, width: int) -> str:
 def generate_rust(data: dict[str, Any]) -> str:
     lines = [
         "// SPDX-License-Identifier: Apache-2.0",
-        "// Generated from spec/protocol-registry-v1.6.json; do not edit.",
+        f"// Generated from spec/protocol-registry-v{_series(data)}.json; do not edit.",
         f'pub const REGISTRY_VERSION: &str = "{data["registry_version"]}";',
         "",
     ]
@@ -104,9 +109,9 @@ def generate_rust(data: dict[str, Any]) -> str:
 
 
 def generate_markdown(data: dict[str, Any]) -> str:
-    # The heading and source name follow the registry itself, so v1.5 and v1.6
-    # both regenerate from their own file rather than one being frozen prose.
-    series = ".".join(data["registry_version"].split(".")[:2])
+    # The heading and source name follow the registry itself, so every retained
+    # profile regenerates from its own file rather than one being frozen prose.
+    series = _series(data)
     out = [
         "<!-- SPDX-License-Identifier: CC-BY-4.0 -->",
         "",

@@ -5,7 +5,7 @@
 // This crate is a pure test harness: every item below exists only to drive the
 // tests at the bottom of the file, so all of it is scoped to test builds.
 #[cfg(test)]
-const CORPUS: &[u8] = include_bytes!("../../../../../spec/p1-conformance-corpus-v1.6.bin");
+const CORPUS: &[u8] = include_bytes!("../../../../../spec/p1-conformance-corpus-v1.7.bin");
 
 #[cfg(test)]
 #[derive(Debug, Clone)]

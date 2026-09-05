@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Generated from spec/protocol-registry-v1.6.json; do not edit.
-pub const REGISTRY_VERSION: &str = "1.6.1";
+// Generated from spec/protocol-registry-v1.7.json; do not edit.
+pub const REGISTRY_VERSION: &str = "1.7.0";
 
-pub const VERSION: u8 = 1;
+pub const VERSION: u8 = 2;
 pub const PRIVACY_PROFILE_U1: u8 = 1;
 pub const LIFECYCLE_PROFILE_E1: u8 = 1;
 pub const MESSAGE_PROFILE_M2: u8 = 2;
@@ -85,6 +85,9 @@ pub const BYTES_CELL_RECORD: usize = 1052;
 pub const BYTES_REPLY_ENCAPSULATION: usize = 32;
 pub const BYTES_REPLY_AEAD_TAG: usize = 16;
 pub const BYTES_REPLY_KEY_COMMITMENT: usize = 32;
+pub const BYTES_ROUTE_DIRECTION: usize = 4;
+pub const BYTES_ROUTE_SEQUENCE: usize = 8;
+pub const BYTES_ROUTE_NONCE: usize = 12;
 
 pub const LIMIT_MAX_LOGICAL_MESSAGE_BYTES: usize = 16384;
 pub const LIMIT_MAX_CONTROL_PROTECTED_BYTES: usize = 8192;
@@ -123,6 +126,7 @@ pub const LIMIT_MAX_REGISTRATIONS_PER_GATEWAY: usize = 1024;
 pub const LIMIT_ENDPOINT_HANDLE_TTL_MS: usize = 5000;
 pub const LIMIT_MAX_FANOUT_CLASS: usize = 3;
 pub const LIMIT_EXPIRY_CLASS_P1: usize = 1;
+pub const LIMIT_ROUTE_REPLAY_WINDOW: usize = 64;
 
 pub const FIXED_T2_PROFILE_ID: usize = 1;
 pub const FIXED_T2_EPOCH_MS: usize = 200;
@@ -150,4 +154,7 @@ pub const DOMAIN_C1_ACTIVE_TAG_SCALAR: &[u8] = b"Trahens-C1-active-tag-scalar-v2
 pub const DOMAIN_C1_REPLY_COMMIT: &[u8] = b"Trahens-C1-reply-key-commitment-v2";
 pub const DOMAIN_W2_LINK_KEY: &[u8] = b"Trahens-W2-link-key-v1";
 pub const DOMAIN_R1_CAPABILITY: &[u8] = b"Trahens-R1-capability-v1";
-pub const DOMAIN_P1_ROUTE_KEY: &[u8] = b"Trahens-P1-route-key-v1";
+pub const DOMAIN_P1_ROUTE_EXTRACT: &[u8] = b"Trahens-P1-route-extract-v2";
+pub const DOMAIN_P1_ROUTE_KEY_E2G: &[u8] = b"Trahens-P1-route-key-e2g-v2";
+pub const DOMAIN_P1_ROUTE_KEY_G2E: &[u8] = b"Trahens-P1-route-key-g2e-v2";
+pub const DOMAIN_P1_GATEWAY_OFFER: &[u8] = b"Trahens-P1-gateway-offer-v2";

@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Generated from spec/protocol-registry-v1.6.json; do not edit."""
+"""Generated from spec/protocol-registry-v1.7.json; do not edit."""
 
-REGISTRY_VERSION = '1.6.1'
+REGISTRY_VERSION = '1.7.0'
 BYTE_ORDER = 'big'
 
-VERSION = 1
+VERSION = 2
 PRIVACY_PROFILE_U1 = 1
 LIFECYCLE_PROFILE_E1 = 1
 MESSAGE_PROFILE_M2 = 2
@@ -87,6 +87,9 @@ BYTES_CELL_RECORD = 1052
 BYTES_REPLY_ENCAPSULATION = 32
 BYTES_REPLY_AEAD_TAG = 16
 BYTES_REPLY_KEY_COMMITMENT = 32
+BYTES_ROUTE_DIRECTION = 4
+BYTES_ROUTE_SEQUENCE = 8
+BYTES_ROUTE_NONCE = 12
 
 LIMIT_MAX_LOGICAL_MESSAGE_BYTES = 16384
 LIMIT_MAX_CONTROL_PROTECTED_BYTES = 8192
@@ -125,6 +128,7 @@ LIMIT_MAX_REGISTRATIONS_PER_GATEWAY = 1024
 LIMIT_ENDPOINT_HANDLE_TTL_MS = 5000
 LIMIT_MAX_FANOUT_CLASS = 3
 LIMIT_EXPIRY_CLASS_P1 = 1
+LIMIT_ROUTE_REPLAY_WINDOW = 64
 
 FIXED_T2_PROFILE_ID = 1
 FIXED_T2_EPOCH_MS = 200
@@ -152,6 +156,9 @@ DOMAIN_C1_ACTIVE_TAG_SCALAR = b'Trahens-C1-active-tag-scalar-v2'
 DOMAIN_C1_REPLY_COMMIT = b'Trahens-C1-reply-key-commitment-v2'
 DOMAIN_W2_LINK_KEY = b'Trahens-W2-link-key-v1'
 DOMAIN_R1_CAPABILITY = b'Trahens-R1-capability-v1'
-DOMAIN_P1_ROUTE_KEY = b'Trahens-P1-route-key-v1'
+DOMAIN_P1_ROUTE_EXTRACT = b'Trahens-P1-route-extract-v2'
+DOMAIN_P1_ROUTE_KEY_E2G = b'Trahens-P1-route-key-e2g-v2'
+DOMAIN_P1_ROUTE_KEY_G2E = b'Trahens-P1-route-key-g2e-v2'
+DOMAIN_P1_GATEWAY_OFFER = b'Trahens-P1-gateway-offer-v2'
 
 FIELD_PROTECTION = {'link_epoch': 'public', 'link_sequence': 'public', 't1_frame_type': 'link-encrypted', 'm2_message_type': 'link-encrypted', 'm2_suite_id': 'link-encrypted', 'fragment_metadata': 'link-encrypted', 'branch_token': 'link-encrypted-hop-local', 'candidate_token': 'link-encrypted-hop-local', 'local_label': 'link-encrypted-hop-local', 'r1_discovery_nonce': 'link-encrypted-replaced-each-hop', 'gateway_pseudonym': 'end-to-end-encrypted', 'r1_capability': 'end-to-end-encrypted', 'route_secret': 'end-to-end-encrypted', 'application_data': 'end-to-end-encrypted', 'retransmission_counters': 'local-only', 'queue_depth': 'local-only', 'route_mapping': 'local-only', 'keys_and_capabilities': 'never-logged'}

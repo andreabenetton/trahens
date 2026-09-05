@@ -5,10 +5,13 @@ use codec_m2::{decode_p1, encode_p1, CodecError, MessageType, P1Payload};
 use protocol_registry::{
     DOMAIN_C1_CANDIDATE_AAD, DOMAIN_C1_CANDIDATE_INFO, DOMAIN_C1_COMMIT, DOMAIN_C1_READY,
     LIMIT_MAX_CANDIDATE_LAYERS, LIMIT_MAX_CANDIDATE_RESPONSES_PER_DISCOVERY,
+    LIMIT_ROUTE_REPLAY_WINDOW,
 };
+use std::collections::BTreeSet;
 use trahens_crypto::{
     blind_secret, constant_time_equal, hmac_sha256, keyed_proof, reply_open, reply_seal,
-    route_open, route_seal, sign, verify, zeroize_slice, CryptoError, SecretBytes,
+    route_open, route_seal, scalar_base, sha256, sign, verify, zeroize_slice, CryptoError,
+    RouteDirection, SecretBytes,
 };
 
 #[derive(Debug)]
@@ -18,6 +21,8 @@ pub enum P1Error {
     InvalidOffer,
     TooManyLayers,
     WrongPayload,
+    RouteReplay,
+    RouteSequenceExhausted,
 }
 
 impl From<CodecError> for P1Error {
@@ -40,6 +45,10 @@ impl std::fmt::Display for P1Error {
             Self::InvalidOffer => formatter.write_str("invalid P1 gateway offer"),
             Self::TooManyLayers => formatter.write_str("too many P1 candidate layers"),
             Self::WrongPayload => formatter.write_str("unexpected P1 payload"),
+            Self::RouteReplay => formatter.write_str("replayed P1 route record"),
+            Self::RouteSequenceExhausted => {
+                formatter.write_str("P1 route sequence space exhausted")
+            }
         }
     }
 }
@@ -65,6 +74,9 @@ pub struct OpenedOffer {
     /// returned offer, which is what disambiguates a fanned-out branch.
     pub gateway_candidate_token: Option<[u8; 16]>,
     pub layer_count: usize,
+    /// Hash of the v2 transcript this offer was signed over. The route key
+    /// schedule is derived against it, so both ends bind the same offer.
+    pub transcript_hash: [u8; 32],
 }
 
 /// How many offer labels a node keeps registered per child at once.
@@ -110,23 +122,62 @@ fn append_field(output: &mut Vec<u8>, value: &[u8]) -> Result<(), P1Error> {
     Ok(())
 }
 
+/// Digest of the profile parameters both ends must already agree on.
+///
+/// Binding this into the signed offer is what makes the agreed parameter set
+/// part of what the gateway signature covers, rather than something each side
+/// assumes separately from its own registry.
+fn profile_parameter_digest() -> Result<[u8; 32], P1Error> {
+    let mut input = b"Trahens-P1-profile-parameters-v2".to_vec();
+    input.push(protocol_registry::VERSION);
+    input.push(protocol_registry::PRIVACY_PROFILE_U1);
+    input.push(protocol_registry::LIFECYCLE_PROFILE_E1);
+    input.push(protocol_registry::MESSAGE_PROFILE_M2);
+    input.push(protocol_registry::WIRE_PROFILE_W2);
+    input.push(protocol_registry::TRANSPORT_PROFILE_T1);
+    input.push(protocol_registry::SCHEDULE_PROFILE_T2);
+    for value in [
+        protocol_registry::FIXED_T2_EPOCH_MS,
+        protocol_registry::FIXED_T2_CELLS_PER_EPOCH,
+        protocol_registry::FIXED_T2_SLOT_INTERVAL_US,
+    ] {
+        let encoded = u32::try_from(value).map_err(|_| P1Error::InvalidOffer)?;
+        input.extend_from_slice(&encoded.to_be_bytes());
+    }
+    Ok(sha256(&input)?)
+}
+
+/// The v2 gateway-offer transcript.
+///
+/// v1 signed neither the protocol version, the suite, the reply key the offer
+/// is sealed to, nor the parameter digest, so the paper's authentication
+/// argument reasoned over a wider field set than the signature actually
+/// covered. v2 binds all four, in one canonical order, and its hash is what the
+/// route key schedule is derived against.
+#[allow(clippy::too_many_arguments)]
 fn offer_transcript(
+    suite_id: &[u8; 2],
     gateway_id: u32,
     expires_at_ms: u64,
     gateway_pseudonym: &[u8; 16],
+    reply_public_key: &[u8; 32],
     route_secret: &[u8; 32],
     commit_challenge: &[u8; 32],
     routing_nonce: &[u8; 32],
     signing_public: &[u8; 32],
 ) -> Result<Vec<u8>, P1Error> {
-    let mut output = b"Trahens-P1-gateway-offer-v1".to_vec();
+    let mut output = protocol_registry::DOMAIN_P1_GATEWAY_OFFER.to_vec();
+    append_field(&mut output, &[protocol_registry::VERSION])?;
+    append_field(&mut output, suite_id)?;
     append_field(&mut output, &gateway_id.to_be_bytes())?;
-    append_field(&mut output, &expires_at_ms.to_be_bytes())?;
     append_field(&mut output, gateway_pseudonym)?;
+    append_field(&mut output, &expires_at_ms.to_be_bytes())?;
+    append_field(&mut output, reply_public_key)?;
     append_field(&mut output, route_secret)?;
     append_field(&mut output, commit_challenge)?;
     append_field(&mut output, routing_nonce)?;
     append_field(&mut output, signing_public)?;
+    append_field(&mut output, &profile_parameter_digest()?)?;
     Ok(output)
 }
 
@@ -138,9 +189,14 @@ fn candidate_context(layer: u8) -> (Vec<u8>, Vec<u8>) {
     (aad, info)
 }
 
+/// Seal a gateway offer, returning the sealed blob and the transcript hash.
+///
+/// The hash is returned rather than recomputed by the caller because it is the
+/// binding the route keys are derived against; both ends must use the same one.
 #[allow(clippy::too_many_arguments)]
 pub fn seal_gateway_offer(
     recipient_public: &[u8; 32],
+    suite_id: &[u8; 2],
     gateway_id: u32,
     expires_at_ms: u64,
     gateway_pseudonym: [u8; 16],
@@ -149,16 +205,19 @@ pub fn seal_gateway_offer(
     routing_nonce: [u8; 32],
     signing_public: [u8; 32],
     signing_secret: &SecretBytes<64>,
-) -> Result<Vec<u8>, P1Error> {
+) -> Result<(Vec<u8>, [u8; 32]), P1Error> {
     let mut transcript = offer_transcript(
+        suite_id,
         gateway_id,
         expires_at_ms,
         &gateway_pseudonym,
+        recipient_public,
         &route_secret,
         &commit_challenge,
         &routing_nonce,
         &signing_public,
     )?;
+    let transcript_hash = sha256(&transcript)?;
     let signature_result = sign(signing_secret, &transcript);
     zeroize_slice(&mut transcript);
     let signature = signature_result?;
@@ -175,7 +234,7 @@ pub fn seal_gateway_offer(
     let (aad, info) = candidate_context(0);
     let result = reply_seal(recipient_public, &plaintext, &aad, &info);
     zeroize_slice(&mut plaintext);
-    Ok(result?)
+    Ok((result?, transcript_hash))
 }
 
 pub fn wrap_candidate(
@@ -207,6 +266,7 @@ pub fn wrap_candidate(
 
 pub fn open_candidate_chain(
     root_secret: &[u8; 32],
+    suite_id: &[u8; 2],
     candidate_blob: &[u8],
     advertised_layers: u8,
     expected_gateway_public: &[u8; 32],
@@ -250,15 +310,23 @@ pub fn open_candidate_chain(
                 {
                     return Err(P1Error::InvalidOffer);
                 }
+                // The gateway sealed to the blinded reply key that reached it,
+                // which is exactly the public counterpart of the secret this
+                // layer opened with. Recomputing it here is what lets the
+                // initiator check a transcript that binds the recipient key.
+                let recipient_public = scalar_base(&secret.0)?;
                 let mut transcript = offer_transcript(
+                    suite_id,
                     gateway_id,
                     expires_at_ms,
                     &gateway_pseudonym,
+                    &recipient_public,
                     &route_secret,
                     &commit_challenge,
                     &routing_nonce,
                     &signing_public,
                 )?;
+                let transcript_hash = sha256(&transcript)?;
                 let verification = verify(&signing_public, &transcript, &signature);
                 zeroize_slice(&mut transcript);
                 verification?;
@@ -271,6 +339,7 @@ pub fn open_candidate_chain(
                     routing_nonce,
                     gateway_candidate_token,
                     layer_count: relay_layers + 1,
+                    transcript_hash,
                 });
             }
             P1Payload::RelayLayer {
@@ -338,14 +407,18 @@ pub fn control_aad(message_type: MessageType, generation: u32) -> Vec<u8> {
 }
 
 pub fn seal_control(
-    route_secret: &[u8; 32],
+    key: &[u8; 32],
+    direction: RouteDirection,
+    sequence: u64,
     message_type: MessageType,
     generation: u32,
     payload: &P1Payload,
 ) -> Result<Vec<u8>, P1Error> {
     let mut plaintext = encode_p1(payload)?;
     let result = route_seal(
-        route_secret,
+        key,
+        direction,
+        sequence,
         &plaintext,
         &control_aad(message_type, generation),
     );
@@ -353,20 +426,83 @@ pub fn seal_control(
     Ok(result?)
 }
 
+/// Open a route record and return it with its authenticated sequence number.
 pub fn open_control(
-    route_secret: &[u8; 32],
+    key: &[u8; 32],
+    expected_direction: RouteDirection,
     message_type: MessageType,
     generation: u32,
     protected: &[u8],
-) -> Result<P1Payload, P1Error> {
-    let mut plaintext = route_open(
-        route_secret,
+) -> Result<(u64, P1Payload), P1Error> {
+    let (sequence, mut plaintext) = route_open(
+        key,
+        expected_direction,
         protected,
         &control_aad(message_type, generation),
     )?;
     let decoded = decode_p1(&plaintext);
     zeroize_slice(&mut plaintext);
-    Ok(decoded?)
+    Ok((sequence, decoded?))
+}
+
+/// Per-direction acceptance window for one route channel.
+///
+/// End-to-end replay is not covered by the adjacent-link replay window: a relay
+/// can re-send a recorded protected body inside a genuinely new T1 transmission
+/// with a fresh W2 sequence, which W2 correctly regards as new link traffic.
+/// The route channel therefore keeps its own bounded window, sized by the
+/// registry, and commits to a sequence only after the record authenticates.
+#[derive(Debug, Default)]
+pub struct RouteReplayWindow {
+    highest: Option<u64>,
+    admitted: BTreeSet<u64>,
+}
+
+impl RouteReplayWindow {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Accept `sequence` unless it was already seen or has fallen out of the
+    /// window. Call only on a record that has already authenticated.
+    pub fn admit(&mut self, sequence: u64) -> Result<(), P1Error> {
+        let width = LIMIT_ROUTE_REPLAY_WINDOW as u64;
+        if self.admitted.contains(&sequence) {
+            return Err(P1Error::RouteReplay);
+        }
+        if let Some(highest) = self.highest {
+            if sequence.saturating_add(width) <= highest {
+                return Err(P1Error::RouteReplay);
+            }
+        }
+        self.admitted.insert(sequence);
+        self.highest = Some(self.highest.map_or(sequence, |top| top.max(sequence)));
+        if let Some(highest) = self.highest {
+            let floor = highest.saturating_sub(width);
+            self.admitted = self.admitted.split_off(&floor);
+        }
+        Ok(())
+    }
+}
+
+/// Monotonic sequence source for one outgoing direction.
+#[derive(Debug, Default)]
+pub struct RouteSequencer {
+    next: u64,
+}
+
+impl RouteSequencer {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sequences start at zero and never repeat under one key. Exhaustion fails
+    /// closed rather than wrapping into a reused nonce.
+    pub fn next(&mut self) -> Result<u64, P1Error> {
+        let value = self.next;
+        self.next = self.next.checked_add(1).ok_or(P1Error::RouteSequenceExhausted)?;
+        Ok(value)
+    }
 }
 
 #[cfg(test)]
@@ -393,8 +529,9 @@ mod tests {
         let nonce2 = [10_u8; 32];
         let forward2 = random_nonzero_16()?;
         let forward1 = random_nonzero_16()?;
-        let offer = seal_gateway_offer(
+        let (offer, _) = seal_gateway_offer(
             &public2,
+            &protocol_registry::SUITE_R1,
             9,
             u64::MAX,
             [1; 16],
@@ -417,7 +554,15 @@ mod tests {
             nonce1,
             layer2,
         )?;
-        let opened = open_candidate_chain(&root_secret, &layer1, 3, &signing_public, &nonce, 1)?;
+        let opened = open_candidate_chain(
+            &root_secret,
+            &protocol_registry::SUITE_R1,
+            &layer1,
+            3,
+            &signing_public,
+            &nonce,
+            1,
+        )?;
         assert_eq!(opened.gateway_id, 9);
         assert_eq!(opened.gateway_candidate_token, Some(child2));
         assert_eq!(opened.layer_count, 3);
@@ -439,8 +584,9 @@ mod tests {
         let nonce = [22_u8; 32];
         let secret = [23_u8; 32];
         let challenge = [24_u8; 32];
-        let offer = seal_gateway_offer(
+        let (offer, _) = seal_gateway_offer(
             &root_public,
+            &protocol_registry::SUITE_R1,
             5,
             u64::MAX,
             [25; 16],
@@ -451,7 +597,15 @@ mod tests {
             &signing_secret,
         )?;
 
-        let opened = open_candidate_chain(&root_secret, &offer, 1, &signing_public, &nonce, 1)?;
+        let opened = open_candidate_chain(
+            &root_secret,
+            &protocol_registry::SUITE_R1,
+            &offer,
+            1,
+            &signing_public,
+            &nonce,
+            1,
+        )?;
         assert_eq!(opened.route_secret.0, secret);
         assert_eq!(opened.commit_challenge.0, challenge);
 
@@ -469,8 +623,9 @@ mod tests {
         let seed = [12_u8; 32];
         let (signing_public, signing_secret) = signing_keypair(&seed)?;
         let nonce = [13_u8; 32];
-        let offer = seal_gateway_offer(
+        let (offer, sealed_hash) = seal_gateway_offer(
             &root_public,
+            &protocol_registry::SUITE_R1,
             7,
             u64::MAX,
             [1; 16],
@@ -480,7 +635,18 @@ mod tests {
             signing_public,
             &signing_secret,
         )?;
-        let opened = open_candidate_chain(&root_secret, &offer, 1, &signing_public, &nonce, 1)?;
+        let opened = open_candidate_chain(
+            &root_secret,
+            &protocol_registry::SUITE_R1,
+            &offer,
+            1,
+            &signing_public,
+            &nonce,
+            1,
+        )?;
+        // Both ends must derive the same transcript hash, or the route key
+        // schedule would silently diverge and every sealed record would fail.
+        assert_eq!(opened.transcript_hash, sealed_hash);
         assert_eq!(opened.gateway_id, 7);
         assert_eq!(opened.gateway_candidate_token, None);
         assert_eq!(opened.layer_count, 1);

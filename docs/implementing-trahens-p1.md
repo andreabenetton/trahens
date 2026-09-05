@@ -16,7 +16,7 @@ fixed in July 2026 were exactly that confusion.
 
 ## The one rule
 
-`spec/protocol-registry-v1.6.json` is the only source of identifiers, widths,
+`spec/protocol-registry-v1.7.json` is the only source of identifiers, widths,
 limits, and domain separators. Do not copy constants out of prose, out of this
 document, or out of our Rust. Generate them, as we do — `make registry` emits
 Python, Rust, and Markdown from that one file, and `tools/check_repo.sh` fails
@@ -30,18 +30,18 @@ a wire problem.
 
 ### 1. Registry and codecs, no network
 
-Read `spec/core-v1.6.md` first for the shape of the whole path, then
+Read `spec/core-v1.7.md` first for the shape of the whole path, then
 `spec/message-codec-m2.md` and `spec/wire-cell-w2.md`.
 
-Note the v1.6 split before you encode anything: `DISCOVER` carries a
+Note the v1.6 split before you encode anything, which v1.7 keeps unchanged: `DISCOVER` carries a
 suite-independent 32-byte `routing_nonce` **and** a separate eligibility field
 the suite sizes. Route discovery reads only the former. Getting this wrong is
 the one mistake that will make everything else fail confusingly. Implement M2
 encode/decode and W2 fragmentation.
 
-Check against `spec/p1-conformance-vectors-v1.6.json` and the binary corpus
-`spec/p1-conformance-corpus-v1.6.bin` (3,133 bytes, format described below; 32
-vectors at registry 1.6.1). Canonical encodings must round-trip;
+Check against `spec/p1-conformance-vectors-v1.7.json` and the binary corpus
+`spec/p1-conformance-corpus-v1.7.bin` (3,133 bytes, format described below; 32
+vectors at registry 1.7.0). Canonical encodings must round-trip;
 **noncanonical ones must be rejected**, and that half matters more. A decoder
 that accepts a noncanonical encoding is the classic source of
 cross-implementation divergence, and it will not show up in interoperability
@@ -101,7 +101,7 @@ refused everywhere. See ADR 0038 and ADR 0040.
 
 ### 4. Lifecycle and discovery
 
-`spec/state-machines-v1.6.md`, `spec/invariants-v1.6.md`, and
+`spec/state-machines-v1.7.md`, `spec/invariants-v1.7.md`, and
 `spec/event-lifecycle-profile-e1.md`.
 
 Time is a **monotonically increasing local clock**. Use wall clock only for the
@@ -114,7 +114,7 @@ falls idle. Otherwise a peer that keeps sending keeps your expired state alive.
 
 ### 5. Resource bounds
 
-`spec/resource-accounting-v1.6.md`. Every ceiling is in the registry.
+`spec/resource-accounting-v1.7.md`. Every ceiling is in the registry.
 
 Count queued **cells**, not messages: the sender ceiling and the fragment
 ceiling multiply, so a per-message count does not bound anything. Track branch
@@ -135,7 +135,7 @@ wiped when its branch ends.
 
 ## Corpus format
 
-`spec/p1-conformance-corpus-v1.6.bin` is:
+`spec/p1-conformance-corpus-v1.7.bin` is:
 
 ```text
 "TP15"                     magic
@@ -195,7 +195,7 @@ that accepts the arguments and speaks nothing, and check it exits non-zero.
 
 ## Acceptance
 
-`spec/p1-prototype-profile-v1.6.md` holds the gate.
+`spec/p1-prototype-profile-v1.7.md` holds the gate.
 `docs/p1-acceptance-evidence.md` maps each line to the job or harness arm that
 executes it here, and states what remains open. Source presence is not passing;
 the gate is a runtime gate.

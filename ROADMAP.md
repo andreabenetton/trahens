@@ -4,18 +4,25 @@
 |---|---|---|---|
 | v1.4.1 | independent review remediation | cryptographic construction and evidence boundaries corrected | Complete |
 | v1.5 | first P1 interoperable user-space prototype | Rust nodes, frozen registry/vectors, namespace faults, cleanup | Complete and historical; artifacts remain reproducible |
-| v1.6 | active profile with selectable experimental paths | routing nonce separated from eligibility; C1 and adaptive T2 selectable with separate gates | Profiles landed; independent review planned |
-| v1.7 | real multi-host deployment | independently operated nodes interoperate across real networks using a reproducible B1.0 static bootstrap manifest | Planned |
-| v1.8 | captured-traffic evaluation | performance and traffic-analysis experiments use real packet traces | Planned |
-| v1.9 | bootstrap and directory integration research | reviewed adjacent-link bootstrap, gateway advertisements, and authenticated directory roots are tested without changing P1 semantics | Planned; design starts in B1/D1 |
-| v2.0 | reviewed stable protocol | wire protocol and security model survive implementation, independent review, multi-host measurement, and explicit deployment assumptions | Blocked on v1.6–v1.9 |
+| v1.6 | selectable experimental paths | routing nonce separated from eligibility; C1 and adaptive T2 selectable with separate gates | Complete and historical; artifacts remain reproducible |
+| v1.7 | active profile; end-to-end channel and offer hardening | directional route key schedule with counter nonces and per-direction replay window; gateway offer signed over a transcript binding version, suite, reply key, and parameter digest | Landed from independent review remediation |
+| v1.8 | real multi-host deployment | independently operated nodes interoperate across real networks using a reproducible B1.0 static bootstrap manifest | Planned |
+| v1.9 | captured-traffic evaluation | performance and traffic-analysis experiments use real packet traces | Planned |
+| v1.10 | bootstrap and directory integration research | reviewed adjacent-link bootstrap, gateway advertisements, and authenticated directory roots are tested without changing P1 semantics | Planned; design starts in B1/D1 |
+| v2.0 | reviewed stable protocol | wire protocol and security model survive implementation, independent review, multi-host measurement, and explicit deployment assumptions | Blocked on v1.7–v1.10 |
 
-## Active v1.6 focus
+## Active v1.7 focus
 
-Core v1.6 is the profile the current binaries speak. It supersedes v1.5 by
-separating the suite-independent 32-byte routing nonce from the suite-sized
-eligibility field. The wire change adds 32 bytes to `DISCOVER`; v1.5 peers do
-not interoperate with v1.6.
+Core v1.7 is the profile the current binaries speak. It supersedes v1.6 by
+rebuilding the end-to-end route channel on a directional key schedule with
+counter nonces and a per-direction replay window, and by signing the gateway
+offer over a transcript that binds the protocol version, suite, reply key, and
+parameter digest. The protocol version byte becomes `2`; v1.6 peers do not
+interoperate with v1.7.
+
+v1.6 had itself superseded v1.5 by separating the suite-independent 32-byte
+routing nonce from the suite-sized eligibility field, adding 32 bytes to
+`DISCOVER`. v1.7 keeps that encoding unchanged.
 
 The mandatory path remains U1 + E1 + R1 + M2 + W2 + T1 + fixed T2/P1.
 Adaptive T2 and C1 eligibility are selectable experimental profiles with their
@@ -23,7 +30,7 @@ own narrower CI gates. Neither may be cited as evidence for a mandatory gate
 line.
 
 The active acceptance checklist is normative in
-`spec/p1-prototype-profile-v1.6.md`. Source presence is not equivalent to
+`spec/p1-prototype-profile-v1.7.md`. Source presence is not equivalent to
 passing the runtime gate. `docs/p1-acceptance-evidence.md` maps each gate line
 to the job or harness arm that executes it.
 
@@ -40,7 +47,7 @@ Completed protocol-engineering items include:
 - fixed-schedule missed-slot detection;
 - separate mandatory fixed-T2, experimental adaptive-T2, and experimental C1 gates.
 
-## Security work retained for v1.6 review
+## Security work retained for v1.7 review
 
 1. obtain an independent multi-user IK-CCA/key-privacy review of reply sealing and nested blinding composition;
 2. review the recipient-bound commitment and failure/resource uniformity;
@@ -48,7 +55,7 @@ Completed protocol-engineering items include:
 4. review capability atomicity, replay/expiry, T1 recovery, and fixed-T2 claim boundaries;
 5. decide whether C1 should be retained, replaced with a standard anonymous public-key encryption construction, or remain only a research control;
 6. keep post-quantum migration classified as a reply-path redesign, not a primitive substitution;
-7. obtain a second independent implementation against the v1.6 registry and corpus.
+7. obtain a second independent implementation against the v1.7 registry and corpus.
 
 ## Future network-bootstrap track: B1
 
@@ -69,7 +76,7 @@ Replace duplicated command-line topology and key configuration with a signed
 manifest format covering peers, addresses, pinned keys or base keys, epochs,
 selected profiles, and resource ceilings.
 
-B1.0 is sufficient for v1.7 multi-host measurement. It makes the existing
+B1.0 is sufficient for v1.8 multi-host measurement. It makes the existing
 assumption explicit and reproducible without pretending the graph is discovered
 autonomously.
 

@@ -16,14 +16,21 @@ capability-based rendezvous, and explicit evidence boundaries.
 
 ## Status
 
-The active specification is **Trahens Core v1.6**, registry **1.6.1**.
-**v1.5 is history.**
+The active specification is **Trahens Core v1.7**, registry **1.7.0**.
+**v1.6 and v1.5 are history.**
+
+v1.7 rebuilds the end-to-end route channel on a directional key schedule with
+counter nonces and a per-direction replay window, closing an end-to-end `DATA`
+replay an intermediate relay could otherwise mount, and signs the gateway offer
+over a transcript binding the protocol version, suite, reply key, and parameter
+digest. The protocol version byte becomes `2`, so v1.6 and v1.7 do not
+interoperate.
 
 v1.6 separated the suite-independent routing nonce from the suite-sized
 eligibility field. This added 32 bytes to `DISCOVER`, so v1.5 and v1.6 do not
-interoperate. The v1.5 registry, vectors, corpus, and generated Markdown remain
-only so that historical profile stays reproducible; no current binary speaks
-it.
+interoperate either; v1.7 keeps that encoding unchanged. The v1.6 and v1.5
+registries, vectors, corpora, and generated Markdown remain only so those
+historical profiles stay reproducible; no current binary speaks them.
 
 The active profile stack is:
 
@@ -43,7 +50,7 @@ their own narrower CI gates. T3 and T4 remain analysis profiles.
 
 ## Complete-system boundaries
 
-Core v1.6 is not a complete endpoint-anonymity system.
+Core v1.7 is not a complete endpoint-anonymity system.
 
 ### Private directory
 
@@ -77,7 +84,7 @@ A destination creates a short-lived one-time capability, registers its
 commitment at selected rendezvous gateways, and privately distributes a
 descriptor to an authorized initiator.
 
-A v1.6 `DISCOVER` contains:
+A v1.7 `DISCOVER` contains:
 
 - a suite-independent 32-byte routing nonce;
 - a suite-sized eligibility field.
@@ -128,9 +135,9 @@ authentication, and an Extract-then-Expand key schedule. Full reply-layer
 unlinkability remains conditional on key privacy and independent review of the
 complete multi-user composition.
 
-## v1.6 P1 implementation
+## v1.7 P1 implementation
 
-The registry in `spec/protocol-registry-v1.6.json` generates Python, Rust, and
+The registry in `spec/protocol-registry-v1.7.json` generates Python, Rust, and
 Markdown constants. Independent generators produce canonical and noncanonical
 M2 vectors and the binary corpus.
 
@@ -199,9 +206,9 @@ make check
 Start with:
 
 1. [`FORDUMMY.md`](FORDUMMY.md)
-2. [`spec/core-v1.6.md`](spec/core-v1.6.md)
-3. [`spec/p1-prototype-profile-v1.6.md`](spec/p1-prototype-profile-v1.6.md)
-4. [`spec/protocol-registry-v1.6.md`](spec/protocol-registry-v1.6.md)
+2. [`spec/core-v1.7.md`](spec/core-v1.7.md)
+3. [`spec/p1-prototype-profile-v1.7.md`](spec/p1-prototype-profile-v1.7.md)
+4. [`spec/protocol-registry-v1.7.md`](spec/protocol-registry-v1.7.md)
 5. [`docs/implementing-trahens-p1.md`](docs/implementing-trahens-p1.md)
 6. [`docs/p1-acceptance-evidence.md`](docs/p1-acceptance-evidence.md)
 7. [`docs/threat-model.md`](docs/threat-model.md)

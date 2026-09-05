@@ -4,7 +4,7 @@
 use codec_m2::{Candidate, Control, Envelope, Message, MessageType, P1Payload};
 use node_runtime::p1::{
     commit_proof, offer_label, open_control, ready_proof, seal_control, seal_gateway_offer,
-    verify_proof,
+    verify_proof, RouteReplayWindow, RouteSequencer,
 };
 use node_runtime::{
     drain_links, event_channel, parse_hex, spawn_link, structured_event, unix_time_ms,
@@ -23,7 +23,10 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
-use trahens_crypto::{initialize, random_bytes, random_nonzero_16, signing_keypair, SecretBytes};
+use trahens_crypto::{
+    initialize, random_bytes, random_nonzero_16, route_keys, signing_keypair, RouteDirection,
+    RouteKeys, SecretBytes,
+};
 
 struct GatewayRoute {
     label: [u8; 16],
@@ -32,11 +35,17 @@ struct GatewayRoute {
     /// committed to rather than a branch token that names several.
     selector: [u8; 16],
     generation: u32,
+    /// Retained for the COMMIT and READY keyed proofs, which are computed from
+    /// the secret itself rather than from the channel keys derived below.
     route_secret: SecretBytes<32>,
     // Wiped on drop for the same reason as the endpoint's copy.
     challenge: SecretBytes<32>,
     pseudonym: [u8; 16],
     failed_redemptions: usize,
+    /// Directional channel keys bound to this offer's transcript.
+    keys: RouteKeys,
+    send_sequence: RouteSequencer,
+    receive_window: RouteReplayWindow,
 }
 
 fn control(
@@ -61,12 +70,17 @@ fn control(
 fn send_control(
     suite_id: [u8; 2],
     link: &node_runtime::LinkHandle,
-    route: &GatewayRoute,
+    route: &mut GatewayRoute,
     message_type: MessageType,
     payload: &P1Payload,
 ) -> Result<(), Box<dyn Error>> {
+    // The gateway only ever seals towards the endpoint, and every record takes
+    // the next sequence, so no nonce repeats under this key.
+    let sequence = route.send_sequence.next()?;
     let protected = seal_control(
-        &route.route_secret.0,
+        route.keys.direction(RouteDirection::GatewayToEndpoint),
+        RouteDirection::GatewayToEndpoint,
+        sequence,
         message_type,
         route.generation,
         payload,
@@ -302,8 +316,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                     // The reply key is remote input, so an invalid point is
                     // this peer's problem rather than the gateway's.
-                    let Ok(blob) = seal_gateway_offer(
+                    let Ok((blob, transcript_hash)) = seal_gateway_offer(
                         &discover.reply_public_key,
+                        &wire_suite,
                         gateway_id,
                         expires_at_ms,
                         pseudonym,
@@ -361,6 +376,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                             challenge: SecretBytes(challenge),
                             pseudonym,
                             failed_redemptions: 0,
+                            keys: route_keys(&route_secret, &transcript_hash)?,
+                            send_sequence: RouteSequencer::new(),
+                            receive_window: RouteReplayWindow::new(),
                         },
                     );
                     if link
@@ -416,8 +434,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                             observed_terminal = true;
                             cleanup_event = Some(Event::CancelAccepted);
                         } else {
-                            let Ok(payload) = open_control(
-                                &route.route_secret.0,
+                            let Ok((sequence, payload)) = open_control(
+                                route.keys.direction(RouteDirection::EndpointToGateway),
+                                RouteDirection::EndpointToGateway,
                                 control_message.message_type,
                                 route.generation,
                                 &control_message.protected_body,
@@ -429,6 +448,16 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 );
                                 continue;
                             };
+                            // Committed only after the record authenticates, so
+                            // a forged sequence cannot burn a window slot.
+                            if route.receive_window.admit(sequence).is_err() {
+                                drops.record(
+                                    "rendezvous",
+                                    ERROR_STATE_VIOLATION,
+                                    "route_replay",
+                                );
+                                continue;
+                            }
                             match (control_message.message_type, payload) {
                                 (MessageType::Commit, P1Payload::Commit { proof }) => {
                                     let expected = commit_proof(
@@ -718,6 +747,9 @@ mod tests {
                     challenge: SecretBytes([2; 32]),
                     pseudonym: [3; 16],
                     failed_redemptions: 0,
+                    keys: route_keys(&[1; 32], &[4; 32])?,
+                    send_sequence: RouteSequencer::new(),
+                    receive_window: RouteReplayWindow::new(),
                 },
             );
         }
