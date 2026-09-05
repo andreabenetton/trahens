@@ -107,13 +107,17 @@ struct Ring {
     window_ms: u64,
 }
 
-/// Per-ring discovery context. Each ring uses a fresh branch token and
-/// discovery nonce, and the context is retained after the ring closes so a
+/// Per-ring discovery context. Each ring uses a fresh branch token, discovery
+/// nonce and reply root, and the context is retained after the ring closes so a
 /// candidate from an earlier ring stays eligible (section 3).
 struct RingContext {
     ring: usize,
     branch_token: [u8; 16],
     routing_nonce: [u8; 32],
+    /// Reply root for this ring alone. Core requires a fresh non-identity reply
+    /// key per DISCOVER; sharing one root across the ring schedule would let the
+    /// adjacent relay recognise successive attempts by key equality.
+    root_secret: SecretBytes<32>,
 }
 
 /// A candidate offer held until its ring window closes.
@@ -226,9 +230,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     )?;
 
     // The initiator produces the eligibility field, so it selects a provider
-    // exactly as a relay does.
-    let root_secret = SecretBytes(random_scalar()?);
-    let reply_public_key = scalar_base(&root_secret.0)?;
+    // exactly as a relay does. The reply root is per ring, not per run; see
+    // RingContext.
     let rings = parse_rings(
         args.optional("rings", "16:1500"),
         u8::try_from(args.u64_or("fanout-class", 1)?).unwrap_or(1),
@@ -270,6 +273,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         if routing_nonce == [0_u8; 32] {
             return Err("random routing nonce was zero".into());
         }
+        let root_secret = SecretBytes(random_scalar()?);
+        let reply_public_key = scalar_base(&root_secret.0)?;
         let eligibility_field = eligibility.initial()?;
         state.begin(
             branch_token,
@@ -294,6 +299,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             ring: index,
             branch_token,
             routing_nonce,
+            root_secret,
         });
         structured_event(
             "endpoint",
@@ -491,7 +497,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     // actually authenticates the offer.
                     let Some((ring, branch_token, opened)) = contexts.iter().find_map(|context| {
                         open_candidate_chain(
-                            &root_secret.0,
+                            &context.root_secret.0,
                             &candidate_blob,
                             layer_count,
                             &expected_gateway_public,
