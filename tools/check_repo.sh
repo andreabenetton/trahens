@@ -116,6 +116,7 @@ implementation/rust/fuzz/fuzz_targets/w2.rs
 implementation/harness/netns-p1.sh
 implementation/harness/netns-restart.sh
 tools/w2_epochs.py
+tools/registry_limit.py
 docs/external-review-2026-07-30.md
 docs/review-remediation-v1.4.1.md
 docs/development-record.md

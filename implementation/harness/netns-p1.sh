@@ -90,6 +90,15 @@ BURST_AFTER_MS=0
 # attempt fails still comes up.
 HANDSHAKE_OUTAGE_MS=0
 EXPECT_RETRY_EXHAUSTION=0
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+
+# One registry limit, by name. Scenarios whose meaning depends on a limit read
+# it rather than restating it: a scenario built around a hardcoded copy keeps
+# passing after the registry moves, while no longer testing what it says.
+p1_limit() {
+  python3 "$ROOT/tools/registry_limit.py" "$1"
+}
+
 case "$SCENARIO" in
   ok) ;;
   replay)
@@ -173,14 +182,26 @@ case "$SCENARIO" in
     # ring window applies deliberately, so a run cannot pass by outlasting the
     # outage instead.
     #
-    # The outage outlasts one whole handshake attempt (handshake_timeout_ms,
-    # 3s), so a retry is necessary; and it outlasts both five-second clocks a
-    # route depends on -- the initiator's branch TTL (route_ttl_ms) and the
-    # gateway's registration (capability_ttl_ms) -- so a node that started
-    # either of them at process start reaches the end of the outage with it
-    # already spent. That is what makes the route assertion below a test of
-    # where those clocks start rather than of how long the outage was.
-    HANDSHAKE_OUTAGE_MS=6000
+    # The outage has to outlast three things at once, so it is derived from
+    # them rather than written down: one whole handshake attempt
+    # (handshake_timeout_ms), so a retry is necessary; and both clocks a route
+    # depends on -- the initiator's branch TTL (route_ttl_ms) and the gateway's
+    # registration (capability_ttl_ms) -- so a node that started either at
+    # process start reaches the end of the outage with it already spent. That
+    # is what makes the route assertion below a test of where those clocks
+    # start rather than of how long the outage was.
+    #
+    # Hardcoding it would survive any of those three moving in the registry and
+    # go on passing while testing none of it. The upper bound needs no
+    # derivation: an outage the handshake retries cannot span leaves links down,
+    # and P1_EXPECT_ALL_LINKS fails the run rather than letting it slide.
+    HANDSHAKE_OUTAGE_MS=$(p1_limit handshake_timeout_ms)
+    for limit in route_ttl_ms capability_ttl_ms; do
+      value=$(p1_limit "$limit")
+      (( value > HANDSHAKE_OUTAGE_MS )) && HANDSHAKE_OUTAGE_MS=$value
+    done
+    # Clear of the longest of them rather than equal to it.
+    HANDSHAKE_OUTAGE_MS=$((HANDSHAKE_OUTAGE_MS + 1000))
     P1_EXPECT_ALL_LINKS=1 ;;
   wrong-pin)
     # The initiator is given a static key for its peer that the peer does not
@@ -219,7 +240,6 @@ case "$SCENARIO" in
   *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;;
 esac
 
-ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUTPUT=$(mkdir -p "$OUTPUT" && cd "$OUTPUT" && pwd)
 TAG=$(printf '%04x' $(( $$ & 65535 )))
 NODES=$((RELAYS + 2))
@@ -519,7 +539,8 @@ PY
     echo "so a link that lost its first handshake did not recover" >&2
     exit 1
   fi
-  echo "scenario ${SCENARIO}: all ${EXPECTED_LINKS} links came up despite the outage"
+  echo "scenario ${SCENARIO}: all ${EXPECTED_LINKS} links came up despite the" \
+    "${HANDSHAKE_OUTAGE_MS}ms outage"
 fi
 if [[ -n "${P1_WRONG_PIN:-}" ]]; then
   if ! grep -qs "link_handshake_failed" "$OUTPUT"/*.log "$OUTPUT"/*.err; then
