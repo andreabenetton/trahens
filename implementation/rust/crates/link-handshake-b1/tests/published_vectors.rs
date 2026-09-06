@@ -43,8 +43,8 @@ fn suite(registry: &Value, name: &str) -> Fallible<[u8; 2]> {
     Ok([u8::try_from(value >> 8)?, u8::try_from(value & 0xff)?])
 }
 
-/// Build the profile from the draft registry, the way node-runtime will build
-/// it from generated constants once v1.8 is active.
+/// Build the profile from the registry directly, as a second path to the same
+/// values that node-runtime reads from the generated constants.
 fn profile() -> Fallible<Profile> {
     let registry = registry()?;
     let version = registry
@@ -55,15 +55,13 @@ fn profile() -> Fallible<Profile> {
     Ok(Profile {
         protocol_version: u8::try_from(version)?,
         noise_protocol: text(&registry, "domain_separators", "b1_noise_protocol")?.into_bytes(),
-        noise_protocol_rekey: text(&registry, "domain_separators", "b1_noise_protocol_rekey")?
-            .into_bytes(),
+        static_psk_domain: text(&registry, "domain_separators", "b1_static_psk")?.into_bytes(),
         prologue_domain: text(&registry, "domain_separators", "b1_prologue")?.into_bytes(),
         rekey_chain_domain: text(&registry, "domain_separators", "b1_rekey_chain")?.into_bytes(),
         epoch_domain: text(&registry, "domain_separators", "b1_epoch")?.into_bytes(),
         export_domain: text(&registry, "domain_separators", "b1_export")?.into_bytes(),
         record_bytes: number(&registry, "widths_bytes", "b1_record")?,
         record_prefix_bytes: number(&registry, "widths_bytes", "b1_record_prefix")?,
-        initiate_payload_bytes: number(&registry, "widths_bytes", "b1_initiate_payload")?,
         initiate_payload_psk_bytes: number(&registry, "widths_bytes", "b1_initiate_payload_psk")?,
         respond_payload_bytes: number(&registry, "widths_bytes", "b1_respond_payload")?,
         finish_payload_bytes: number(&registry, "widths_bytes", "b1_finish_payload")?,
@@ -293,21 +291,25 @@ fn parties(
 
 #[test]
 fn a_responder_static_outside_the_manifest_is_refused() -> Fallible<()> {
-    let (mut initiator, mut responder, selection) = parties(Some([9_u8; 32]), None)?;
-    responder.read_initiate(&initiator.write_initiate()?)?;
-    let respond = responder.write_respond(selection)?;
-    // The key authenticates; it is simply not the pinned one.
-    assert!(initiator.read_respond(&respond).is_err());
+    // The pin now refuses at the first record rather than the second. The
+    // static-static value the psk0 key derives from is computed against the
+    // pinned key, so a wrong pin produces a first message the peer cannot
+    // decrypt -- earlier than the manifest check in message 2, and without the
+    // responder answering. That check still exists and is still what
+    // authenticates; this is a mismatch caught before it.
+    let (mut initiator, mut responder, _) = parties(Some([9_u8; 32]), None)?;
+    assert!(responder
+        .read_initiate(&initiator.write_initiate()?)
+        .is_err());
     Ok(())
 }
 
 #[test]
 fn an_initiator_static_outside_the_manifest_is_refused() -> Fallible<()> {
-    let (mut initiator, mut responder, selection) = parties(None, Some([9_u8; 32]))?;
-    responder.read_initiate(&initiator.write_initiate()?)?;
-    initiator.read_respond(&responder.write_respond(selection)?)?;
-    let (finish, _) = initiator.write_finish()?;
-    assert!(responder.read_finish(&finish).is_err());
+    let (mut initiator, mut responder, _) = parties(None, Some([9_u8; 32]))?;
+    assert!(responder
+        .read_initiate(&initiator.write_initiate()?)
+        .is_err());
     Ok(())
 }
 
@@ -399,17 +401,52 @@ fn a_retired_suite_cannot_be_offered() -> Fallible<()> {
 }
 
 #[test]
-fn tampering_with_the_first_record_breaks_the_transcript() -> Fallible<()> {
-    let (mut initiator, mut responder, selection) = parties(None, None)?;
+fn tampering_with_the_first_record_is_refused_on_the_spot() -> Fallible<()> {
+    // Under psk0 the first message is encrypted under a key derived from the
+    // static-static value, so a modification is refused where it arrives
+    // rather than surfacing two messages later. Nothing is answered, so
+    // nothing is disclosed.
+    let (mut initiator, mut responder, _) = parties(None, None)?;
     let mut initiate = initiator.write_initiate()?;
-    // The offer is in the clear in an initial handshake, but it is hashed:
-    // a modification the responder accepts must still break message 2.
     if let Some(byte) = initiate.get_mut(2) {
         *byte ^= 0x01;
     }
-    responder.read_initiate(&initiate)?;
-    let respond = responder.write_respond(selection)?;
-    assert!(initiator.read_respond(&respond).is_err());
+    assert!(responder.read_initiate(&initiate).is_err());
+    Ok(())
+}
+
+/// The property the psk0 change exists for.
+///
+/// A sender who can reach the port but does not hold the static-static value
+/// cannot produce a first message the responder will act on. The responder
+/// performs no Diffie-Hellman and never reveals its own static key, which under
+/// plain `XX` it handed to anyone who asked.
+#[test]
+fn a_first_message_without_the_static_psk_is_refused() -> Fallible<()> {
+    let (_, mut responder, _) = parties(None, None)?;
+    let vector = vector(false)?;
+    let profile = profile()?;
+    let offer = Offer {
+        version: profile.protocol_version,
+        w2_profiles: vec![2],
+        t1_profiles: vec![3],
+        t2_profiles: vec![4],
+        suites: vec![[0x01, 0x01], [0x00, 0x03]],
+        resource_class: 1,
+    };
+    // A well-formed initiator in every respect except that its static key is
+    // not the one the responder's manifest names.
+    let mut outsider = Initiator::new(
+        profile,
+        [7_u8; 32],
+        key(&vector, "initiator_ephemeral_secret")?,
+        key(&vector, "responder_static_public")?,
+        offer,
+        None,
+    )?;
+    assert!(responder
+        .read_initiate(&outsider.write_initiate()?)
+        .is_err());
     Ok(())
 }
 

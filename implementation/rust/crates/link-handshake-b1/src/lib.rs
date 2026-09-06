@@ -1,18 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 #![forbid(unsafe_code)]
-#![doc = "B1.1 authenticated adjacent-link handshake (Noise XX / XXpsk0)."]
+#![doc = "B1.1 authenticated adjacent-link handshake (Noise XXpsk0)."]
 
-//! Implements `spec/link-handshake-b1.md`: Noise revision 34 pattern `XX`,
-//! instantiated as `Noise_XX_25519_ChaChaPoly_SHA256`, with `psk0` for rekeys,
-//! carried in fixed-width records and extended with a transcript-bound profile
-//! negotiation, a manifest pin on the presented static key, and epoch/export
-//! derivation from the finished exchange.
+//! Implements `spec/link-handshake-b1.md`: Noise revision 34 pattern `XX` under
+//! the `psk0` modifier, instantiated as
+//! `Noise_XXpsk0_25519_ChaChaPoly_SHA256`, carried in fixed-width records and
+//! extended with a transcript-bound profile negotiation, a manifest pin on the
+//! presented static key, and epoch/export derivation from the finished
+//! exchange.
 //!
-//! Nothing here hardcodes a width, a domain or a record type. v1.8 is a draft
-//! profile that generates no registry bindings, and a second copy of values the
-//! registry owns is exactly the drift the generated-bindings rule exists to
-//! prevent, so the caller supplies a [`Profile`]. When v1.8 becomes active this
-//! is built from the generated constants instead of from JSON.
+//! Both exchanges are `psk0` and differ only in where the pre-shared key comes
+//! from: a rekey chains to the session it replaces through its export key, and
+//! an initial handshake uses the static-static Diffie-Hellman that both peers
+//! can compute offline from the manifest. That is what authenticates the first
+//! message, which plain `XX` leaves open to anyone able to reach the port.
+//!
+//! Nothing here hardcodes a width, a domain or a record type: a second copy of
+//! values the registry owns is exactly the drift the generated-bindings rule
+//! exists to prevent, so the caller supplies a [`Profile`]. `node_runtime`
+//! builds one from the generated constants.
 //!
 //! `spec/b1-test-vectors.json` is normative for the encoding, and
 //! `tests/cross_check_snow.rs` checks those vectors against an independent
@@ -61,14 +67,13 @@ pub enum Stage {
 pub struct Profile {
     pub protocol_version: u8,
     pub noise_protocol: Vec<u8>,
-    pub noise_protocol_rekey: Vec<u8>,
     pub prologue_domain: Vec<u8>,
     pub rekey_chain_domain: Vec<u8>,
+    pub static_psk_domain: Vec<u8>,
     pub epoch_domain: Vec<u8>,
     pub export_domain: Vec<u8>,
     pub record_bytes: usize,
     pub record_prefix_bytes: usize,
-    pub initiate_payload_bytes: usize,
     pub initiate_payload_psk_bytes: usize,
     pub respond_payload_bytes: usize,
     pub finish_payload_bytes: usize,
@@ -96,10 +101,11 @@ impl Profile {
         }
     }
 
-    fn payload_bytes(&self, rekey: bool, stage: Stage) -> usize {
+    fn payload_bytes(&self, stage: Stage) -> usize {
         match stage {
-            Stage::Initiate if rekey => self.initiate_payload_psk_bytes,
-            Stage::Initiate => self.initiate_payload_bytes,
+            // Both exchanges are psk0, so both encrypt this payload and both
+            // carry its tag; the record is one cell either way.
+            Stage::Initiate => self.initiate_payload_psk_bytes,
             Stage::Respond => self.respond_payload_bytes,
             Stage::Finish => self.finish_payload_bytes,
         }
@@ -233,13 +239,11 @@ impl SymmetricState {
     /// An `e` token. Noise section 9 requires a PSK handshake to mix the public
     /// ephemeral into the key as well as the hash: under `psk0` a key exists
     /// before any Diffie-Hellman, so without this the ephemeral would
-    /// contribute nothing to the first message's key.
-    fn mix_ephemeral(&mut self, public: &[u8; 32], psk_mode: bool) -> Result<()> {
+    /// contribute nothing to the first message's key. Both B1.1 exchanges are
+    /// `psk0`, so this always applies.
+    fn mix_ephemeral(&mut self, public: &[u8; 32]) -> Result<()> {
         self.mix_hash(public)?;
-        if psk_mode {
-            self.mix_key(public)?;
-        }
-        Ok(())
+        self.mix_key(public)
     }
 
     fn encrypt_and_hash(&mut self, plaintext: &[u8]) -> Result<Vec<u8>> {
@@ -498,16 +502,46 @@ fn finish(
     })
 }
 
-fn begin(profile: &Profile, previous_export: Option<&[u8; 32]>) -> Result<SymmetricState> {
-    let (name, prologue) = match previous_export {
-        Some(_) => (&profile.noise_protocol_rekey, &profile.rekey_chain_domain),
-        None => (&profile.noise_protocol, &profile.prologue_domain),
+/// The pre-shared key for an initial handshake, from the static-static
+/// Diffie-Hellman.
+///
+/// Both peers compute it offline from the manifest they already hold, so
+/// nothing carries it on the wire. It is what authenticates the first message:
+/// under plain `XX` that message is unencrypted, so anyone who can reach the
+/// port can produce one, and the responder answers it with Diffie-Hellman work
+/// and its own static key -- both handed to an unauthenticated stranger. Under
+/// `psk0` a forgery fails at the first decryption, before any Diffie-Hellman,
+/// and draws no reply.
+///
+/// A pre-filter, not the authentication: the presented static key is still
+/// checked against the manifest and the ephemeral Diffie-Hellman still supplies
+/// forward secrecy, so this value alone completes nothing.
+fn static_psk(
+    profile: &Profile,
+    static_secret: &[u8; 32],
+    peer_static: &[u8; 32],
+) -> Result<[u8; 32]> {
+    // Keyed on the shared secret with the domain as the message: the secret is
+    // a fixed 32 bytes and the domain is not, which is the way round both
+    // implementations can express identically.
+    Ok(hmac_sha256(
+        &x25519(static_secret, peer_static)?,
+        &profile.static_psk_domain,
+    )?)
+}
+
+/// Both exchanges are `psk0`; only where the key comes from differs. A rekey
+/// chains to the session it replaces through its export key; an initial
+/// handshake has no predecessor and uses the static-static value instead.
+fn begin(profile: &Profile, rekey: bool, psk: &[u8; 32]) -> Result<SymmetricState> {
+    let prologue = if rekey {
+        &profile.rekey_chain_domain
+    } else {
+        &profile.prologue_domain
     };
-    let mut state = SymmetricState::initialize(name)?;
+    let mut state = SymmetricState::initialize(&profile.noise_protocol)?;
     state.mix_hash(prologue)?;
-    if let Some(export) = previous_export {
-        state.mix_key_and_hash(export)?;
-    }
+    state.mix_key_and_hash(psk)?;
     Ok(state)
 }
 
@@ -577,7 +611,11 @@ impl Initiator {
         offer: Offer,
         previous_export: Option<&[u8; 32]>,
     ) -> Result<Self> {
-        let state = begin(&profile, previous_export)?;
+        let psk = match previous_export {
+            Some(export) => *export,
+            None => static_psk(&profile, &static_secret, &expected_peer_static)?,
+        };
+        let state = begin(&profile, previous_export.is_some(), &psk)?;
         Ok(Self {
             static_public: x25519_base(&static_secret)?,
             ephemeral_public: x25519_base(&ephemeral_secret)?,
@@ -595,9 +633,8 @@ impl Initiator {
 
     /// `-> e`
     pub fn write_initiate(&mut self) -> Result<Vec<u8>> {
-        self.state
-            .mix_ephemeral(&self.ephemeral_public, self.rekey)?;
-        let width = self.profile.payload_bytes(self.rekey, Stage::Initiate);
+        self.state.mix_ephemeral(&self.ephemeral_public)?;
+        let width = self.profile.payload_bytes(Stage::Initiate);
         let mut payload = frame(&self.offer.encode(&self.profile)?, width)?;
         let sealed = self.state.encrypt_and_hash(&payload);
         zeroize_slice(&mut payload);
@@ -622,7 +659,7 @@ impl Initiator {
         let mut cursor = 0_usize;
         let remote_ephemeral = as_key(body.get(..DH_BYTES).ok_or(HandshakeError)?)?;
         cursor += DH_BYTES;
-        state.mix_ephemeral(&remote_ephemeral, self.rekey)?;
+        state.mix_ephemeral(&remote_ephemeral)?;
         state.mix_key(&x25519(&self.ephemeral_secret.0, &remote_ephemeral)?)?;
 
         let sealed_static = take_static(body, &mut cursor)?;
@@ -630,7 +667,7 @@ impl Initiator {
         state.mix_key(&x25519(&self.ephemeral_secret.0, &remote_static)?)?;
 
         let framed = state.decrypt_and_hash(body.get(cursor..).ok_or(HandshakeError)?)?;
-        let width = self.profile.payload_bytes(self.rekey, Stage::Respond);
+        let width = self.profile.payload_bytes(Stage::Respond);
         let selection = Selection::decode(&unframe(&framed, width)?)?;
 
         // The key authenticated; the question is whether it is the one the
@@ -655,7 +692,7 @@ impl Initiator {
         let sealed_static = self.state.encrypt_and_hash(&self.static_public)?;
         self.state
             .mix_key(&x25519(&self.static_secret.0, &remote_ephemeral)?)?;
-        let width = self.profile.payload_bytes(self.rekey, Stage::Finish);
+        let width = self.profile.payload_bytes(Stage::Finish);
         let sealed_payload = self.state.encrypt_and_hash(&frame(&[], width)?)?;
 
         let mut record = prefix(&self.profile, self.rekey, Stage::Finish);
@@ -700,7 +737,11 @@ impl Responder {
         expected_peer_static: [u8; 32],
         previous_export: Option<&[u8; 32]>,
     ) -> Result<Self> {
-        let state = begin(&profile, previous_export)?;
+        let psk = match previous_export {
+            Some(export) => *export,
+            None => static_psk(&profile, &static_secret, &expected_peer_static)?,
+        };
+        let state = begin(&profile, previous_export.is_some(), &psk)?;
         Ok(Self {
             static_public: x25519_base(&static_secret)?,
             ephemeral_public: x25519_base(&ephemeral_secret)?,
@@ -731,9 +772,9 @@ impl Responder {
         let mut state = self.state.clone();
         let body = split_record(&self.profile, record, self.rekey, Stage::Initiate)?;
         let remote_ephemeral = as_key(body.get(..DH_BYTES).ok_or(HandshakeError)?)?;
-        state.mix_ephemeral(&remote_ephemeral, self.rekey)?;
+        state.mix_ephemeral(&remote_ephemeral)?;
         let framed = state.decrypt_and_hash(body.get(DH_BYTES..).ok_or(HandshakeError)?)?;
-        let width = self.profile.payload_bytes(self.rekey, Stage::Initiate);
+        let width = self.profile.payload_bytes(Stage::Initiate);
         let offer = Offer::decode(&self.profile, &unframe(&framed, width)?)?;
         self.state = state;
         self.remote_ephemeral = Some(remote_ephemeral);
@@ -747,14 +788,13 @@ impl Responder {
         if !selection.within(offer) {
             return Err(HandshakeError);
         }
-        self.state
-            .mix_ephemeral(&self.ephemeral_public, self.rekey)?;
+        self.state.mix_ephemeral(&self.ephemeral_public)?;
         self.state
             .mix_key(&x25519(&self.ephemeral_secret.0, &remote_ephemeral)?)?;
         let sealed_static = self.state.encrypt_and_hash(&self.static_public)?;
         self.state
             .mix_key(&x25519(&self.static_secret.0, &remote_ephemeral)?)?;
-        let width = self.profile.payload_bytes(self.rekey, Stage::Respond);
+        let width = self.profile.payload_bytes(Stage::Respond);
         let sealed_payload = self
             .state
             .encrypt_and_hash(&frame(&selection.encode(), width)?)?;
@@ -786,7 +826,7 @@ impl Responder {
         state.mix_key(&x25519(&self.ephemeral_secret.0, &remote_static)?)?;
 
         let framed = state.decrypt_and_hash(body.get(cursor..).ok_or(HandshakeError)?)?;
-        let width = self.profile.payload_bytes(self.rekey, Stage::Finish);
+        let width = self.profile.payload_bytes(Stage::Finish);
         if !unframe(&framed, width)?.is_empty() {
             return Err(HandshakeError);
         }

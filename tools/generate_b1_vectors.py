@@ -16,7 +16,15 @@ import hashlib
 import json
 from pathlib import Path
 
-from trahens_crypto.b1 import Initiator, Keypair, Offer, Responder, Selection, load_profile
+from trahens_crypto.b1 import (
+    Initiator,
+    Keypair,
+    Offer,
+    Responder,
+    Selection,
+    load_profile,
+    static_psk,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "spec/protocol-registry-v1.8.json"
@@ -66,6 +74,17 @@ def run_handshake(profile, label: bytes, previous_export: bytes | None) -> dict[
         # Empty for an initial handshake. Published so an independent
         # implementation can replay the rekey without deriving it first.
         "chained_export_key": (previous_export or b"").hex(),
+        # The psk0 key this exchange actually runs with: the chained export key
+        # for a rekey, and the static-static value for an initial handshake.
+        # Published for the same reason as the line above -- an independent
+        # implementation replays the records without having to reproduce the
+        # derivation first -- and pinned so that it must reproduce it in the
+        # end. Both ends compute it from the manifest, so it is never sent.
+        "psk": (
+            previous_export
+            if previous_export is not None
+            else static_psk(profile, initiator_static, responder_static.public)
+        ).hex(),
         "initiator_static_secret": initiator_static.secret.hex(),
         "initiator_static_public": initiator_static.public.hex(),
         "responder_static_secret": responder_static.secret.hex(),

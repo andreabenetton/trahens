@@ -80,18 +80,32 @@ class B1HandshakeTests(unittest.TestCase):
         with self.assertRaises(HandshakeError):
             responder.read_message_1(bytes(m1))
 
-    def test_first_message_tampering_breaks_the_transcript(self) -> None:
-        # The offer travels in the clear in an initial handshake, since XX has
-        # no key yet. It is still mixed into the transcript, so a modification
-        # the responder accepts leaves the two sides with different hashes and
-        # the second message fails to authenticate.
+    def test_first_message_tampering_is_refused_on_the_spot(self) -> None:
+        # Under psk0 the first message is encrypted under a key derived from
+        # the static-static value, so a modification is refused where it
+        # arrives rather than surfacing two messages later as a transcript
+        # mismatch. Nothing is answered, so nothing is disclosed.
         initiator, responder = self.parties()
         m1 = bytearray(initiator.write_message_1())
         m1[2] ^= 0x01  # the responder's view of the initiator ephemeral
-        responder.read_message_1(bytes(m1))
-        m2 = responder.write_message_2(Selection(self.profile.protocol_version, 2, 3, 4, 0x0101, 1))
         with self.assertRaises(HandshakeError):
-            initiator.read_message_2(m2)
+            responder.read_message_1(bytes(m1))
+
+    def test_a_first_message_without_the_static_psk_is_refused(self) -> None:
+        # The property the psk0 change exists for. A sender who can reach the
+        # port but does not hold the static-static value cannot produce a first
+        # message the responder will act on, so it performs no Diffie-Hellman
+        # and never reveals its own static key to a stranger.
+        _, responder = self.parties()
+        outsider = Initiator(
+            self.profile,
+            Keypair.from_secret(seed("stranger-static")),
+            Keypair.from_secret(seed("stranger-ephemeral")),
+            Keypair.from_secret(seed("r/static")).public,
+            Offer(self.profile.protocol_version, (2,), (3,), (4,), (0x0101,), 1),
+        )
+        with self.assertRaises(HandshakeError):
+            responder.read_message_1(outsider.write_message_1())
 
     def test_a_rekey_binds_the_chain_into_the_traffic_keys(self) -> None:
         # Same statics, same ephemerals, differing only in the chained export
@@ -115,25 +129,50 @@ class B1HandshakeTests(unittest.TestCase):
             responder.write_message_2(Selection(self.profile.protocol_version, 2, 3, 4, 0x0003, 1))
 
     def test_a_responder_whose_static_is_not_pinned_is_refused(self) -> None:
+        # The pin now refuses at the first record rather than the second. The
+        # static-static value the psk0 key derives from is computed against the
+        # pinned key, so a wrong pin produces a first message the peer cannot
+        # decrypt -- earlier than the manifest check in message 2, and without
+        # the responder answering. That check still exists and is still what
+        # authenticates; this is a mismatch caught before it.
         wrong = Keypair.from_secret(seed("someone-else")).public
         initiator, responder = self.parties(pin_responder=wrong)
-        responder.read_message_1(initiator.write_message_1())
-        m2 = responder.write_message_2(Selection(self.profile.protocol_version, 2, 3, 4, 0x0101, 1))
-        # The key authenticated fine; it is simply not the one the manifest
-        # names for this peer, which is the whole point of the pin under XX.
         with self.assertRaises(HandshakeError):
-            initiator.read_message_2(m2)
+            responder.read_message_1(initiator.write_message_1())
 
     def test_an_initiator_whose_static_is_not_pinned_is_refused(self) -> None:
         wrong = Keypair.from_secret(seed("someone-else")).public
         initiator, responder = self.parties(pin_initiator=wrong)
-        responder.read_message_1(initiator.write_message_1())
-        initiator.read_message_2(
-            responder.write_message_2(Selection(self.profile.protocol_version, 2, 3, 4, 0x0101, 1))
-        )
-        m3, _ = initiator.write_message_3()
         with self.assertRaises(HandshakeError):
-            responder.read_message_3(m3)
+            responder.read_message_1(initiator.write_message_1())
+
+    def test_the_manifest_check_still_refuses_a_key_the_psk_agreed_on(self) -> None:
+        # Both ends hold the right static-static value, so the psk0 filter
+        # passes, and the responder then presents a static key that is not the
+        # pinned one. Only the manifest check in message 2 can refuse that, so
+        # this is what shows the pin is still doing its job rather than having
+        # been replaced by the pre-filter.
+        i_static = Keypair.from_secret(seed("i/static"))
+        r_static = Keypair.from_secret(seed("r/static"))
+        offer = Offer(self.profile.protocol_version, (2,), (3,), (4,), (0x0101,), 1)
+        initiator = Initiator(
+            self.profile,
+            i_static,
+            Keypair.from_secret(seed("i/ephemeral")),
+            r_static.public,
+            offer,
+        )
+        responder = Responder(
+            self.profile,
+            r_static,
+            Keypair.from_secret(seed("r/ephemeral")),
+            i_static.public,
+        )
+        responder.read_message_1(initiator.write_message_1())
+        m2 = responder.write_message_2(Selection(self.profile.protocol_version, 2, 3, 4, 0x0101, 1))
+        initiator.expected_peer_static = Keypair.from_secret(seed("someone-else")).public
+        with self.assertRaises(HandshakeError):
+            initiator.read_message_2(m2)
 
     def test_a_rekey_is_chained_to_the_previous_session(self) -> None:
         _, first, _ = self.complete(*self.parties())

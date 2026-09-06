@@ -100,7 +100,6 @@
     "x25519_public": 32,
     "b1_record": 1052,
     "b1_record_prefix": 2,
-    "b1_initiate_payload": 1018,
     "b1_respond_payload": 954,
     "b1_finish_payload": 986,
     "b1_export_key": 32,
@@ -189,12 +188,12 @@
     "p1_route_key_e2g": "Trahens-P1-route-key-e2g-v2",
     "p1_route_key_g2e": "Trahens-P1-route-key-g2e-v2",
     "p1_gateway_offer": "Trahens-P1-gateway-offer-v2",
-    "b1_noise_protocol": "Noise_XX_25519_ChaChaPoly_SHA256",
+    "b1_noise_protocol": "Noise_XXpsk0_25519_ChaChaPoly_SHA256",
     "b1_prologue": "Trahens-B1-prologue-v1",
     "b1_rekey_chain": "Trahens-B1-rekey-chain-v1",
+    "b1_static_psk": "Trahens-B1-static-psk-v1",
     "b1_epoch": "Trahens-B1-epoch-v1",
-    "b1_export": "Trahens-B1-export-v1",
-    "b1_noise_protocol_rekey": "Noise_XXpsk0_25519_ChaChaPoly_SHA256"
+    "b1_export": "Trahens-B1-export-v1"
   },
   "field_protection": {
     "link_epoch": "public",

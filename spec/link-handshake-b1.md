@@ -2,10 +2,11 @@
 
 # Trahens B1.1 authenticated adjacent-link handshake
 
-- Status: Normative candidate for Core v1.8. Not yet the active profile.
-- Decisions: `docs/adr/0043-b1.1-handshake-decisions.md`
+- Status: Normative. Core v1.8 is the active profile.
+- Decisions: `docs/adr/0043-b1.1-handshake-decisions.md`,
+  `docs/adr/0044-authenticating-the-first-handshake-message.md`
 - Scope: `docs/b1.1-scope.md`
-- Registry: `protocol-registry-v1.8.json` (draft)
+- Registry: `protocol-registry-v1.8.json`
 - Reference: `simulator/trahens_crypto/b1.py`; vectors in `b1-test-vectors.json`
 
 ## 1. Purpose
@@ -22,11 +23,10 @@ peer id, address, and expected static public key, from a manifest.
 
 ## 2. Construction
 
-An initial handshake is Noise revision 34, pattern `XX`, instantiated as
-`Noise_XX_25519_ChaChaPoly_SHA256`. A rekey is the same pattern under the
-`psk0` modifier, `Noise_XXpsk0_25519_ChaChaPoly_SHA256`. The protocol name is
-the registry domain `b1_noise_protocol` or `b1_noise_protocol_rekey` and MUST
-match that string exactly, because it is the initial hash and chaining key.
+Both exchanges are Noise revision 34, pattern `XX` under the `psk0` modifier,
+instantiated as `Noise_XXpsk0_25519_ChaChaPoly_SHA256`. The protocol name is
+the registry domain `b1_noise_protocol` and MUST match that string exactly,
+because it is the initial hash and chaining key.
 
 ```text
 -> e
@@ -35,13 +35,32 @@ match that string exactly, because it is the initial hash and chaining key.
 ```
 
 The prologue is domain separation only: `b1_prologue` for an initial handshake,
-`b1_rekey_chain` for a rekey. The previous session's export key is **not**
-carried in the prologue. A prologue reaches only the handshake hash, so binding
-the chain that way would prevent an unrelated exchange being spliced in as a
-rekey while leaving the traffic keys unchained — with the same ephemerals a
-rekey would derive the very keys it replaced, because `Split()` reads the
-chaining key. The export key therefore enters as the `psk0` pre-shared key,
-through `MixKeyAndHash`, which reaches the chaining key as well.
+`b1_rekey_chain` for a rekey. No key material is carried in the prologue. A
+prologue reaches only the handshake hash, so binding a key that way would leave
+the traffic keys unbound to it — with the same ephemerals two exchanges would
+derive the same keys, because `Split()` reads the chaining key. Key material
+therefore enters as the `psk0` pre-shared key, through `MixKeyAndHash`, which
+reaches the chaining key as well.
+
+The pre-shared key differs by exchange:
+
+- a **rekey** uses the export key of the session it replaces, which is what
+  stops an unrelated exchange being spliced in as a rekey and what makes a
+  rekey's traffic keys differ from the replaced session's;
+- an **initial handshake** uses `HMAC-SHA256(k = X25519(s, rs), m =
+  b1_static_psk)`, the static-static Diffie-Hellman between the two manifest
+  identities. Both peers compute it offline from what they already hold, so
+  nothing carries it and no exchange establishes it.
+
+The static-static value is keyed as the HMAC key rather than the message
+because it is a fixed 32 bytes and the domain is not, which is the arrangement
+both a Python and a Rust implementation can express identically.
+
+An initial handshake therefore requires the manifest entry to *begin*, not only
+to verify. That is not a new assumption — section 1 already has each peer
+holding the other's expected static public key, and section 4 already refuses
+anything else — but it does foreclose any trust-on-first-use path on this
+exchange, which B1.1 forecloses anyway.
 
 Static handshake keys are X25519 keys used for nothing else. A node's Ed25519
 signing key is not converted into its handshake identity.
@@ -55,7 +74,7 @@ have their top bit set (section 6), so a receiver distinguishes a handshake
 record from a W2 cell by its first byte, with no trial decryption.
 
 ```text
-initiate  0x00 type  e(32)                       payload(1018)
+initiate  0x00 type  e(32)                       enc(payload)(1018)
 respond   0x00 type  e(32)  enc(s)(48)           enc(payload)(970)
 finish    0x00 type         enc(s)(48)           enc(payload)(1002)
 ```
@@ -65,23 +84,25 @@ fixed width. The padding is inside the region Noise hashes and, where a key
 exists, encrypts, so it is authenticated. A receiver MUST reject non-zero
 padding. The finish payload is empty.
 
-The framed widths are `b1_initiate_payload`, `b1_respond_payload` and
-`b1_finish_payload`, except that a rekey's first message uses
-`b1_initiate_payload_psk`: under `psk0` a key exists from the start, so that
-payload is encrypted and its ciphertext carries a 16-byte tag. The record is
-one cell in both cases; only the framed body region differs.
+The framed widths are `b1_initiate_payload_psk`, `b1_respond_payload` and
+`b1_finish_payload`. Under `psk0` a key exists from the start, so the first
+payload is encrypted and its ciphertext carries a 16-byte tag; that holds for
+both exchanges.
 
-In a rekey, every `e` token also mixes the public ephemeral into the chaining
-key, not only into the hash, as Noise section 9 requires of a PSK handshake.
-Without it the ephemeral would contribute nothing to the key for the first
-message, since under `psk0` a key already exists before any Diffie-Hellman.
+Every `e` token also mixes the public ephemeral into the chaining key, not only
+into the hash, as Noise section 9 requires of a PSK handshake. Without it the
+ephemeral would contribute nothing to the key for the first message, since
+under `psk0` a key already exists before any Diffie-Hellman.
 
-In an initial handshake the first message's payload is transmitted in the
-clear, because `XX` has no encryption key at that point. It is still mixed into
-the transcript hash, so altering it fails authentication of the second message:
-the offered profile set is public but not forgeable. In a rekey it is
-encrypted, and a chain mismatch is therefore refused on the first record,
-before the responder performs any Diffie-Hellman.
+Because the first message is encrypted under a key the sender can only hold by
+knowing the manifest identity, a receiver refuses a forged or mismatched first
+record where it arrives — before performing any Diffie-Hellman, and without
+answering. Under plain `XX` that message was unencrypted: anyone able to reach
+the port could produce one, and the responder replied with two Diffie-Hellman
+operations and its own static key. `docs/adr/0044-authenticating-the-first-handshake-message.md`
+records why this was changed and why `KK`, which would also have hidden the
+responder's identity, would not have fixed the work: its first message carries
+`es` and `ss`, so a responder must compute before it can reject.
 
 ## 4. Message processing
 
@@ -226,11 +247,14 @@ reader who assumes the counters exist will look for code that is not there.
   listener, so there is no unsolicited context to exhaust. A node that accepted
   a handshake from an unconfigured source would need the counter, and that is
   B1.2.
-- `handshake_pubkey_ops_per_interval` is likewise bounded by construction: a
-  responder performs its Diffie-Hellman work in one `write_respond` per
-  attempt, and attempts are capped, so the ceiling is a few operations per link
-  rather than a rate to police. What the bound is really for — a responder
-  answering strangers — again arrives with B1.2.
+- `handshake_pubkey_ops_per_interval` is bounded twice over. A responder
+  performs its Diffie-Hellman work in one `write_respond` per attempt and
+  attempts are capped, so the ceiling is a few operations per link rather than
+  a rate to police. And since section 2, it reaches that work only for a first
+  message that decrypted under the static-static key: a sender who does not
+  hold the manifest identity cannot make a responder compute at all, whatever
+  its address. That is the difference between a bound that holds because of the
+  topology and one that holds against an active attacker.
 - `max_failed_handshakes_before_backoff` and `handshake_backoff_ms` are not
   implemented, and P1 is stricter than they require: a link gives up after its
   bounded attempts instead of backing off and retrying indefinitely.
@@ -286,11 +310,21 @@ every link down for longer than one handshake attempt and longer than both
 five-second lifetimes, so a run passes only if neither clock started at process
 start.
 
-Under `XX` a responder performs Diffie-Hellman work to answer any well-formed
-first message, before it knows who sent it, and its reply discloses its static
-key to that sender. The bounds cap the cost; nothing in B1.1 eliminates it, and
-nothing in this pattern hides the responder's identity from an active probe. A
-deployment that needs either belongs to B1.2.
+Under plain `XX` a responder performed Diffie-Hellman work to answer any
+well-formed first message, before it knew who sent it, and its reply disclosed
+its static key to that sender. The `psk0` construction of section 2 closes
+both: a first message that does not decrypt under the static-static key is
+refused before any Diffie-Hellman and draws no reply, so an unauthenticated
+prober obtains neither the work nor the identity.
+
+What remains is what the pre-shared key cannot cover. A peer that holds the
+manifest identity — a compromised neighbour, or anyone who has obtained a
+static key — can still open exchanges and spend a responder's bounded
+per-attempt work; the registry bounds are what cap that, and they are the
+answer for an authenticated peer misbehaving rather than a stranger. And a
+deployment that must accept handshakes from peers it has no manifest entry for
+cannot use this construction at all: it has no static-static value to derive
+from, so it needs a different first-message defence, and that is B1.2.
 
 ## 9. Conformance
 

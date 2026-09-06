@@ -87,39 +87,33 @@ fn framed(body: &[u8], width: usize) -> Fallible<Vec<u8>> {
 /// reference was right.
 fn replay(rekey: bool) -> Fallible<Vec<u8>> {
     let vector = vector(rekey)?;
-    let params: NoiseParams = if rekey {
-        "Noise_XXpsk0_25519_ChaChaPoly_SHA256"
-    } else {
-        "Noise_XX_25519_ChaChaPoly_SHA256"
-    }
-    .parse()?;
+    // Both exchanges are psk0; only the prologue and the pre-shared key differ.
+    let params: NoiseParams = "Noise_XXpsk0_25519_ChaChaPoly_SHA256".parse()?;
 
-    // Domain separation only. The chained export key enters as the psk0
-    // pre-shared key, not here; see spec/link-handshake-b1.md section 2.
+    // Domain separation only. The key material enters as the psk0 pre-shared
+    // key, not here; see spec/link-handshake-b1.md section 2.
     let prologue: &[u8] = if rekey {
         b"Trahens-B1-rekey-chain-v1"
     } else {
         b"Trahens-B1-prologue-v1"
     };
-    let psk: [u8; 32] = if rekey {
-        bytes(&vector, "chained_export_key")?
-            .try_into()
-            .map_err(|_| "the chained export key must be 32 bytes")?
-    } else {
-        [0_u8; 32]
-    };
+    // Published rather than derived here, exactly as the chained export key
+    // always was: snow checks that these records follow from this key, and the
+    // derivation of the key itself is pinned by the vector and reproduced by
+    // both implementations.
+    let psk: [u8; 32] = bytes(&vector, "psk")?
+        .try_into()
+        .map_err(|_| "the pre-shared key must be 32 bytes")?;
 
     // The Builder borrows what it is given, so it is consumed here rather than
     // returned: handing a Builder back out of the closure would outlive the
     // slices it holds.
     let configure = |local: &[u8], ephemeral: &[u8], initiator: bool| -> Fallible<HandshakeState> {
-        let mut builder = Builder::new(params.clone())
+        let builder = Builder::new(params.clone())
             .local_private_key(local)?
-            .prologue(prologue)?;
-        if rekey {
-            builder = builder.psk(0, &psk)?;
-        }
-        let builder = builder.fixed_ephemeral_key_for_testing_only(ephemeral);
+            .prologue(prologue)?
+            .psk(0, &psk)?
+            .fixed_ephemeral_key_for_testing_only(ephemeral);
         Ok(if initiator {
             builder.build_initiator()?
         } else {
@@ -141,11 +135,7 @@ fn replay(rekey: bool) -> Fallible<Vec<u8>> {
     // The payloads are rebuilt here from the vector's own offer and selection
     // rather than lifted out of the reference's records, so the comparison is
     // not circular.
-    let initiate_width = width(if rekey {
-        "b1_initiate_payload_psk"
-    } else {
-        "b1_initiate_payload"
-    })?;
+    let initiate_width = width("b1_initiate_payload_psk")?;
     let steps: [(&str, Vec<u8>, bool); 3] = [
         (
             "message_1",

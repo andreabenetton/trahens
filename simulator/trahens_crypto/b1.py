@@ -1,12 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Trahens B1.1 authenticated adjacent-link handshake: Noise XX reference.
+"""Trahens B1.1 authenticated adjacent-link handshake: Noise XXpsk0 reference.
 
 The reference exists to make the record encodings, the negotiation payloads
 and the key/epoch derivations precise enough to publish vectors against. It is
-Noise revision 34 pattern XX instantiated as Noise_XX_25519_ChaChaPoly_SHA256,
-with the B1.1 additions layered on top: fixed 1,052-byte records, a
-transcript-bound profile negotiation, a manifest pin on the presented static
-key, and epoch/export derivation from the finished handshake.
+Noise revision 34 pattern XX under the psk0 modifier, instantiated as
+Noise_XXpsk0_25519_ChaChaPoly_SHA256, with the B1.1 additions layered on top:
+fixed 1,052-byte records, a transcript-bound profile negotiation, a manifest
+pin on the presented static key, and epoch/export derivation from the finished
+handshake.
+
+Both exchanges are psk0 and differ only in where the pre-shared key comes from:
+a rekey chains to the session it replaces through its export key, an initial
+handshake uses the static-static Diffie-Hellman both peers can compute offline.
 
 It is not independently audited and MUST NOT be used as production security
 code. The Rust implementation is checked against the vectors this produces,
@@ -45,13 +50,12 @@ class HandshakeError(ValueError):
 class B1Profile:
     protocol_version: int
     noise_protocol: bytes
-    noise_protocol_rekey: bytes
     prologue_domain: bytes
     rekey_chain_domain: bytes
+    static_psk_domain: bytes
     epoch_domain: bytes
     export_domain: bytes
     record_bytes: int
-    initiate_payload_bytes: int
     initiate_payload_psk_bytes: int
     respond_payload_bytes: int
     finish_payload_bytes: int
@@ -74,13 +78,12 @@ def load_profile(registry: dict) -> B1Profile:
     return B1Profile(
         protocol_version=int(registry["protocol"]["version"]),
         noise_protocol=domains["b1_noise_protocol"].encode(),
-        noise_protocol_rekey=domains["b1_noise_protocol_rekey"].encode(),
         prologue_domain=domains["b1_prologue"].encode(),
         rekey_chain_domain=domains["b1_rekey_chain"].encode(),
+        static_psk_domain=domains["b1_static_psk"].encode(),
         epoch_domain=domains["b1_epoch"].encode(),
         export_domain=domains["b1_export"].encode(),
         record_bytes=int(widths["b1_record"]),
-        initiate_payload_bytes=int(widths["b1_initiate_payload"]),
         initiate_payload_psk_bytes=int(widths["b1_initiate_payload_psk"]),
         respond_payload_bytes=int(widths["b1_respond_payload"]),
         finish_payload_bytes=int(widths["b1_finish_payload"]),
@@ -370,7 +373,7 @@ def prologue(profile: B1Profile, rekey: bool) -> bytes:
     return profile.rekey_chain_domain if rekey else profile.prologue_domain
 
 
-def _mix_ephemeral(state: SymmetricState, public: bytes, psk_mode: bool) -> None:
+def _mix_ephemeral(state: SymmetricState, public: bytes) -> None:
     """Process an `e` token.
 
     Noise section 9: in a PSK handshake an `e` token must also `MixKey` the
@@ -378,21 +381,52 @@ def _mix_ephemeral(state: SymmetricState, public: bytes, psk_mode: bool) -> None
     before any Diffie-Hellman has happened, so without this the ephemeral would
     contribute nothing to the chaining key for the first message and two
     exchanges differing only in their ephemerals could share a key stream.
+
+    Both B1.1 exchanges are `psk0`, so this always applies.
     """
     state.mix_hash(public)
-    if psk_mode:
-        state.mix_key(public)
+    state.mix_key(public)
 
 
-def _begin(profile: B1Profile, previous_export: bytes | None) -> SymmetricState:
-    rekey = previous_export is not None
-    name = profile.noise_protocol_rekey if rekey else profile.noise_protocol
-    state = SymmetricState.initialize(name)
+def static_psk(profile: B1Profile, static: Keypair, peer_static: bytes) -> bytes:
+    """The pre-shared key for an initial handshake.
+
+    Derived from the static-static Diffie-Hellman, which both peers can compute
+    offline from the manifest they already hold: neither has to be told it and
+    nothing carries it on the wire.
+
+    This is what authenticates the first message. Under plain `XX` that message
+    is unencrypted, so anyone able to reach the port can produce one, and the
+    responder answers it with two Diffie-Hellman operations and its own static
+    key -- work and an identity handed to an unauthenticated stranger. Under
+    `psk0` a forgery fails at the first decryption, before any Diffie-Hellman,
+    and draws no reply at all.
+
+    It is a pre-filter, not the authentication: the presented static key is
+    still checked against the manifest, and the ephemeral Diffie-Hellman still
+    supplies forward secrecy. Someone holding this value alone cannot complete
+    an exchange.
+    """
+    # Keyed on the shared secret with the domain as the message: the secret is
+    # a fixed 32 bytes and the domain is not, which is the way round both
+    # implementations can express identically.
+    return _hmac(dh(static, peer_static), profile.static_psk_domain)
+
+
+def _begin(profile: B1Profile, rekey: bool, psk: bytes) -> SymmetricState:
+    """Both exchanges are `psk0`; only where the key comes from differs.
+
+    A rekey chains to the session it replaces, through its export key. An
+    initial handshake has no predecessor, so it uses the static-static value
+    instead. Either way the key reaches the chaining key rather than only the
+    hash, so two exchanges with the same ephemerals but different keys cannot
+    derive the same traffic keys.
+    """
+    if len(psk) != HASHLEN:
+        raise HandshakeError("pre-shared key must be 32 bytes")
+    state = SymmetricState.initialize(profile.noise_protocol)
     state.mix_hash(prologue(profile, rekey))
-    if previous_export is not None:
-        if len(previous_export) != HASHLEN:
-            raise HandshakeError("export key must be 32 bytes")
-        state.mix_key_and_hash(previous_export)
+    state.mix_key_and_hash(psk)
     return state
 
 
@@ -435,7 +469,12 @@ class Initiator:
         self.expected_peer_static = expected_peer_static
         self.offer = offer
         self.rekey = previous_export is not None
-        self.state = _begin(profile, previous_export)
+        psk = (
+            previous_export
+            if previous_export is not None
+            else static_psk(profile, static, expected_peer_static)
+        )
+        self.state = _begin(profile, self.rekey, psk)
         self.remote_ephemeral: bytes | None = None
         self.selection: Selection | None = None
 
@@ -444,17 +483,13 @@ class Initiator:
 
     def _initiate_width(self) -> int:
         # Under psk0 there is a key from the start, so the first payload is
-        # encrypted and its ciphertext carries a tag. The record stays one
-        # cell either way; the framed body region is what shrinks.
-        return (
-            self.profile.initiate_payload_psk_bytes
-            if self.rekey
-            else self.profile.initiate_payload_bytes
-        )
+        # encrypted and its ciphertext carries a tag. Both exchanges are psk0,
+        # so both use this width; the record is one cell either way.
+        return self.profile.initiate_payload_psk_bytes
 
     def write_message_1(self) -> bytes:
         # -> e
-        _mix_ephemeral(self.state, self.ephemeral.public, self.rekey)
+        _mix_ephemeral(self.state, self.ephemeral.public)
         payload = _frame_payload(self.offer.encode(self.profile), self._initiate_width())
         record = _record_prefix(self.profile, self._type("initiate")) + self.ephemeral.public
         record += self.state.encrypt_and_hash(payload)
@@ -470,7 +505,7 @@ class Initiator:
         cursor = 2
         re = record[cursor : cursor + DHLEN]
         cursor += DHLEN
-        _mix_ephemeral(self.state, re, self.rekey)
+        _mix_ephemeral(self.state, re)
         self.state.mix_key(dh(self.ephemeral, re))
         rs = self.state.decrypt_and_hash(record[cursor : cursor + DHLEN + TAGLEN])
         cursor += DHLEN + TAGLEN
@@ -515,7 +550,12 @@ class Responder:
         self.ephemeral = ephemeral
         self.expected_peer_static = expected_peer_static
         self.rekey = previous_export is not None
-        self.state = _begin(profile, previous_export)
+        psk = (
+            previous_export
+            if previous_export is not None
+            else static_psk(profile, static, expected_peer_static)
+        )
+        self.state = _begin(profile, self.rekey, psk)
         self.remote_ephemeral: bytes | None = None
         self.offer: Offer | None = None
         self.selection: Selection | None = None
@@ -524,18 +564,14 @@ class Responder:
         return ("rekey_" if self.rekey else "handshake_") + stage
 
     def _initiate_width(self) -> int:
-        return (
-            self.profile.initiate_payload_psk_bytes
-            if self.rekey
-            else self.profile.initiate_payload_bytes
-        )
+        return self.profile.initiate_payload_psk_bytes
 
     def read_message_1(self, record: bytes) -> Offer:
         p = self.profile
         if len(record) != p.record_bytes or record[:2] != _record_prefix(p, self._type("initiate")):
             raise HandshakeError("unexpected record")
         re = record[2 : 2 + DHLEN]
-        _mix_ephemeral(self.state, re, self.rekey)
+        _mix_ephemeral(self.state, re)
         framed = self.state.decrypt_and_hash(record[2 + DHLEN :])
         offer = Offer.decode(p, _unframe_payload(framed, self._initiate_width()))
         self.remote_ephemeral = re
@@ -548,7 +584,7 @@ class Responder:
             raise HandshakeError("message 1 not processed")
         if not selection.within(self.offer):
             raise HandshakeError("selection is not within the offer")
-        _mix_ephemeral(self.state, self.ephemeral.public, self.rekey)
+        _mix_ephemeral(self.state, self.ephemeral.public)
         self.state.mix_key(dh(self.ephemeral, self.remote_ephemeral))
         record = _record_prefix(p, self._type("respond")) + self.ephemeral.public
         record += self.state.encrypt_and_hash(self.static.public)
