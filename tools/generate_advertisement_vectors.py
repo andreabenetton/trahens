@@ -41,6 +41,7 @@ def case(name: str, signing_seed: bytes, build) -> dict:
         "name": name,
         "signing_seed": signing_seed.hex(),
         "key": key.hex(),
+        "version": advertisement.version,
         "expiry_ms": advertisement.expiry_ms,
         "capacity_class": advertisement.capacity_class,
         "auth_modes": advertisement.auth_modes,

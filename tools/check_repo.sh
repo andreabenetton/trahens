@@ -101,6 +101,7 @@ simulator/trahens_crypto/advertisement.py
 simulator/tests/test_b12_advertisement.py
 tools/generate_advertisement_vectors.py
 implementation/rust/crates/admission-b12/src/invitation.rs
+implementation/rust/crates/admission-b12/src/advertisement.rs
 reports/v1.5-bounded-state-models.json
 reports/v1.5-t3-anonymity-metrics.json
 simulator/trahens_spec/generated.py

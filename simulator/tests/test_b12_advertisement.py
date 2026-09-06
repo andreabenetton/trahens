@@ -129,7 +129,7 @@ class AdvertisementTests(unittest.TestCase):
             seed = bytes.fromhex(entry["signing_seed"])
             cookie = bytes.fromhex(entry["cookie"]) if entry["cookie"] else None
             advertisement = Advertisement(
-                3,
+                entry["version"],
                 bytes.fromhex(entry["key"]),
                 entry["expiry_ms"],
                 entry["capacity_class"],

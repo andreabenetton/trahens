@@ -11,7 +11,9 @@
 //! that presents a valid cookie has shown that it receives datagrams at the
 //! address it claims, and nothing else.
 
+pub mod advertisement;
 pub mod invitation;
+pub use advertisement::Advertisement;
 pub use invitation::{invitation_psk, Invitation};
 
 use protocol_registry::{
