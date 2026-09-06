@@ -10,11 +10,10 @@ use protocol_registry::{
     BYTES_CELL_BODY, BYTES_CELL_PAYLOAD, ERROR_AUTHENTICATION_FAILED, ERROR_INTERNAL,
     ERROR_MALFORMED, ERROR_REPLAY, ERROR_RESOURCE_EXHAUSTED, ERROR_UNSUPPORTED_PROFILE,
     ERROR_UNSUPPORTED_SUITE, ERROR_UNSUPPORTED_VERSION, FIXED_T2_ACK_RESERVE_PER_EPOCH,
-    FIXED_T2_CELLS_PER_EPOCH, FIXED_T2_EPOCH_MS, FIXED_T2_QUEUE_CELLS_GLOBAL,
-    FIXED_T2_QUEUE_CELLS_PER_PEER, FIXED_T2_RETRANSMIT_RESERVE_PER_EPOCH,
-    LIMIT_HANDSHAKE_TIMEOUT_MS, LIMIT_MAX_T1_RETRIES, LIMIT_REKEY_AFTER_CELLS,
-    LIMIT_REKEY_AFTER_MS, LIMIT_REKEY_OVERLAP_MS, LIMIT_T1_ACK_DELAY_MAX_MS,
-    LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS,
+    FIXED_T2_EPOCH_MS, FIXED_T2_QUEUE_CELLS_GLOBAL, FIXED_T2_QUEUE_CELLS_PER_PEER,
+    FIXED_T2_RETRANSMIT_RESERVE_PER_EPOCH, LIMIT_HANDSHAKE_TIMEOUT_MS, LIMIT_MAX_T1_RETRIES,
+    LIMIT_REKEY_AFTER_CELLS, LIMIT_REKEY_AFTER_MS, LIMIT_REKEY_OVERLAP_MS,
+    LIMIT_T1_ACK_DELAY_MAX_MS, LIMIT_T1_MAX_PENDING_ACKS, LIMIT_T1_RTO_MS,
 };
 use scheduling_t2::{
     decode_schedule_header, encode_schedule_header, FixedSchedule, QueueBudget, RateNegotiation,
@@ -28,7 +27,7 @@ use std::sync::mpsc::{self, Receiver as ChannelReceiver, SyncSender, TryRecvErro
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use trahens_crypto::{hmac_sha256, random_bytes, zeroize};
+use trahens_crypto::{random_bytes, zeroize};
 use transport_t1::{decode_frame, encode_frame, fresh_chaff, Frame, Receiver, Sender};
 use wire_w2::{open_record, seal_record, ReplayWindow};
 
@@ -836,7 +835,6 @@ fn run_link(
         // lifecycle_lost flag carries that to the node, because the channel
         // that would have reported it is the one that failed.
         if sink.failed() {
-            running = false;
             break;
         }
 
