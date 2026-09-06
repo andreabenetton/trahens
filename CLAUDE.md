@@ -95,6 +95,37 @@ and their files exist so they stay reproducible.
 
 `make check` fails if any committed artifact diverges from its generator. Always run `make check` before committing changes to specs, models, or tools.
 
+## Show that a new check can fail
+
+A test, invariant, or harness assertion that cannot fail is worse than none: it
+occupies the place where real evidence would go and reports success forever.
+This repository has been bitten by it more than once, so when adding one,
+**break the thing it guards and watch it fail**, then restore and watch it pass.
+Say in the commit message what the mutation was and what it produced.
+
+The failure modes to check for, each of which has actually occurred here:
+
+- **A property that does not say what its name says.** The 2026-09-04 review
+  raised this as TR-05 against `R1Capability`'s `AtMostOnce`. The same defect
+  sat in `E1Lifecycle`'s `NoOpenBeforeReady`, which asserted an allocation fact
+  and no ordering, and passed unchanged when a route was given a path to `OPEN`
+  that skipped `READY`. Fixing one model is not fixing the class.
+- **A property implied by another already checked.** It can only fail after
+  something else has already failed, so it never fires first and adds nothing.
+- **An assertion that holds vacuously on empty input.** `check_pcap_cells.py`
+  refuses a capture set with no UDP packets for this reason: "every packet is
+  1,052 bytes" is true of no packets. Where a check asserts an absence, pair it
+  with a presence over the same input — `b1_records.py` asserts no respond
+  record *and* at least one initiate, so a parser returning zero for everything
+  fails instead of passing.
+- **A scenario that passes for the wrong reason.** `late-peer` was rerun with
+  `LINK_HANDSHAKE_ATTEMPTS = 1` to confirm the retry was load-bearing, and its
+  outage is derived from the registry limits it must outlast rather than
+  written down, so it cannot keep passing after those move.
+- **A comparison against itself.** `netns-restart.sh` compares epoch sets from
+  two runs; it was checked by comparing a run against itself and observing the
+  expected failure.
+
 ## Git discipline
 
 After each logical unit of work:
