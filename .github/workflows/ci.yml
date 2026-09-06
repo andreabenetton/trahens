@@ -232,6 +232,10 @@ jobs:
       - name: Fuzz the W2 decoder
         working-directory: implementation/rust
         run: cargo fuzz run w2 -- -max_total_time=120 -max_len=2048 -rss_limit_mb=2048
+      # The first bytes a link receives, from a peer that has not authenticated.
+      - name: Fuzz the B1.1 handshake record readers
+        working-directory: implementation/rust
+        run: cargo fuzz run b1 -- -max_total_time=120 -max_len=2048 -rss_limit_mb=2048
       - name: Upload crash artifacts
         if: failure()
         uses: actions/upload-artifact@v7

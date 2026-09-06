@@ -249,6 +249,43 @@ fn a_derived_epoch_never_begins_with_a_zero_byte() -> Fallible<()> {
 // incorrect one must not be allowed to become.
 // --------------------------------------------------------------------------
 
+/// The same pair as [`parties`], optionally chained as a rekey, so a test can
+/// cover both exchanges without restating the key material.
+fn parties_chained(chained: Option<&[u8; 32]>) -> Fallible<(Initiator, Responder, Selection)> {
+    let (initiator, responder, selection) = parties(None, None)?;
+    let Some(chain) = chained else {
+        return Ok((initiator, responder, selection));
+    };
+    let vector = vector(false)?;
+    let profile = profile()?;
+    let offer = Offer {
+        version: profile.protocol_version,
+        w2_profiles: vec![2],
+        t1_profiles: vec![3],
+        t2_profiles: vec![4],
+        suites: vec![[0x01, 0x01], [0x00, 0x03]],
+        resource_class: 1,
+    };
+    Ok((
+        Initiator::new(
+            profile.clone(),
+            key(&vector, "initiator_static_secret")?,
+            key(&vector, "initiator_ephemeral_secret")?,
+            key(&vector, "responder_static_public")?,
+            offer,
+            Some(chain),
+        )?,
+        Responder::new(
+            profile,
+            key(&vector, "responder_static_secret")?,
+            key(&vector, "responder_ephemeral_secret")?,
+            key(&vector, "initiator_static_public")?,
+            Some(chain),
+        )?,
+        selection,
+    ))
+}
+
 fn parties(
     pin_responder: Option<[u8; 32]>,
     pin_initiator: Option<[u8; 32]>,
@@ -361,6 +398,49 @@ fn a_record_that_fails_to_open_leaves_the_exchange_usable() -> Fallible<()> {
         initiator_session.handshake_hash, responder_session.handshake_hash,
         "both ends must reach the same transcript despite the refused records"
     );
+    Ok(())
+}
+
+/// Every reader must refuse malformed input without panicking.
+///
+/// `fuzz_targets/b1.rs` covers this surface far more thoroughly, but only in
+/// the nightly fuzz job. These shapes run on every build, so a panic on the
+/// first bytes a link receives cannot reach a release between fuzz runs. Each
+/// input walks a different part of the parse: the length check, the leading
+/// zero, the record type, the raw X25519 point, and the AEAD.
+#[test]
+fn malformed_records_are_refused_without_panicking() -> Fallible<()> {
+    let profile = profile()?;
+    let record_bytes = profile.record_bytes;
+    let mut shapes: Vec<Vec<u8>> = vec![
+        Vec::new(),
+        vec![0],
+        vec![0, 1],
+        vec![0xff; record_bytes],
+        vec![0; record_bytes],
+        vec![0; record_bytes - 1],
+        vec![0; record_bytes + 1],
+    ];
+    // Right length and leading zero, every record type, rubbish after that.
+    for kind in 0..=8_u8 {
+        let mut record = vec![0_u8; record_bytes];
+        if let Some(slot) = record.get_mut(1) {
+            *slot = kind;
+        }
+        for (index, byte) in record.iter_mut().enumerate().skip(2) {
+            *byte = (index % 251) as u8;
+        }
+        shapes.push(record);
+    }
+
+    for chained in [None, Some(&[0x5a_u8; 32])] {
+        for shape in &shapes {
+            let (mut initiator, mut responder, _) = parties_chained(chained)?;
+            assert!(responder.read_initiate(shape).is_err(), "read_initiate");
+            assert!(responder.read_finish(shape).is_err(), "read_finish");
+            assert!(initiator.read_respond(shape).is_err(), "read_respond");
+        }
+    }
     Ok(())
 }
 

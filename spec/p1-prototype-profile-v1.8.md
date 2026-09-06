@@ -80,7 +80,10 @@ independent hosts; doing so does not change the bootstrap boundary.
 
 The repository supplies independent positive and negative M2 vectors,
 deterministic mutation smoke tests in the Rust conformance crate, and
-`cargo-fuzz` targets for M2 and W2. Fuzz inputs MUST be processed under bounded
+`cargo-fuzz` targets for M2, W2, and the B1.1 handshake record readers. The
+last of those parse the first bytes a link ever receives, from a peer that has
+not authenticated, and are covered on every build by a deterministic smoke test
+as well as in the fuzz job. Fuzz inputs MUST be processed under bounded
 input and allocation limits; crashes, panics in production decoding, hangs, and
 unbounded allocation are failures.
 
