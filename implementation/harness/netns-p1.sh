@@ -570,7 +570,19 @@ if [[ -n "${P1_WRONG_PIN:-}" ]]; then
     echo "run may have failed for some unrelated reason" >&2
     exit 1
   fi
-  echo "scenario ${SCENARIO}: the manifest pin refused the link"
+  # ADR 0044 on the wire. A first message that does not decrypt is refused
+  # before any Diffie-Hellman and draws no reply, so this link must show
+  # initiate records and no respond record. Under plain XX the responder
+  # answered anything well formed, so the same run would have shown both --
+  # which is what makes this an assertion about the psk0 change rather than
+  # about the link merely failing.
+  if ! python3 "$ROOT/tools/b1_records.py" "$OUTPUT/link-0.pcap" \
+    --expect-present handshake_initiate --expect-absent handshake_respond; then
+    echo "scenario ${SCENARIO}: the responder answered a first message it" >&2
+    echo "could not decrypt, so the psk0 first-message defence is not in force" >&2
+    exit 1
+  fi
+  echo "scenario ${SCENARIO}: the manifest pin refused the link, unanswered"
 fi
 if (( EXPECT_ENDPOINT_FAILURE )); then
   if (( STATUS == 0 )); then

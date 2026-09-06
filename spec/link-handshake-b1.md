@@ -317,6 +317,13 @@ both: a first message that does not decrypt under the static-static key is
 refused before any Diffie-Hellman and draws no reply, so an unauthenticated
 prober obtains neither the work nor the identity.
 
+`implementation/harness/netns-p1.sh --scenario wrong-pin` checks this on the
+wire rather than in a unit test. It gives an initiator a static key its peer
+does not hold, so the derived pre-shared key differs, and asserts from the
+capture that the link carries initiate records and **no** respond record. Under
+plain `XX` the responder answered anything well formed, so the same run would
+have shown both.
+
 What remains is what the pre-shared key cannot cover. A peer that holds the
 manifest identity — a compromised neighbour, or anyone who has obtained a
 static key — can still open exchanges and spend a responder's bounded
