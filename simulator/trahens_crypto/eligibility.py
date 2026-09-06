@@ -22,6 +22,7 @@ from trahens_spec.generated import (
     BYTES_R1_CAPABILITY,
     BYTES_R1_DISCOVERY_NONCE,
     DOMAIN_R1_CAPABILITY,
+    DOMAIN_R1_CAPABILITY_COMMITMENT,
     SUITE_C2_K2_DISABLED,
     SUITE_R1,
 )
@@ -375,7 +376,7 @@ def issue_capability(
 def capability_commitment(token: bytes) -> bytes:
     if len(token) != R1_CAPABILITY_BYTES or token == bytes(R1_CAPABILITY_BYTES):
         raise EligibilityError("invalid R1 capability")
-    return hashlib.sha256(b"Trahens-R1-capability-commitment-v1" + token).digest()
+    return hashlib.sha256(DOMAIN_R1_CAPABILITY_COMMITMENT + token).digest()
 
 
 def equal_capability(left: bytes, right: bytes) -> bool:

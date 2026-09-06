@@ -59,8 +59,9 @@ pub struct Registry {
 
 /// Domain for the commitment a client presents to prove capability
 /// possession. Distinct from the gateway-local record key below; the Python
-/// reference uses the same separation.
-const DOMAIN_R1_CAPABILITY_COMMITMENT: &[u8] = b"Trahens-R1-capability-commitment-v1";
+/// reference uses the same separation, and both now read it from the registry
+/// rather than each holding its own copy of the string.
+use protocol_registry::DOMAIN_R1_CAPABILITY_COMMITMENT;
 
 /// Issue a fresh non-zero capability token.
 pub fn issue_capability() -> Result<SecretBytes<32>, RendezvousError> {

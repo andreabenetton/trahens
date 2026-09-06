@@ -103,7 +103,7 @@ pub fn offer_label(routing_nonce: &[u8; 32], index: u16) -> Result<[u8; 16], P1E
     if usize::from(index) >= LIMIT_MAX_CANDIDATE_RESPONSES_PER_DISCOVERY {
         return Err(P1Error::TooManyLayers);
     }
-    let mut input = b"Trahens-P1-offer-label-v1".to_vec();
+    let mut input = protocol_registry::DOMAIN_P1_OFFER_LABEL.to_vec();
     input.extend_from_slice(&index.to_be_bytes());
     let full = hmac_sha256(routing_nonce, &input).map_err(|_| P1Error::InvalidOffer)?;
     let mut label = [0_u8; 16];
@@ -179,7 +179,7 @@ fn append_field(output: &mut Vec<u8>, value: &[u8]) -> Result<(), P1Error> {
 /// part of what the gateway signature covers, rather than something each side
 /// assumes separately from its own registry.
 fn profile_parameter_digest() -> Result<[u8; 32], P1Error> {
-    let mut input = b"Trahens-P1-profile-parameters-v2".to_vec();
+    let mut input = protocol_registry::DOMAIN_P1_PROFILE_PARAMETERS.to_vec();
     input.push(protocol_registry::VERSION);
     input.push(protocol_registry::PRIVACY_PROFILE_U1);
     input.push(protocol_registry::LIFECYCLE_PROFILE_E1);
@@ -451,7 +451,7 @@ pub fn verify_proof(expected: &[u8; 32], actual: &[u8; 32]) -> Result<(), P1Erro
 }
 
 pub fn control_aad(message_type: MessageType, generation: u32) -> Vec<u8> {
-    let mut aad = b"Trahens-P1-control-v1".to_vec();
+    let mut aad = protocol_registry::DOMAIN_P1_CONTROL.to_vec();
     aad.push(message_type as u8);
     aad.extend_from_slice(&generation.to_be_bytes());
     aad
