@@ -14,5 +14,10 @@ transport-t1 = { path = "../transport-t1" }
 trahens-crypto = { path = "../crypto" }
 wire-w2 = { path = "../wire-w2" }
 
+[dev-dependencies]
+codec-m2 = { path = "../codec-m2" }
+test-vectors = { path = "../test-vectors" }
+hex = "0.4"
+
 [lints]
 workspace = true

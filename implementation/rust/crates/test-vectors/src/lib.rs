@@ -52,6 +52,14 @@ pub fn b1() -> Result<Value, VectorError> {
     )
 }
 
+/// `spec/route-channel-test-vectors.json`.
+pub fn route_channel() -> Result<Value, VectorError> {
+    parse(
+        "route-channel",
+        include_str!("../../../../../spec/route-channel-test-vectors.json"),
+    )
+}
+
 /// `spec/protocol-registry-v1.8.json`, the B1.1 draft.
 ///
 /// v1.8 is not the active profile and generates no bindings, so a test that

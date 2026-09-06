@@ -52,10 +52,12 @@ name = "node-runtime"
 version = "1.5.0"
 dependencies = [
  "codec-m2",
+ "hex",
  "link-handshake-b1",
  "protocol-registry",
  "scheduling-t2",
  "state-machine",
+ "test-vectors",
  "trahens-crypto",
  "transport-t1",
  "wire-w2",

@@ -1,0 +1,61 @@
+{
+  "schema": "trahens-route-channel-vectors-v1",
+  "route_secret": "2e87a9f39a68355d303ae40de84cdebc7a55b09f64f25a999505c98ab62bf43f",
+  "offer_transcript_hash": "904b64c5b5e3f7ce873cefa0bf9b4f75d4b296594a6126c7d1fce4d63e92e7ff",
+  "endpoint_to_gateway_key": "4700060820098b8f033f41d96a019482f35db931e8e72cacc47c0e613df8c3e2",
+  "gateway_to_endpoint_key": "cebb00c30419f75c12bce03b5c19ad5257e749799a11db5d8f5be736558b742f",
+  "other_offer_transcript_hash": "0c0e50dcab2a8231f9ed36374e0823550dc0a1ec482884dc8c64be6137c653c6",
+  "other_endpoint_to_gateway_key": "b51277e48db3a22e6de8861e737c036a8aad95d7836a1521eead972c7678ba22",
+  "records": [
+    {
+      "name": "commit_from_endpoint",
+      "direction": 0,
+      "sequence": 0,
+      "message_type": 34,
+      "generation": 0,
+      "aad": "54726168656e732d50312d636f6e74726f6c2d76312200000000",
+      "plaintext": "f7edac3c6c2f343247f5a52f27fbf501b4ef7f5ca210d5264a4dafcda868376a",
+      "sealed": "0000000000000000000000004d5eab0feab697de9714c5f978c96652b56413f0f7ba250144ab179cba6e7717cb6524db5d93359328e2020a9157eb09"
+    },
+    {
+      "name": "ready_from_gateway",
+      "direction": 1,
+      "sequence": 0,
+      "message_type": 35,
+      "generation": 0,
+      "aad": "54726168656e732d50312d636f6e74726f6c2d76312300000000",
+      "plaintext": "438bcdeada76acfcfee9ccecb71c90130d70760e26a79cd2f16c37f65890a907",
+      "sealed": "000000010000000000000000530fd22424bd10878a7f25a4c1f5368fd9d15b828b3d880d27e17bd5bd3a459049c45391af19a12b4731b7fd06e80a76"
+    },
+    {
+      "name": "second_from_endpoint",
+      "direction": 0,
+      "sequence": 1,
+      "message_type": 34,
+      "generation": 0,
+      "aad": "54726168656e732d50312d636f6e74726f6c2d76312200000000",
+      "plaintext": "f7edac3c6c2f343247f5a52f27fbf501b4ef7f5ca210d5264a4dafcda868376a",
+      "sealed": "0000000000000000000000010f875c16e3ebab1ffa46ceac348829ed361a12d543a9b139a46986a953e6331dd7b97ae7b3a0dd73f97530a77d44375b"
+    },
+    {
+      "name": "commit_in_later_generation",
+      "direction": 0,
+      "sequence": 0,
+      "message_type": 34,
+      "generation": 7,
+      "aad": "54726168656e732d50312d636f6e74726f6c2d76312200000007",
+      "plaintext": "f7edac3c6c2f343247f5a52f27fbf501b4ef7f5ca210d5264a4dafcda868376a",
+      "sealed": "0000000000000000000000004d5eab0feab697de9714c5f978c96652b56413f0f7ba250144ab179cba6e77174ab128399301a0798a90c6793bae1739"
+    },
+    {
+      "name": "empty_body",
+      "direction": 1,
+      "sequence": 5,
+      "message_type": 35,
+      "generation": 0,
+      "aad": "54726168656e732d50312d636f6e74726f6c2d76312300000000",
+      "plaintext": "",
+      "sealed": "000000010000000000000005c3395bc468c0e3ab5214eeb01499efce"
+    }
+  ]
+}

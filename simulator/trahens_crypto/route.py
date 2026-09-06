@@ -30,6 +30,7 @@ from trahens_spec.generated import (
     BYTES_ROUTE_DIRECTION,
     BYTES_ROUTE_NONCE,
     BYTES_ROUTE_SEQUENCE,
+    DOMAIN_P1_CONTROL,
     DOMAIN_P1_ROUTE_EXTRACT,
     DOMAIN_P1_ROUTE_KEY_E2G,
     DOMAIN_P1_ROUTE_KEY_G2E,
@@ -164,12 +165,13 @@ def route_open(key: bytes, expected_direction: int, sealed: bytes, aad: bytes) -
 def control_aad(message_type: int, generation: int) -> bytes:
     """The associated data every control record binds.
 
-    Binding the message type stops a sealed body being presented as a different
-    control message, and the generation stops one from a superseded generation
-    being accepted in a later one.
+    The domain comes first, then the message type, then the generation. Binding
+    the message type stops a sealed body being presented as a different control
+    message, and the generation stops one from a superseded generation being
+    accepted in a later one.
     """
     if not 0 <= message_type < 256:
         raise RouteError("message type out of range")
     if not 0 <= generation < 2**32:
         raise RouteError("generation out of range")
-    return bytes([message_type]) + generation.to_bytes(4, "big")
+    return DOMAIN_P1_CONTROL + bytes([message_type]) + generation.to_bytes(4, "big")

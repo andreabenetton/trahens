@@ -1,4 +1,4 @@
-.PHONY: test crypto-vectors r1-vectors t1-vectors t2-vectors t3-vectors t4-vectors c2-symbolic-vectors c2-k2-audit c2-k2-exhaustive r1-compare t1-compare t2-compare t3-compare t4-compare experiments sweep policy-compare unlinkability-compare lifecycle-compare tagging-compare fragmentation-compare c2-compare paper check reproduce clean
+.PHONY: test crypto-vectors r1-vectors route-vectors t1-vectors t2-vectors t3-vectors t4-vectors c2-symbolic-vectors c2-k2-audit c2-k2-exhaustive r1-compare t1-compare t2-compare t3-compare t4-compare experiments sweep policy-compare unlinkability-compare lifecycle-compare tagging-compare fragmentation-compare c2-compare paper check reproduce clean
 
 test:
 	PYTHONPATH=simulator python -m unittest discover -s simulator/tests -v
@@ -118,6 +118,9 @@ p1-vectors:
 
 b1-vectors:
 	PYTHONPATH=simulator python tools/generate_b1_vectors.py --output spec/b1-test-vectors.json
+
+route-vectors:
+	PYTHONPATH=simulator python tools/generate_route_vectors.py --output spec/route-channel-test-vectors.json
 
 rust-test:
 	cargo test --manifest-path implementation/rust/Cargo.toml --all-targets

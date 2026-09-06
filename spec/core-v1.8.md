@@ -254,6 +254,16 @@ The `direction` and `sequence` fields inside the DATA payload are superseded by
 the nonce and retained only for encoding compatibility within this profile. The
 nonce is authoritative.
 
+`route-channel-test-vectors.json` is normative for this construction. It fixes
+both directional keys for a route secret and offer transcript, the same secret's
+keys under a different transcript, and a set of sealed records covering both
+directions, a non-zero sequence, a non-zero generation and an empty body. Every
+record's associated data is `p1_control || message type || generation`, and an
+implementation MUST reproduce each sealed record byte for byte. The vectors come
+from `simulator/trahens_crypto/route.py`, and `implementation/rust/crates/node-runtime/tests/route_channel_vectors.rs`
+reproduces them, so the construction is checked between two implementations
+rather than against one implementation's own output.
+
 ## 8. Security and resource requirements
 
 A conforming P1 implementation MUST:
