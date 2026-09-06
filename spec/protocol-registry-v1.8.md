@@ -58,6 +58,12 @@ Byte order for fixed-width integers: **big-endian**.
 | `rekey_respond` | 5 | `0x0005` |
 | `rekey_finish` | 6 | `0x0006` |
 
+## B1.2 datagram first-byte discriminators
+
+| Name | Decimal | Hex |
+|---|---:|---:|
+| `advertisement` | 1 | `0x0001` |
+
 ## Stable error identifiers
 
 | Name | Decimal | Hex |
@@ -116,6 +122,9 @@ Byte order for fixed-width integers: **big-endian**.
 | `b12_cookie` | 32 |
 | `b12_invitation_secret` | 32 |
 | `b12_invitation_id` | 16 |
+| `b12_advertisement` | 1052 |
+| `b12_advertisement_body` | 987 |
+| `b12_advertisement_signature` | 64 |
 | `b1_initiate_payload_psk` | 1002 |
 
 ## Limits
@@ -248,6 +257,7 @@ Byte order for fixed-width integers: **big-endian**.
 - `b1_rekey_chain` = `Trahens-B1-rekey-chain-v1`
 - `b1_static_psk` = `Trahens-B1-static-psk-v1`
 - `b12_cookie` = `Trahens-B12-cookie-v1`
+- `b12_advertisement` = `Trahens-B12-advertisement-v1`
 - `b12_invitation_psk` = `Trahens-B12-invitation-psk-v1`
 - `b1_epoch` = `Trahens-B1-epoch-v1`
 - `b1_export` = `Trahens-B1-export-v1`

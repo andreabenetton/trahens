@@ -50,6 +50,7 @@ def generate_python(data: dict[str, Any]) -> str:
         ("t2_schedule_actions", "T2_ACTION"),
         ("p1_payload_types", "P1_PAYLOAD"),
         ("b1_record_types", "B1_RECORD"),
+        ("b12_datagram_types", "B12_DATAGRAM"),
         ("error_ids", "ERROR"),
         ("widths_bytes", "BYTES"),
         ("limits", "LIMIT"),
@@ -96,6 +97,7 @@ def generate_rust(data: dict[str, Any]) -> str:
         ("t2_schedule_actions", "T2_ACTION", "u8"),
         ("p1_payload_types", "P1_PAYLOAD", "u8"),
         ("b1_record_types", "B1_RECORD", "u8"),
+        ("b12_datagram_types", "B12_DATAGRAM", "u8"),
         ("error_ids", "ERROR", "u16"),
         ("widths_bytes", "BYTES", "usize"),
         ("limits", "LIMIT", "usize"),
@@ -139,6 +141,7 @@ def generate_markdown(data: dict[str, Any]) -> str:
         ("T1 frame types", "t1_frame_types"),
         ("T2 frame types", "t2_frame_types"),
         ("B1 handshake record types", "b1_record_types"),
+        ("B1.2 datagram first-byte discriminators", "b12_datagram_types"),
         ("Stable error identifiers", "error_ids"),
     ):
         entries = data.get(section, {})

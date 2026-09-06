@@ -95,6 +95,11 @@ spec/b12-invitation-test-vectors.json
 simulator/trahens_crypto/invitation.py
 simulator/tests/test_b12_invitation.py
 tools/generate_invitation_vectors.py
+spec/discovery-advertisement-b12.md
+spec/b12-advertisement-test-vectors.json
+simulator/trahens_crypto/advertisement.py
+simulator/tests/test_b12_advertisement.py
+tools/generate_advertisement_vectors.py
 implementation/rust/crates/admission-b12/src/invitation.rs
 reports/v1.5-bounded-state-models.json
 reports/v1.5-t3-anonymity-metrics.json
@@ -354,6 +359,10 @@ invitation_vectors_tmp=$(mktemp)
 PYTHONPATH=simulator python tools/generate_invitation_vectors.py --output "$invitation_vectors_tmp"
 cmp spec/b12-invitation-test-vectors.json "$invitation_vectors_tmp"
 rm -f "$invitation_vectors_tmp"
+advertisement_vectors_tmp=$(mktemp)
+PYTHONPATH=simulator python tools/generate_advertisement_vectors.py --output "$advertisement_vectors_tmp"
+cmp spec/b12-advertisement-test-vectors.json "$advertisement_vectors_tmp"
+rm -f "$advertisement_vectors_tmp"
 PYTHONPATH=simulator python tools/generate_t1_vectors.py --output "$t1_vectors_tmp"
 cmp spec/t1-test-vectors.json "$t1_vectors_tmp"
 PYTHONPATH=simulator python tools/generate_t2_vectors.py --output "$t2_vectors_tmp"

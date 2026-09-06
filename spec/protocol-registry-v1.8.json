@@ -106,6 +106,9 @@
     "b12_cookie": 32,
     "b12_invitation_secret": 32,
     "b12_invitation_id": 16,
+    "b12_advertisement": 1052,
+    "b12_advertisement_body": 987,
+    "b12_advertisement_signature": 64,
     "b1_initiate_payload_psk": 1002
   },
   "limits": {
@@ -202,6 +205,7 @@
     "b1_rekey_chain": "Trahens-B1-rekey-chain-v1",
     "b1_static_psk": "Trahens-B1-static-psk-v1",
     "b12_cookie": "Trahens-B12-cookie-v1",
+    "b12_advertisement": "Trahens-B12-advertisement-v1",
     "b12_invitation_psk": "Trahens-B12-invitation-psk-v1",
     "b1_epoch": "Trahens-B1-epoch-v1",
     "b1_export": "Trahens-B1-export-v1"
@@ -231,6 +235,10 @@
     "handshake_static_responder": "ephemeral-encrypted",
     "handshake_static_initiator": "handshake-encrypted",
     "negotiation_selection": "handshake-encrypted"
+  },
+  "_b12_datagram_types_note": "First-byte discriminators, from the range link-handshake-b1.md section 3 reserves. A handshake record begins 0x00 and a W2 cell 0x80 or above, so 0x01-0x7f is reachable by neither.",
+  "b12_datagram_types": {
+    "advertisement": 1
   },
   "b1_record_types": {
     "handshake_initiate": 1,
