@@ -86,6 +86,11 @@ spec/route-channel-test-vectors.json
 simulator/trahens_crypto/route.py
 simulator/tests/test_route_channel.py
 tools/generate_route_vectors.py
+spec/admission-cookie-b12.md
+spec/b12-cookie-test-vectors.json
+simulator/trahens_crypto/cookie.py
+simulator/tests/test_b12_cookie.py
+tools/generate_cookie_vectors.py
 reports/v1.5-bounded-state-models.json
 reports/v1.5-t3-anonymity-metrics.json
 simulator/trahens_spec/generated.py
@@ -335,6 +340,10 @@ route_vectors_tmp=$(mktemp)
 PYTHONPATH=simulator python tools/generate_route_vectors.py --output "$route_vectors_tmp"
 cmp spec/route-channel-test-vectors.json "$route_vectors_tmp"
 rm -f "$route_vectors_tmp"
+cookie_vectors_tmp=$(mktemp)
+PYTHONPATH=simulator python tools/generate_cookie_vectors.py --output "$cookie_vectors_tmp"
+cmp spec/b12-cookie-test-vectors.json "$cookie_vectors_tmp"
+rm -f "$cookie_vectors_tmp"
 PYTHONPATH=simulator python tools/generate_t1_vectors.py --output "$t1_vectors_tmp"
 cmp spec/t1-test-vectors.json "$t1_vectors_tmp"
 PYTHONPATH=simulator python tools/generate_t2_vectors.py --output "$t2_vectors_tmp"

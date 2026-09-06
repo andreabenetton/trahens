@@ -103,6 +103,7 @@
     "b1_respond_payload": 954,
     "b1_finish_payload": 986,
     "b1_export_key": 32,
+    "b12_cookie": 32,
     "b1_initiate_payload_psk": 1002
   },
   "limits": {
@@ -151,6 +152,8 @@
     "handshake_interval_ms": 1000,
     "max_failed_handshakes_before_backoff": 8,
     "handshake_backoff_ms": 5000,
+    "cookie_window_ms": 2000,
+    "cookie_windows_accepted": 2,
     "max_offered_profiles_per_class": 8,
     "rekey_after_cells": 4194304,
     "rekey_after_ms": 3600000,
@@ -196,6 +199,7 @@
     "b1_prologue": "Trahens-B1-prologue-v1",
     "b1_rekey_chain": "Trahens-B1-rekey-chain-v1",
     "b1_static_psk": "Trahens-B1-static-psk-v1",
+    "b12_cookie": "Trahens-B12-cookie-v1",
     "b1_epoch": "Trahens-B1-epoch-v1",
     "b1_export": "Trahens-B1-export-v1"
   },

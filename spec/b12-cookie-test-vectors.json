@@ -1,0 +1,60 @@
+{
+  "schema": "trahens-b12-cookie-vectors-v1",
+  "window_ms": 2000,
+  "cases": [
+    {
+      "name": "ipv4_current_window",
+      "responder_secret": "7440ce17247883d80c2cc84d0eac7b768e29bc8c7bb6c71ae14dad03c6c30377",
+      "source": "0ac80001",
+      "port": 41000,
+      "window": 878500000,
+      "offer": "65c8b48cfd24578c96893ef2d5d0b4369b5ca6b8",
+      "cookie": "d8fda3a3e741dfd3e4cc68b6f8d4505c3d05af85febe79cd47a296b80cbebfae"
+    },
+    {
+      "name": "ipv4_previous_window",
+      "responder_secret": "7440ce17247883d80c2cc84d0eac7b768e29bc8c7bb6c71ae14dad03c6c30377",
+      "source": "0ac80001",
+      "port": 41000,
+      "window": 878499999,
+      "offer": "65c8b48cfd24578c96893ef2d5d0b4369b5ca6b8",
+      "cookie": "3665eca2a706591559952e39b3294041df162da6e283cdf990c7f6f267ed3a71"
+    },
+    {
+      "name": "ipv4_previous_secret",
+      "responder_secret": "8ac28ff040772cde8a1e496d6cafe47434856e1a1b94d8d3bbbea917441b0de1",
+      "source": "0ac80001",
+      "port": 41000,
+      "window": 878500000,
+      "offer": "65c8b48cfd24578c96893ef2d5d0b4369b5ca6b8",
+      "cookie": "9085c0995b94b0bb055d9c33c21a4800512ab6825a7e409ef5fff5b3abda8c48"
+    },
+    {
+      "name": "ipv4_other_port",
+      "responder_secret": "7440ce17247883d80c2cc84d0eac7b768e29bc8c7bb6c71ae14dad03c6c30377",
+      "source": "0ac80001",
+      "port": 41001,
+      "window": 878500000,
+      "offer": "65c8b48cfd24578c96893ef2d5d0b4369b5ca6b8",
+      "cookie": "aa46ed73eedbd5968c9e908f15f71b7389016a545c2a94e2ac492d2537ef1314"
+    },
+    {
+      "name": "ipv6_current_window",
+      "responder_secret": "7440ce17247883d80c2cc84d0eac7b768e29bc8c7bb6c71ae14dad03c6c30377",
+      "source": "20010db8000000000000000000000001",
+      "port": 41000,
+      "window": 878500000,
+      "offer": "65c8b48cfd24578c96893ef2d5d0b4369b5ca6b8",
+      "cookie": "8dbba20e0428980b2486195589979413d201dda00d51d29b11a0c4dd2f7de300"
+    },
+    {
+      "name": "empty_offer",
+      "responder_secret": "7440ce17247883d80c2cc84d0eac7b768e29bc8c7bb6c71ae14dad03c6c30377",
+      "source": "0ac80001",
+      "port": 41000,
+      "window": 878500000,
+      "offer": "",
+      "cookie": "687932b5d3e353d46ef477320846a062f553a023102abf51c4aa894f0ed5ac97"
+    }
+  ]
+}
