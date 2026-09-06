@@ -6,7 +6,7 @@
 //! agreement here means agreement with Noise and not merely with the Python
 //! reference.
 
-use link_handshake_b1::{Initiator, Offer, Profile, Responder, Selection};
+use link_handshake_b1::{Initiator, Keying, Offer, Profile, Responder, Selection};
 use std::error::Error;
 use test_vectors::Value;
 
@@ -137,20 +137,36 @@ fn replay(rekey: bool) -> Fallible<()> {
         resource_class: 1,
     };
 
+    let responder_static_public = key(&vector, "responder_static_public")?;
+    let initiator_static_public = key(&vector, "initiator_static_public")?;
     let mut initiator = Initiator::new(
         profile.clone(),
         key(&vector, "initiator_static_secret")?,
         key(&vector, "initiator_ephemeral_secret")?,
-        key(&vector, "responder_static_public")?,
         offer,
-        chained.as_ref(),
+        match chained.as_ref() {
+            Some(previous_export) => Keying::Rekey {
+                previous_export,
+                peer_static: responder_static_public,
+            },
+            None => Keying::Manifest {
+                peer_static: responder_static_public,
+            },
+        },
     )?;
     let mut responder = Responder::new(
         profile,
         key(&vector, "responder_static_secret")?,
         key(&vector, "responder_ephemeral_secret")?,
-        key(&vector, "initiator_static_public")?,
-        chained.as_ref(),
+        match chained.as_ref() {
+            Some(previous_export) => Keying::Rekey {
+                previous_export,
+                peer_static: initiator_static_public,
+            },
+            None => Keying::Manifest {
+                peer_static: initiator_static_public,
+            },
+        },
     )?;
 
     let message_1 = initiator.write_initiate()?;
@@ -271,16 +287,20 @@ fn parties_chained(chained: Option<&[u8; 32]>) -> Fallible<(Initiator, Responder
             profile.clone(),
             key(&vector, "initiator_static_secret")?,
             key(&vector, "initiator_ephemeral_secret")?,
-            key(&vector, "responder_static_public")?,
             offer,
-            Some(chain),
+            Keying::Rekey {
+                previous_export: chain,
+                peer_static: key(&vector, "responder_static_public")?,
+            },
         )?,
         Responder::new(
             profile,
             key(&vector, "responder_static_secret")?,
             key(&vector, "responder_ephemeral_secret")?,
-            key(&vector, "initiator_static_public")?,
-            Some(chain),
+            Keying::Rekey {
+                previous_export: chain,
+                peer_static: key(&vector, "initiator_static_public")?,
+            },
         )?,
         selection,
     ))
@@ -312,16 +332,18 @@ fn parties(
         profile.clone(),
         key(&vector, "initiator_static_secret")?,
         key(&vector, "initiator_ephemeral_secret")?,
-        pin_responder.unwrap_or(key(&vector, "responder_static_public")?),
         offer,
-        None,
+        Keying::Manifest {
+            peer_static: pin_responder.unwrap_or(key(&vector, "responder_static_public")?),
+        },
     )?;
     let responder = Responder::new(
         profile,
         key(&vector, "responder_static_secret")?,
         key(&vector, "responder_ephemeral_secret")?,
-        pin_initiator.unwrap_or(key(&vector, "initiator_static_public")?),
-        None,
+        Keying::Manifest {
+            peer_static: pin_initiator.unwrap_or(key(&vector, "initiator_static_public")?),
+        },
     )?;
     Ok((initiator, responder, selection))
 }
@@ -444,6 +466,142 @@ fn malformed_records_are_refused_without_panicking() -> Fallible<()> {
     Ok(())
 }
 
+/// An admission handshake records the presented key instead of pinning it,
+/// because there is no manifest entry to pin against. What authenticated the
+/// peer is the admission key the exchange ran under.
+#[test]
+fn an_admission_handshake_promotes_the_presented_key() -> Fallible<()> {
+    let vector = vector(false)?;
+    let profile = profile()?;
+    let psk = [0x5a_u8; 32];
+    let offer = Offer {
+        version: profile.protocol_version,
+        w2_profiles: vec![2],
+        t1_profiles: vec![3],
+        t2_profiles: vec![4],
+        suites: vec![[0x01, 0x01], [0x00, 0x03]],
+        resource_class: 1,
+    };
+    let selection = Selection {
+        version: profile.protocol_version,
+        w2_profile: 2,
+        t1_profile: 3,
+        t2_profile: 4,
+        suite: [0x01, 0x01],
+        resource_class: 1,
+    };
+
+    // The joiner still pins: an invitation carries the inviter's static key.
+    let mut joiner = Initiator::new(
+        profile.clone(),
+        key(&vector, "initiator_static_secret")?,
+        key(&vector, "initiator_ephemeral_secret")?,
+        offer,
+        Keying::Admission {
+            psk: &psk,
+            peer_static: Some(key(&vector, "responder_static_public")?),
+        },
+    )?;
+    let mut inviter = Responder::new(
+        profile,
+        key(&vector, "responder_static_secret")?,
+        key(&vector, "responder_ephemeral_secret")?,
+        Keying::Admission {
+            psk: &psk,
+            peer_static: None,
+        },
+    )?;
+
+    assert_eq!(inviter.promoted_static(), None, "nothing before completion");
+    inviter.read_initiate(&joiner.write_initiate()?)?;
+    joiner.read_respond(&inviter.write_respond(selection)?)?;
+    let (finish, _) = joiner.write_finish()?;
+    inviter.read_finish(&finish)?;
+
+    assert_eq!(
+        inviter.promoted_static(),
+        Some(key(&vector, "initiator_static_public")?),
+        "the inviter learned the key it had no way to pin"
+    );
+    Ok(())
+}
+
+/// Promotion must not be reachable where a pin already applies, or a pinned
+/// peer would be indistinguishable from a newly learned one.
+#[test]
+fn the_manifest_path_promotes_nothing() -> Fallible<()> {
+    let (mut initiator, mut responder, selection) = parties(None, None)?;
+    responder.read_initiate(&initiator.write_initiate()?)?;
+    initiator.read_respond(&responder.write_respond(selection)?)?;
+    let (finish, _) = initiator.write_finish()?;
+    responder.read_finish(&finish)?;
+    assert_eq!(responder.promoted_static(), None);
+    Ok(())
+}
+
+/// An admission handshake is authenticated by its key alone, so a joiner
+/// without it is refused at the first record and the inviter answers nothing.
+#[test]
+fn an_admission_handshake_needs_the_right_key() -> Fallible<()> {
+    let vector = vector(false)?;
+    let profile = profile()?;
+    let offer = Offer {
+        version: profile.protocol_version,
+        w2_profiles: vec![2],
+        t1_profiles: vec![3],
+        t2_profiles: vec![4],
+        suites: vec![[0x01, 0x01], [0x00, 0x03]],
+        resource_class: 1,
+    };
+    let mut joiner = Initiator::new(
+        profile.clone(),
+        key(&vector, "initiator_static_secret")?,
+        key(&vector, "initiator_ephemeral_secret")?,
+        offer,
+        Keying::Admission {
+            psk: &[0x5a_u8; 32],
+            peer_static: Some(key(&vector, "responder_static_public")?),
+        },
+    )?;
+    let mut inviter = Responder::new(
+        profile,
+        key(&vector, "responder_static_secret")?,
+        key(&vector, "responder_ephemeral_secret")?,
+        Keying::Admission {
+            psk: &[0x11_u8; 32],
+            peer_static: None,
+        },
+    )?;
+    assert!(inviter.read_initiate(&joiner.write_initiate()?).is_err());
+    Ok(())
+}
+
+/// An initiator has no path that omits its peer's static key.
+#[test]
+fn an_initiator_without_a_peer_static_is_refused() -> Fallible<()> {
+    let profile = profile()?;
+    let offer = Offer {
+        version: profile.protocol_version,
+        w2_profiles: vec![2],
+        t1_profiles: vec![3],
+        t2_profiles: vec![4],
+        suites: vec![[0x01, 0x01], [0x00, 0x03]],
+        resource_class: 1,
+    };
+    assert!(Initiator::new(
+        profile,
+        [1_u8; 32],
+        [2_u8; 32],
+        offer,
+        Keying::Admission {
+            psk: &[3_u8; 32],
+            peer_static: None,
+        },
+    )
+    .is_err());
+    Ok(())
+}
+
 #[test]
 fn a_selection_outside_the_offer_is_refused() -> Fallible<()> {
     let (mut initiator, mut responder, selection) = parties(None, None)?;
@@ -472,9 +630,10 @@ fn a_retired_suite_cannot_be_offered() -> Fallible<()> {
         profile,
         key(&vector, "initiator_static_secret")?,
         key(&vector, "initiator_ephemeral_secret")?,
-        key(&vector, "responder_static_public")?,
         retired,
-        None,
+        Keying::Manifest {
+            peer_static: key(&vector, "responder_static_public")?,
+        },
     )?;
     assert!(initiator.write_initiate().is_err());
     Ok(())
@@ -520,9 +679,10 @@ fn a_first_message_without_the_static_psk_is_refused() -> Fallible<()> {
         profile,
         [7_u8; 32],
         key(&vector, "initiator_ephemeral_secret")?,
-        key(&vector, "responder_static_public")?,
         offer,
-        None,
+        Keying::Manifest {
+            peer_static: key(&vector, "responder_static_public")?,
+        },
     )?;
     assert!(responder
         .read_initiate(&outsider.write_initiate()?)
@@ -557,16 +717,20 @@ fn a_rekey_chained_to_another_session_is_refused_before_any_diffie_hellman() -> 
         profile.clone(),
         key(&vector, "initiator_static_secret")?,
         key(&vector, "initiator_ephemeral_secret")?,
-        key(&vector, "responder_static_public")?,
         offer,
-        Some(&key(&vector, "chained_export_key")?),
+        Keying::Rekey {
+            previous_export: &key(&vector, "chained_export_key")?,
+            peer_static: key(&vector, "responder_static_public")?,
+        },
     )?;
     let mut responder = Responder::new(
         profile,
         key(&vector, "responder_static_secret")?,
         key(&vector, "responder_ephemeral_secret")?,
-        key(&vector, "initiator_static_public")?,
-        Some(&[7_u8; 32]),
+        Keying::Rekey {
+            previous_export: &[7_u8; 32],
+            peer_static: key(&vector, "initiator_static_public")?,
+        },
     )?;
     // Under psk0 the first record is already encrypted, so the mismatch is
     // caught there rather than after the responder has spent a DH.

@@ -502,6 +502,59 @@ fn finish(
     })
 }
 
+/// Where a handshake's `psk0` key comes from, and what it implies about the
+/// peer's static key.
+///
+/// One value rather than several optional parameters, so the combinations that
+/// do not mean anything cannot be written: a rekey carrying an admission key,
+/// or a responder with neither a manifest entry nor an admission key, which
+/// would authenticate the peer by nothing at all.
+pub enum Keying<'a> {
+    /// The manifest path of ADR 0044. The key is the static-static value and
+    /// the presented static key is pinned against `peer_static`.
+    Manifest { peer_static: [u8; 32] },
+    /// A rekey, chained through the previous session's export key.
+    Rekey {
+        previous_export: &'a [u8; 32],
+        peer_static: [u8; 32],
+    },
+    /// B1.2 admission. The key comes from whatever admitted the peer, and
+    /// `peer_static` is `None` for a responder with no manifest entry, which
+    /// records the presented key instead of checking it. An initiator always
+    /// supplies one.
+    Admission {
+        psk: &'a [u8; 32],
+        peer_static: Option<[u8; 32]>,
+    },
+}
+
+impl Keying<'_> {
+    fn peer_static(&self) -> Option<[u8; 32]> {
+        match self {
+            Self::Manifest { peer_static } | Self::Rekey { peer_static, .. } => Some(*peer_static),
+            Self::Admission { peer_static, .. } => *peer_static,
+        }
+    }
+
+    fn is_rekey(&self) -> bool {
+        matches!(self, Self::Rekey { .. })
+    }
+
+    fn is_admission(&self) -> bool {
+        matches!(self, Self::Admission { .. })
+    }
+
+    fn psk(&self, profile: &Profile, static_secret: &[u8; 32]) -> Result<[u8; 32]> {
+        match self {
+            Self::Manifest { peer_static } => static_psk(profile, static_secret, peer_static),
+            Self::Rekey {
+                previous_export, ..
+            } => Ok(**previous_export),
+            Self::Admission { psk, .. } => Ok(**psk),
+        }
+    }
+}
+
 /// The pre-shared key for an initial handshake, from the static-static
 /// Diffie-Hellman.
 ///
@@ -607,15 +660,16 @@ impl Initiator {
         profile: Profile,
         static_secret: [u8; 32],
         ephemeral_secret: [u8; 32],
-        expected_peer_static: [u8; 32],
         offer: Offer,
-        previous_export: Option<&[u8; 32]>,
+        keying: Keying<'_>,
     ) -> Result<Self> {
-        let psk = match previous_export {
-            Some(export) => *export,
-            None => static_psk(&profile, &static_secret, &expected_peer_static)?,
-        };
-        let state = begin(&profile, previous_export.is_some(), &psk)?;
+        // An initiator always pins its peer, on every path. Even joining under
+        // an invitation it knows the inviter's static key, because an
+        // out-of-band invitation can carry it; only the inviter is left
+        // learning an identity it did not already hold.
+        let expected_peer_static = keying.peer_static().ok_or(HandshakeError)?;
+        let psk = keying.psk(&profile, &static_secret)?;
+        let state = begin(&profile, keying.is_rekey(), &psk)?;
         Ok(Self {
             static_public: x25519_base(&static_secret)?,
             ephemeral_public: x25519_base(&ephemeral_secret)?,
@@ -623,7 +677,7 @@ impl Initiator {
             ephemeral_secret: SecretBytes(ephemeral_secret),
             expected_peer_static,
             offer,
-            rekey: previous_export.is_some(),
+            rekey: keying.is_rekey(),
             state,
             remote_ephemeral: None,
             selection: None,
@@ -721,7 +775,10 @@ pub struct Responder {
     static_public: [u8; 32],
     ephemeral_secret: SecretBytes<32>,
     ephemeral_public: [u8; 32],
-    expected_peer_static: [u8; 32],
+    /// `None` only on an admission handshake, which has no manifest entry.
+    expected_peer_static: Option<[u8; 32]>,
+    admission: bool,
+    promoted_static: Option<[u8; 32]>,
     rekey: bool,
     state: SymmetricState,
     remote_ephemeral: Option<[u8; 32]>,
@@ -734,27 +791,35 @@ impl Responder {
         profile: Profile,
         static_secret: [u8; 32],
         ephemeral_secret: [u8; 32],
-        expected_peer_static: [u8; 32],
-        previous_export: Option<&[u8; 32]>,
+        keying: Keying<'_>,
     ) -> Result<Self> {
-        let psk = match previous_export {
-            Some(export) => *export,
-            None => static_psk(&profile, &static_secret, &expected_peer_static)?,
-        };
-        let state = begin(&profile, previous_export.is_some(), &psk)?;
+        let psk = keying.psk(&profile, &static_secret)?;
+        let state = begin(&profile, keying.is_rekey(), &psk)?;
         Ok(Self {
             static_public: x25519_base(&static_secret)?,
             ephemeral_public: x25519_base(&ephemeral_secret)?,
             static_secret: SecretBytes(static_secret),
             ephemeral_secret: SecretBytes(ephemeral_secret),
-            expected_peer_static,
-            rekey: previous_export.is_some(),
+            expected_peer_static: keying.peer_static(),
+            admission: keying.is_admission(),
+            promoted_static: None,
+            rekey: keying.is_rekey(),
             state,
             remote_ephemeral: None,
             offer: None,
             selection: None,
             profile,
         })
+    }
+
+    /// The static key an admission handshake learned, once it completed.
+    ///
+    /// `None` on every other path and before completion, so a caller cannot
+    /// mistake a pinned peer for a newly learned one. This is the value ADR
+    /// 0046 D8 promotes into the manifest.
+    #[must_use]
+    pub fn promoted_static(&self) -> Option<[u8; 32]> {
+        self.promoted_static
     }
 
     /// A record that does not validate leaves this responder exactly as it was.
@@ -830,11 +895,26 @@ impl Responder {
         if !unframe(&framed, width)?.is_empty() {
             return Err(HandshakeError);
         }
-        if !constant_time_equal(&remote_static, &self.expected_peer_static) {
-            return Err(HandshakeError);
+        // An admission handshake has no manifest entry to check against, so it
+        // records the key for promotion instead. What authenticated the peer is
+        // the admission key the whole exchange ran under: without it the first
+        // message would not have decrypted and nothing would reach here.
+        match self.expected_peer_static {
+            Some(pinned) if !self.admission => {
+                if !constant_time_equal(&remote_static, &pinned) {
+                    return Err(HandshakeError);
+                }
+            }
+            _ if self.admission => {}
+            // Neither pinned nor admitting: the constructor refuses this, and
+            // reaching it would mean the peer was authenticated by nothing.
+            _ => return Err(HandshakeError),
         }
         let session = finish(&self.profile, &state, remote_static, selection)?;
         self.state = state;
+        if self.admission {
+            self.promoted_static = Some(remote_static);
+        }
         Ok(session)
     }
 }

@@ -13,7 +13,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use link_handshake_b1::{Initiator, Offer, Responder};
+use link_handshake_b1::{Initiator, Keying, Offer, Responder};
 use protocol_registry::{SUITE_C1_V2, SUITE_R1, VERSION};
 
 fn offer() -> Offer {
@@ -36,11 +36,6 @@ fuzz_target!(|data: &[u8]| {
         None => return,
     };
     let chained = [0x5a_u8; 32];
-    let previous = if selector & 1 == 0 {
-        None
-    } else {
-        Some(&chained)
-    };
 
     let profile = node_runtime::handshake::profile(SUITE_R1);
     let static_secret = [0x11_u8; 32];
@@ -49,29 +44,34 @@ fuzz_target!(|data: &[u8]| {
         Err(_) => return,
     };
 
+    // The three key sources, selected by the same byte, so one corpus reaches
+    // the manifest, rekey and admission paths rather than only one of them.
+    let keying = || match selector % 3 {
+        0 => Keying::Manifest { peer_static },
+        1 => Keying::Rekey {
+            previous_export: &chained,
+            peer_static,
+        },
+        _ => Keying::Admission {
+            psk: &chained,
+            peer_static: Some(peer_static),
+        },
+    };
+
     // A responder reads an initiate, then a finish. Both are reached before the
     // peer has authenticated.
-    if let Ok(mut responder) = Responder::new(
-        profile.clone(),
-        static_secret,
-        [0x33_u8; 32],
-        peer_static,
-        previous,
-    ) {
+    if let Ok(mut responder) =
+        Responder::new(profile.clone(), static_secret, [0x33_u8; 32], keying())
+    {
         let _ = responder.read_initiate(record);
         let _ = responder.read_finish(record);
     }
 
     // An initiator reads a respond. Its state is further along, so this covers
     // the paths a responder's never reaches.
-    if let Ok(mut initiator) = Initiator::new(
-        profile,
-        static_secret,
-        [0x44_u8; 32],
-        peer_static,
-        offer(),
-        previous,
-    ) {
+    if let Ok(mut initiator) =
+        Initiator::new(profile, static_secret, [0x44_u8; 32], offer(), keying())
+    {
         let _ = initiator.read_respond(record);
     }
 });

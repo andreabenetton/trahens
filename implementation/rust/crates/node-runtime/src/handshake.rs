@@ -6,7 +6,7 @@
 //! epoch. No W2 cell and no P1 route state may exist on a link until this
 //! completes, so it runs to conclusion before the main loop starts.
 
-use link_handshake_b1::{Initiator, Offer, Profile, Responder, Selection, Session, Stage};
+use link_handshake_b1::{Initiator, Keying, Offer, Profile, Responder, Selection, Session, Stage};
 use protocol_registry::{
     B1_RECORD_HANDSHAKE_FINISH, B1_RECORD_HANDSHAKE_INITIATE, B1_RECORD_HANDSHAKE_RESPOND,
     B1_RECORD_REKEY_FINISH, B1_RECORD_REKEY_INITIATE, B1_RECORD_REKEY_RESPOND,
@@ -159,9 +159,11 @@ pub fn begin_rekey(
         profile(suite),
         static_secret,
         ephemeral,
-        peer_static,
         offer(suite),
-        Some(previous_export),
+        Keying::Rekey {
+            previous_export,
+            peer_static,
+        },
     )
     .ok()?;
     let record = initiator.write_initiate().ok()?;
@@ -181,8 +183,10 @@ pub fn answer_rekey(
         profile(suite),
         static_secret,
         ephemeral,
-        peer_static,
-        Some(previous_export),
+        Keying::Rekey {
+            previous_export,
+            peer_static,
+        },
     )
     .ok()?;
     responder.read_initiate(initiate).ok()?;
@@ -259,17 +263,18 @@ pub fn run(
     let deadline = Instant::now() + Duration::from_millis(LIMIT_HANDSHAKE_TIMEOUT_MS as u64);
     let attempts = LIMIT_MAX_HANDSHAKE_RETRANSMITS;
     let ephemeral = random_bytes::<32>().ok()?;
+    // P1 links are always manifest-pinned; B1.2 admission does not run here.
+    let keying = match previous_export {
+        Some(previous_export) => Keying::Rekey {
+            previous_export,
+            peer_static,
+        },
+        None => Keying::Manifest { peer_static },
+    };
 
     if is_initiator(local_id, peer_id) {
-        let mut initiator = Initiator::new(
-            profile,
-            static_secret,
-            ephemeral,
-            peer_static,
-            offer(suite),
-            previous_export,
-        )
-        .ok()?;
+        let mut initiator =
+            Initiator::new(profile, static_secret, ephemeral, offer(suite), keying).ok()?;
         let initiate = initiator.write_initiate().ok()?;
         // Retransmitted until the responder answers: the peer's socket may not
         // be bound yet when a run starts every node at once.
@@ -285,14 +290,7 @@ pub fn run(
         let _ = socket.send(&finish);
         Some((session, Some(finish)))
     } else {
-        let mut responder = Responder::new(
-            profile,
-            static_secret,
-            ephemeral,
-            peer_static,
-            previous_export,
-        )
-        .ok()?;
+        let mut responder = Responder::new(profile, static_secret, ephemeral, keying).ok()?;
         let respond = loop {
             let initiate = exchange(socket, None, deadline, attempts)?;
             if responder.read_initiate(&initiate).is_ok() {
