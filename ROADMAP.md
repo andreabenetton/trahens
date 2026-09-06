@@ -123,7 +123,11 @@ decisions, all taken as recommended: the invitation model first, with the
 invitation keying `psk0` so ADR 0044's first-message defence survives; an HMAC
 cookie as the floor; a fixed-width advertisement datagram; short-lived
 advertisement keys with a signed transition; discovery that never allocates
-handshake state; and an additive change to v1.8 rather than a new profile. That
+handshake state; and an additive change to v1.8 rather than a new profile. ADR
+0046 adds two more: invitations are per-joiner and single-use, promoting to a
+pinned static key on success, and minimal revocation lands in this stage — a
+spent-invitation list and removal of a pinned key at the node that admitted it,
+with propagation between nodes left to B1.3. That
 last was conditional on a discriminator check, which has since been performed
 and passed: the first byte range `0x01`–`0x7f` is reachable by neither a
 handshake record nor a W2 cell and is now reserved for it.
