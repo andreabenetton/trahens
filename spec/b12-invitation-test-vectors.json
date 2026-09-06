@@ -1,0 +1,23 @@
+{
+  "schema": "trahens-b12-invitation-vectors-v1",
+  "cases": [
+    {
+      "name": "first",
+      "identifier": "75caf7d3e245296fa23af286810154fb",
+      "secret": "490532376da8cc5c255f507a65b799c2258fa25c98f002500313c7cdbc4e7803",
+      "psk": "f630baa1e7910236aad5c20097cca5eae79fcd99e03d53dbb3ef57128db43197"
+    },
+    {
+      "name": "same_secret_other_identifier",
+      "identifier": "65ceb72bf1c7ea770f74141a4434203e",
+      "secret": "490532376da8cc5c255f507a65b799c2258fa25c98f002500313c7cdbc4e7803",
+      "psk": "4af6e5712a86092079590f6ace21703994ca882e233af75dd759a42f7a6cda4d"
+    },
+    {
+      "name": "same_identifier_other_secret",
+      "identifier": "75caf7d3e245296fa23af286810154fb",
+      "secret": "0fc072f44e1f13b5d437cb1d13b06818c50f0decb77f7b1fd62dab7e7ef6eb5f",
+      "psk": "ca9731e6f7c84195647acc96cc8a60b30b6148f78b6c4fe1dbbb6da431512b0e"
+    }
+  ]
+}

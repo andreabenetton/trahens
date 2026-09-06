@@ -114,6 +114,8 @@ Byte order for fixed-width integers: **big-endian**.
 | `b1_finish_payload` | 986 |
 | `b1_export_key` | 32 |
 | `b12_cookie` | 32 |
+| `b12_invitation_secret` | 32 |
+| `b12_invitation_id` | 16 |
 | `b1_initiate_payload_psk` | 1002 |
 
 ## Limits
@@ -246,5 +248,6 @@ Byte order for fixed-width integers: **big-endian**.
 - `b1_rekey_chain` = `Trahens-B1-rekey-chain-v1`
 - `b1_static_psk` = `Trahens-B1-static-psk-v1`
 - `b12_cookie` = `Trahens-B12-cookie-v1`
+- `b12_invitation_psk` = `Trahens-B12-invitation-psk-v1`
 - `b1_epoch` = `Trahens-B1-epoch-v1`
 - `b1_export` = `Trahens-B1-export-v1`

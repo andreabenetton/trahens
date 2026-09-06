@@ -68,6 +68,14 @@ pub fn b12_cookie() -> Result<Value, VectorError> {
     )
 }
 
+/// `spec/b12-invitation-test-vectors.json`.
+pub fn b12_invitation() -> Result<Value, VectorError> {
+    parse(
+        "b12-invitation",
+        include_str!("../../../../../spec/b12-invitation-test-vectors.json"),
+    )
+}
+
 /// `spec/protocol-registry-v1.8.json`, the B1.1 draft.
 ///
 /// v1.8 is not the active profile and generates no bindings, so a test that

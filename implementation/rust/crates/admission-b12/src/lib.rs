@@ -11,6 +11,9 @@
 //! that presents a valid cookie has shown that it receives datagrams at the
 //! address it claims, and nothing else.
 
+pub mod invitation;
+pub use invitation::{invitation_psk, Invitation};
+
 use protocol_registry::{
     BYTES_B12_COOKIE, DOMAIN_B12_COOKIE, LIMIT_COOKIE_WINDOWS_ACCEPTED, LIMIT_COOKIE_WINDOW_MS,
 };
