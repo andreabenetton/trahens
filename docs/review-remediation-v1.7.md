@@ -29,6 +29,10 @@ where noted below.
 
 ## Not addressed, and why
 
+> **Superseded for TR-02 and TR-11.** This section records where *v1.7*
+> stopped. Core v1.8 addressed TR-02 outright and half of TR-11; see
+> `docs/review-remediation-v1.8.md`. TR-10 is unchanged.
+
 **TR-02 — W2 restart safety.** Unresolved and unresolvable within P1. The
 prototype receives a base key and epoch statically, so nothing in it can
 guarantee a restart does not reuse an epoch. The fix is fresh AKE-derived

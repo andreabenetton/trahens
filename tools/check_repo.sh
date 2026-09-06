@@ -118,7 +118,11 @@ implementation/harness/netns-restart.sh
 tools/w2_epochs.py
 tools/registry_limit.py
 docs/external-review-2026-07-30.md
+docs/external-review-2026-09-04.md
+docs/review-verification-2026-09-04.md
 docs/review-remediation-v1.4.1.md
+docs/review-remediation-v1.7.md
+docs/review-remediation-v1.8.md
 docs/development-record.md
 docs/crypto-review/reply-path-security.md
 spec/core-v1.4.1.md
