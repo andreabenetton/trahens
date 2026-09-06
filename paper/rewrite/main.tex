@@ -55,7 +55,7 @@
   citecolor=accent,
   pdftitle={Trahens: A Privacy-Enabled Route Discovery Protocol},
   pdfauthor={Andrea Benetton},
-  pdfsubject={Trahens Core v1.6 protocol draft with U1, E1, R1, M2, W2, T1, T2, T3, T4, and the non-normative D1 directory strawman}
+  pdfsubject={Trahens Core v1.8 protocol draft with B1.1, U1, E1, R1, M2, W2, T1, T2, T3, T4, and the non-normative D1 directory strawman}
 }
 
 \setstretch{1.045}
@@ -75,7 +75,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small\color{accent}Trah\={e}ns Protocol}
-\fancyhead[R]{\small\color{accenttwo}Core v1.6 -- 1 August 2026}
+\fancyhead[R]{\small\color{accenttwo}Core v1.8 -- 6 September 2026}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.35pt}
 \renewcommand{\headrule}{\hbox to\headwidth{\color{rulegray}\leaders\hrule height \headrulewidth\hfill}}
@@ -96,6 +96,7 @@
 \newcommand{\RouteT}{\mathsf{RouteT}}
 \newcommand{\BranchT}{\mathsf{BranchT}}
 \newcommand{\CandidateT}{\mathsf{CandidateT}}
+\newcommand{\Bone}{\ensuremath{\mathsf{B1.1}}}
 \newcommand{\Uone}{\ensuremath{\mathsf{U1}}}
 \newcommand{\Eone}{\ensuremath{\mathsf{E1}}}
 \newcommand{\Rone}{\ensuremath{\mathsf{R1}}}
@@ -134,7 +135,7 @@
 
 \title{\vspace{-1.2em}\ProtoName\\[0.25em]\Large A Privacy-Enabled Route Discovery Protocol}
 \author{Andrea Benetton\\BlueTeam O\"U, Tallinn, Estonia\\\texttt{andrea.benetton@blueteam.ee}}
-\date{Core v1.6 protocol draft -- 1 August 2026}
+\date{Core v1.8 protocol draft -- 6 September 2026}
 
 \begin{document}
 \maketitle
@@ -250,6 +251,8 @@ where each node may act as an initiator, ordinary relay, rendezvous gateway, or 
 \label{eq:route}
 \end{equation}
 The route is a conceptual object used in the analysis; it is never transmitted as one message.
+
+The association itself is established by \Bone{}, an authenticated handshake between peers that hold each other's static public key in a manifest. It is Noise pattern \textsf{XX} under the \textsf{psk0} modifier, with the pre-shared key derived from the static--static Diffie--Hellman that the manifest already implies, so a first message from a sender without that identity is refused before any Diffie--Hellman is performed and draws no reply. The profile set is negotiated inside the authenticated transcript, and both directional link keys and the link epoch are derived from the completed exchange. Two consequences matter for the analysis below: a process cannot reuse a link epoch, because neither end chooses one, so nonce-space reuse across restarts is structural rather than an operator obligation; and the edge relation $E$ of~\eqref{eq:graph} denotes a mechanism rather than an assumption. What remains configured is the peer set --- addresses and pinned static keys. Peer discovery and node admission are not defined here.
 
 The adjacent-link transport supplies confidentiality, integrity, exact record boundaries, a directional epoch, replay sequence management, and connection-state notification. \Wtwo{} defines canonical fragment payloads and the complete fixed cell length. \Tone{} adds hop-local acknowledgements, bounded selective retransmission, fragment interleaving, and a declared cell scheduler. Work-conserving \Tone{} does not hide idle periods; fixed-schedule \Tone{} fills every declared directional slot with \textsc{Data}, \textsc{Ack}, or \textsc{Chaff}. Neither mode, by itself, hides schedule-epoch boundaries, link direction, topology, or cross-link timing correlation.
 
