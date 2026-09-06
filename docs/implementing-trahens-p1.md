@@ -163,6 +163,15 @@ independent Noise implementation, so agreeing with them means agreeing with
 Noise rather than with one reference. No W2 cell and no route state may exist on
 a link before the handshake completes.
 
+The end-to-end route channel is fixed the same way.
+`spec/route-channel-test-vectors.json` pins both directional keys for a route
+secret and offer transcript, the keys the same secret derives under a different
+transcript, and a set of sealed records covering both directions, a non-zero
+sequence, a non-zero generation and an empty body. Two things there are easy to
+get wrong from prose alone: the AEAD nonce is the 32-bit direction code followed
+by the 64-bit sequence, and the associated data is `p1_control` followed by the
+message type and generation — the domain prefix is part of it.
+
 What the harness still supplies from configuration is the peer set: addresses,
 node identifiers, and each peer's pinned static public key. Your second P1
 implementation may use the same static inputs; it is not expected to implement
