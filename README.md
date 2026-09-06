@@ -20,12 +20,15 @@ The active specification is **Trahens Core v1.8**, registry **1.8.0**.
 **v1.7, v1.6 and v1.5 are history.**
 
 v1.8 replaces the pre-shared adjacent-link key and configured epoch with an
-authenticated handshake. **B1.1** is a Noise `XX` exchange over X25519 between
-peers that pin each other's static key, with the profile set negotiated inside
-the authenticated transcript. Every process session now derives its own
+authenticated handshake. **B1.1** is a Noise `XXpsk0` exchange over X25519
+between peers that pin each other's static key, with the profile set negotiated
+inside the authenticated transcript. Every process session now derives its own
 directional W2 keys and its own link epoch, so a node cannot restart into an
 epoch it has already used: it no longer chooses one. Rekeys are a fresh
-handshake under Noise `XXpsk0`, chained through an export key. The protocol
+handshake chained through the previous session's export key; an initial
+handshake keys the same modifier from the static-static value the manifest
+already implies, so a first message from a sender without that identity is
+refused before any Diffie-Hellman. The protocol
 version byte becomes `3`, so v1.7 and v1.8 do not interoperate — and a v1.7 node
 cannot bring a link up at all, because it has no handshake to offer.
 
@@ -81,10 +84,12 @@ The non-normative [`spec/network-bootstrap-b1.md`](spec/network-bootstrap-b1.md)
 records the remaining stages, B1.2 onward: peer discovery, admission,
 gateway-service advertisement, and directory-root discovery.
 
-Under Noise `XX` the responder sends its static key in message 2 under
-ephemeral-only protection, so an active prober that can send a first message
-learns the responder's identity. Registry limits bound what such probing costs,
-but nothing in the pattern hides it; B1.2's cookie gate is what would.
+A prober holding no manifest identity learns nothing from a responder: under
+`psk0` its first message does not decrypt, so no Diffie-Hellman is performed and
+no reply is sent. What the registry limits still bound is an authenticated peer
+misbehaving. A deployment that must accept handshakes from peers it has no
+manifest entry for has no static-static value to key from, and needs B1.2's
+cookie gate instead.
 
 ### Traffic analysis
 

@@ -6,7 +6,7 @@
 | v1.5 | first P1 interoperable user-space prototype | Rust nodes, frozen registry/vectors, namespace faults, cleanup | Complete and historical; artifacts remain reproducible |
 | v1.6 | selectable experimental paths | routing nonce separated from eligibility; C1 and adaptive T2 selectable with separate gates | Complete and historical; artifacts remain reproducible |
 | v1.7 | end-to-end channel and offer hardening | directional route key schedule with counter nonces and per-direction replay window; gateway offer signed over a transcript binding version, suite, reply key, and parameter digest | Complete and historical; artifacts remain reproducible |
-| v1.8 | active profile; authenticated adjacent-link establishment | B1.1 Noise `XX` handshake over X25519 with manifest-pinned static keys, transcript-bound profile negotiation, session-derived directional keys and epoch, and `XXpsk0` rekey chained through an export key | Landed |
+| v1.8 | active profile; authenticated adjacent-link establishment | B1.1 Noise `XXpsk0` handshake over X25519 with manifest-pinned static keys, transcript-bound profile negotiation, session-derived directional keys and epoch; rekey chained through an export key, initial handshake keyed from the static-static value | Landed |
 | v1.9 | real multi-host deployment | independently operated nodes interoperate across real networks | Planned |
 | v1.10 | captured-traffic evaluation | performance and traffic-analysis experiments use real packet traces | Planned |
 | v1.11 | discovery and directory integration research | bounded peer discovery, gateway advertisements, and authenticated directory roots are tested without changing P1 semantics | Planned; design starts in B1.2/D1 |
@@ -16,12 +16,15 @@
 
 Core v1.8 is the profile the current binaries speak. It supersedes v1.7 by
 replacing the pre-shared adjacent-link key and configured epoch with the B1.1
-handshake: a Noise `XX` exchange over X25519 between peers that pin each other's
-static key, with the profile set negotiated inside the authenticated transcript.
-Both directional W2 keys and the link epoch are derived per session, so the
-restart hazard v1.7 could only state as an operator obligation is gone — a node
-cannot reuse an epoch because it no longer chooses one. Rekeys are a fresh
-handshake under `XXpsk0`, chained through the previous session's export key.
+handshake: a Noise `XXpsk0` exchange over X25519 between peers that pin each
+other's static key, with the profile set negotiated inside the authenticated
+transcript. Both directional W2 keys and the link epoch are derived per session,
+so the restart hazard v1.7 could only state as an operator obligation is gone —
+a node cannot reuse an epoch because it no longer chooses one. A rekey chains
+through the previous session's export key; an initial handshake keys the same
+modifier from the static-static value the manifest already implies, so a first
+message from a sender without that identity is refused before any
+Diffie-Hellman and draws no reply.
 
 The protocol version byte becomes `3`. v1.7 peers do not interoperate with
 v1.8, and a v1.7 node cannot bring a link up at all, having no handshake to
@@ -91,17 +94,22 @@ requires each peer's pinned static key; what remains is the signed file format.
 
 ### B1.1 — Authenticated adjacent-link establishment — **delivered in v1.8**
 
-Noise `XX` over X25519 between manually named peers, with the presented static
-key pinned against the manifest, version and profile negotiation bound into the
-transcript, session-derived directional keys and epoch, and `XXpsk0` rekey.
+Noise `XXpsk0` over X25519 between manually named peers, with the presented
+static key pinned against the manifest, version and profile negotiation bound
+into the transcript, and session-derived directional keys and epoch. A rekey
+chains through the previous session's export key; an initial handshake keys the
+same modifier from the static-static value the manifest already implies.
 `spec/link-handshake-b1.md` is normative;
-`docs/adr/0043-b1.1-handshake-decisions.md` records the decisions and
-`docs/b1.1-scope.md` the scope.
+`docs/adr/0043-b1.1-handshake-decisions.md` records the original decisions,
+`docs/adr/0044-authenticating-the-first-handshake-message.md` the later move to
+`psk0`, and `docs/b1.1-scope.md` the scope.
 
-Not addressed by B1.1: under `XX` the responder discloses its static key to any
-sender of a well-formed first message, and answering one costs it a
-Diffie-Hellman. Registry limits bound the cost; the disclosure is a property of
-the pattern. B1.2's cookie gate is what would remove both.
+Not addressed by B1.1: an authenticated peer — a compromised neighbour, or
+anyone holding a static key — can still open exchanges and spend a responder's
+bounded per-attempt work, which is what the registry limits cap. And a
+deployment that must accept handshakes from peers it has no manifest entry for
+cannot use this first-message defence at all, having no static-static value to
+key from. B1.2's cookie gate is what covers that case.
 
 ### B1.2 — Bounded peer discovery
 
