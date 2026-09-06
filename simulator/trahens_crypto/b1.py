@@ -462,18 +462,29 @@ class Initiator:
         expected_peer_static: bytes,
         offer: Offer,
         previous_export: bytes | None = None,
+        admission_psk: bytes | None = None,
     ) -> None:
+        """See `Responder` for the three modes.
+
+        A joiner still pins its peer even on an admission handshake: an
+        invitation is delivered out of band and can carry the inviter's static
+        public key, so only the inviter is left learning an identity it did
+        not already hold.
+        """
+        if previous_export is not None and admission_psk is not None:
+            raise HandshakeError("a rekey has no admission key")
         self.profile = profile
         self.static = static
         self.ephemeral = ephemeral
         self.expected_peer_static = expected_peer_static
         self.offer = offer
         self.rekey = previous_export is not None
-        psk = (
-            previous_export
-            if previous_export is not None
-            else static_psk(profile, static, expected_peer_static)
-        )
+        if previous_export is not None:
+            psk = previous_export
+        elif admission_psk is not None:
+            psk = admission_psk
+        else:
+            psk = static_psk(profile, static, expected_peer_static)
         self.state = _begin(profile, self.rekey, psk)
         self.remote_ephemeral: bytes | None = None
         self.selection: Selection | None = None
@@ -542,23 +553,46 @@ class Responder:
         profile: B1Profile,
         static: Keypair,
         ephemeral: Keypair,
-        expected_peer_static: bytes,
+        expected_peer_static: bytes | None,
         previous_export: bytes | None = None,
+        admission_psk: bytes | None = None,
     ) -> None:
+        """A responder in one of three modes, distinguished by its key source.
+
+        `previous_export` is a rekey. `admission_psk` is an admission handshake
+        with a peer this responder has no manifest entry for: the key comes
+        from whatever admitted it, and the presented static key is *recorded*
+        rather than checked, because there is nothing yet to check it against.
+        Neither means the manifest path, where the key is derived from the
+        static-static value and the presented key is pinned.
+
+        The caller supplies the admission key rather than this module deriving
+        it, so B1.1 does not have to know what B1.2 admits with.
+        """
+        if previous_export is not None and admission_psk is not None:
+            raise HandshakeError("a rekey has no admission key")
+        if expected_peer_static is None and admission_psk is None:
+            raise HandshakeError("only an admission handshake may omit the peer static")
         self.profile = profile
         self.static = static
         self.ephemeral = ephemeral
         self.expected_peer_static = expected_peer_static
+        self.admission = admission_psk is not None
         self.rekey = previous_export is not None
-        psk = (
-            previous_export
-            if previous_export is not None
-            else static_psk(profile, static, expected_peer_static)
-        )
+        if previous_export is not None:
+            psk = previous_export
+        elif admission_psk is not None:
+            psk = admission_psk
+        else:
+            psk = static_psk(profile, static, expected_peer_static)
         self.state = _begin(profile, self.rekey, psk)
         self.remote_ephemeral: bytes | None = None
         self.offer: Offer | None = None
         self.selection: Selection | None = None
+        # Set only on an admission handshake that completed, and only there, so
+        # a caller cannot mistake a pinned peer for a newly learned one. This
+        # is the value ADR 0046 D8 promotes into the manifest.
+        self.promoted_static: bytes | None = None
 
     def _type(self, stage: str) -> str:
         return ("rekey_" if self.rekey else "handshake_") + stage
@@ -609,6 +643,13 @@ class Responder:
         framed = self.state.decrypt_and_hash(record[cursor:])
         if _unframe_payload(framed, p.finish_payload_bytes) != b"":
             raise HandshakeError("unexpected finish payload")
-        if not hmac.compare_digest(rs, self.expected_peer_static):
+        if self.admission:
+            # There is no manifest entry to check against -- that is what
+            # makes this an admission -- so the key is recorded for promotion
+            # instead. What authenticated the peer is the admission key the
+            # whole exchange ran under; without holding it, nothing reaches
+            # this line, because message 1 would not have decrypted.
+            self.promoted_static = rs
+        elif not hmac.compare_digest(rs, self.expected_peer_static):
             raise HandshakeError("initiator static key does not match the manifest")
         return _finish(self.state, p, False, rs, self.selection)

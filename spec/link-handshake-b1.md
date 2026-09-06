@@ -135,6 +135,29 @@ No key is derived and no W2 or P1 state is allocated until the third message
 has authenticated. Every failure is one generic outcome to the peer: the
 receiver does not say why.
 
+### Admission handshakes
+
+Check 1 has one exception, and it is not trust on first use. B1.2 admits a peer
+the responder has no manifest entry for, keying `psk0` from an invitation
+instead of the static-static value (ADR 0046). A responder in that mode has
+nothing to compare the presented static key against, so it **records** the key
+rather than checking it, and the caller promotes it into the manifest. Later
+handshakes between those two peers take the manifest path and check 1 applies
+again.
+
+What authenticates such a peer is the admission key the whole exchange ran
+under: without it the first message does not decrypt, so nothing reaches the
+point where a key could be recorded. That is why an invitation is per-joiner
+and single-use — a shared or reusable one would make this recording an
+impersonation vector rather than an admission.
+
+An implementation MUST NOT make recording reachable on the manifest path. A
+responder that both pins and records is one refactor away from one that only
+records, which is the trust-on-first-use behaviour B1.1 excludes. The reference
+exposes the recorded key only in admission mode and leaves it unset otherwise,
+and a responder MUST refuse to start with neither a manifest entry nor an
+admission key, since that combination authenticates the peer by nothing at all.
+
 Nothing acknowledges the third message, so an initiator that sent it cannot
 know it arrived. A responder that has not received it MUST keep resending its
 second message, and an initiator MUST resend its third on receiving a repeated

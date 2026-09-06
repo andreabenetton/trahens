@@ -107,6 +107,80 @@ class B1HandshakeTests(unittest.TestCase):
         with self.assertRaises(HandshakeError):
             responder.read_message_1(outsider.write_message_1())
 
+    def admission_parties(self, joiner_psk, inviter_psk):
+        """A joiner with no manifest entry at the inviter.
+
+        The joiner still pins the inviter, because an invitation carries the
+        inviter's static public key out of band. The inviter passes None: it
+        has nothing to pin and learns the joiner's key from the exchange.
+        """
+        joiner_static = Keypair.from_secret(seed("joiner/static"))
+        inviter_static = Keypair.from_secret(seed("inviter/static"))
+        offer = Offer(self.profile.protocol_version, (2,), (3,), (4,), (0x0101,), 1)
+        joiner = Initiator(
+            self.profile,
+            joiner_static,
+            Keypair.from_secret(seed("joiner/ephemeral")),
+            inviter_static.public,
+            offer,
+            admission_psk=joiner_psk,
+        )
+        inviter = Responder(
+            self.profile,
+            inviter_static,
+            Keypair.from_secret(seed("inviter/ephemeral")),
+            None,
+            admission_psk=inviter_psk,
+        )
+        return joiner, inviter, joiner_static
+
+    def test_an_admission_handshake_promotes_the_presented_key(self) -> None:
+        psk = seed("admission")
+        joiner, inviter, joiner_static = self.admission_parties(psk, psk)
+        _, i_session, r_session = self.complete(joiner, inviter)
+        self.assertEqual(i_session.handshake_hash, r_session.handshake_hash)
+        # The inviter learned the key it had no way to pin, and it is the
+        # joiner's real one.
+        self.assertEqual(inviter.promoted_static, joiner_static.public)
+
+    def test_the_manifest_path_promotes_nothing(self) -> None:
+        # Promotion must not be reachable where a pin already applies, or a
+        # pinned peer would be indistinguishable from a newly learned one.
+        _, responder = self.parties()
+        self.complete(*self.parties())
+        initiator, responder = self.parties()
+        self.complete(initiator, responder)
+        self.assertIsNone(responder.promoted_static)
+
+    def test_an_admission_handshake_needs_the_right_key(self) -> None:
+        # The admission key is what authenticates here, so a joiner without it
+        # is refused at the first record and the inviter answers nothing.
+        joiner, inviter, _ = self.admission_parties(seed("admission"), seed("other"))
+        with self.assertRaises(HandshakeError):
+            inviter.read_message_1(joiner.write_message_1())
+
+    def test_a_responder_without_a_peer_static_needs_an_admission_key(self) -> None:
+        # Omitting the pin is only permitted where an admission key replaces
+        # it. Without either there is nothing authenticating the peer at all.
+        with self.assertRaises(HandshakeError):
+            Responder(
+                self.profile,
+                Keypair.from_secret(seed("r/static")),
+                Keypair.from_secret(seed("r/ephemeral")),
+                None,
+            )
+
+    def test_a_rekey_has_no_admission_key(self) -> None:
+        with self.assertRaises(HandshakeError):
+            Responder(
+                self.profile,
+                Keypair.from_secret(seed("r/static")),
+                Keypair.from_secret(seed("r/ephemeral")),
+                None,
+                previous_export=seed("export"),
+                admission_psk=seed("admission"),
+            )
+
     def test_a_rekey_binds_the_chain_into_the_traffic_keys(self) -> None:
         # Same statics, same ephemerals, differing only in the chained export
         # key. If the chain reached the transcript but not the chaining key,
