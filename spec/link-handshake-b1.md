@@ -73,6 +73,22 @@ a zero byte, then the record type from `b1_record_types`. Derived epochs always
 have their top bit set (section 6), so a receiver distinguishes a handshake
 record from a W2 cell by its first byte, with no trial decryption.
 
+That leaves the first byte allocated as follows, and the gap is reserved:
+
+| first byte | meaning |
+|---|---|
+| `0x00` | B1.1 handshake record; the next byte is the type |
+| `0x01`–`0x7f` | **reserved**; no datagram this profile defines uses it |
+| `0x80`–`0xff` | W2 cell, the leading byte of a derived epoch |
+
+A later datagram type carried on the same port MUST take its discriminator from
+the reserved range. Confirmed against captures: every epoch observed on the
+wire begins `0x80` or above, and every handshake record begins `0x00`. A
+receiver that reaches the reserved range today treats the datagram as a cell
+with an unopenable epoch and drops it, which is correct but not a reservation —
+a receiver that adds a type MUST check the range before attempting W2, or the
+new type is eaten by the cell path.
+
 ```text
 initiate  0x00 type  e(32)                       enc(payload)(1018)
 respond   0x00 type  e(32)  enc(s)(48)           enc(payload)(970)

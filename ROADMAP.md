@@ -123,8 +123,10 @@ decisions, all taken as recommended: the invitation model first, with the
 invitation keying `psk0` so ADR 0044's first-message defence survives; an HMAC
 cookie as the floor; a fixed-width advertisement datagram; short-lived
 advertisement keys with a signed transition; discovery that never allocates
-handshake state; and an additive change to v1.8 rather than a new profile,
-conditional on a discriminator check still owed.
+handshake state; and an additive change to v1.8 rather than a new profile. That
+last was conditional on a discriminator check, which has since been performed
+and passed: the first byte range `0x01`–`0x7f` is reachable by neither a
+handshake record nor a W2 cell and is now reserved for it.
 
 Two of its findings are worth reading before the work is planned rather than
 after. ADR 0044's first-message defence
