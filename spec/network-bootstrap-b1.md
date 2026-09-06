@@ -317,6 +317,11 @@ refused before any Diffie-Hellman.
 Add signed seed manifests and optional local-link discovery, both feeding the
 same bounded candidate-peer cache. Do not mix discovery with admission.
 
+`docs/b1.2-scope.md` scopes this stage. It records that section 13's bounds on
+handshake contexts, public-key operations per source, and failed attempts are
+currently satisfied by P1's connected-socket topology rather than enforced, and
+that this stage is what makes them live requirements.
+
 ### B1.3 — Gateway and directory roots
 
 Add short-lived gateway-service advertisements and authenticated D1 root

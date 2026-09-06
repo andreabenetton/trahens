@@ -118,6 +118,15 @@ Discovery must feed a bounded candidate cache and remain separate from
 admission. Stateless return-routability cookies should precede expensive
 cryptographic state.
 
+`docs/b1.2-scope.md` scopes this stage. Two of its findings are worth reading
+before the work is planned rather than after. ADR 0044's first-message defence
+cannot follow B1.2 unchanged: it rests on a value both peers hold in advance,
+and an unknown peer supplies none — so the scope recommends targeting the
+invitation model first, where an invitation secret can key it. And four
+registry bounds that `link-handshake-b1.md` section 8 records as satisfied by
+the topology stop being free the moment a listening socket exists; the scope
+puts enforcing them in the first group, ahead of any discovery code.
+
 ### B1.3 — Gateway and directory bootstrap
 
 Define short-lived generic gateway-service advertisements and authenticated D1
