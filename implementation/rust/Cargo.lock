@@ -3,6 +3,16 @@
 version = 4
 
 [[package]]
+name = "admission-b12"
+version = "1.5.0"
+dependencies = [
+ "hex",
+ "protocol-registry",
+ "test-vectors",
+ "trahens-crypto",
+]
+
+[[package]]
 name = "codec-m2"
 version = "1.5.0"
 dependencies = [

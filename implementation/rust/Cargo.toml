@@ -12,6 +12,7 @@ members = [
   "crates/state-machine",
   "crates/rendezvous-r1",
   "crates/link-handshake-b1",
+  "crates/admission-b12",
   "crates/node-runtime",
   "crates/conformance",
   "bins/trahens-endpoint",

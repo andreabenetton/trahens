@@ -8,7 +8,8 @@
 - Scope: `docs/b1.2-scope.md`
 - Parent: `spec/network-bootstrap-b1.md` section 7
 - Reference: `simulator/trahens_crypto/cookie.py`; vectors in
-  `b12-cookie-test-vectors.json`
+  `b12-cookie-test-vectors.json`; reproduced by
+  `implementation/rust/crates/admission-b12`
 
 ## 1. Purpose
 

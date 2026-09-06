@@ -60,6 +60,14 @@ pub fn route_channel() -> Result<Value, VectorError> {
     )
 }
 
+/// `spec/b12-cookie-test-vectors.json`.
+pub fn b12_cookie() -> Result<Value, VectorError> {
+    parse(
+        "b12-cookie",
+        include_str!("../../../../../spec/b12-cookie-test-vectors.json"),
+    )
+}
+
 /// `spec/protocol-registry-v1.8.json`, the B1.1 draft.
 ///
 /// v1.8 is not the active profile and generates no bindings, so a test that

@@ -125,6 +125,7 @@ implementation/rust/fuzz/fuzz_targets/w2.rs
 implementation/harness/netns-p1.sh
 implementation/harness/netns-restart.sh
 implementation/rust/bins/trahens-hostile/src/main.rs
+implementation/rust/crates/admission-b12/src/lib.rs
 tools/w2_epochs.py
 tools/b1_records.py
 tools/registry_limit.py

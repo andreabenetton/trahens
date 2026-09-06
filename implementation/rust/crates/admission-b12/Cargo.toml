@@ -1,0 +1,16 @@
+[package]
+name = "admission-b12"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+protocol-registry = { path = "../protocol-registry" }
+trahens-crypto = { path = "../crypto" }
+
+[dev-dependencies]
+test-vectors = { path = "../test-vectors" }
+hex = "0.4"
+
+[lints]
+workspace = true
