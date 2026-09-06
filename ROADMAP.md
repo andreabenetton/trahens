@@ -118,8 +118,16 @@ Discovery must feed a bounded candidate cache and remain separate from
 admission. Stateless return-routability cookies should precede expensive
 cryptographic state.
 
-`docs/b1.2-scope.md` scopes this stage. Two of its findings are worth reading
-before the work is planned rather than after. ADR 0044's first-message defence
+`docs/b1.2-scope.md` scopes this stage and ADR 0045 records its seven
+decisions, all taken as recommended: the invitation model first, with the
+invitation keying `psk0` so ADR 0044's first-message defence survives; an HMAC
+cookie as the floor; a fixed-width advertisement datagram; short-lived
+advertisement keys with a signed transition; discovery that never allocates
+handshake state; and an additive change to v1.8 rather than a new profile,
+conditional on a discriminator check still owed.
+
+Two of its findings are worth reading before the work is planned rather than
+after. ADR 0044's first-message defence
 cannot follow B1.2 unchanged: it rests on a value both peers hold in advance,
 and an unknown peer supplies none — so the scope recommends targeting the
 invitation model first, where an invitation secret can key it. And four
