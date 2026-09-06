@@ -127,9 +127,11 @@ The following are recorded rather than claimed as passing:
    derive their own keys and epoch. What remains configured is the peer set
    itself — addresses and pinned static keys. Peer discovery, node admission,
    gateway-service advertisements, and directory-root discovery belong to B1.2
-   onward. Note also that under Noise `XX` a responder discloses its static key
-   to any sender of a well-formed first message; registry limits bound the cost
-   of probing, not the disclosure.
+   onward. A responder no longer discloses its static key to an unauthenticated
+   sender: since ADR 0044 the first message is encrypted under a key derived
+   from the two manifest identities, so a forgery is refused before any
+   Diffie-Hellman and draws no reply. What the registry limits still bound is
+   an authenticated peer misbehaving.
 5. **Real-network evidence.** Namespace tests execute on one kernel. The
    multi-host harness exists, but independently operated real-network results
    are still required.

@@ -307,7 +307,10 @@ decisions: Noise `XX` over X25519 with the presented static key pinned against
 the manifest, transcript-bound negotiation with no legacy path,
 handshake-derived epoch and keys, re-handshake rekey chained through an export
 key, and a hand-written state machine cross-checked against independent
-vectors. It lands as Core v1.8.
+vectors. It lands as Core v1.8. ADR 0044 later moved both exchanges to
+`XXpsk0`, keying the initial one from the static-static value the manifest
+already implies, so that a first message from an unauthenticated sender is
+refused before any Diffie-Hellman.
 
 ### B1.2 — Seeded peer discovery
 

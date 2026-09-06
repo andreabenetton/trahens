@@ -205,8 +205,12 @@ case "$SCENARIO" in
     P1_EXPECT_ALL_LINKS=1 ;;
   wrong-pin)
     # The initiator is given a static key for its peer that the peer does not
-    # hold. Under Noise XX the peer's real key still authenticates, so only the
-    # manifest pin can reject it -- and it must, before any key is derived.
+    # hold. Since ADR 0044 that is refused at the first record: the psk0 key is
+    # derived from the static-static value computed against the pinned key, so
+    # a wrong pin produces a first message the peer cannot decrypt, and no key
+    # is derived and nothing is answered. The manifest check on the presented
+    # static key still exists and is still what authenticates -- a unit test
+    # holds it in isolation -- but this scenario no longer reaches it.
     #
     # Discovery still starts: spawn_link returns before the handshake finishes,
     # so the endpoint sends a DISCOVER into a link that never comes up. It goes

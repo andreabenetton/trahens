@@ -12,7 +12,8 @@
 
 v1.8 replaces the pre-shared adjacent-link key with an authenticated handshake.
 Every process session now derives its own directional W2 keys and its own link
-epoch from a Noise `XX` exchange between peers that pin each other's static key,
+epoch from a Noise `XXpsk0` exchange between peers that pin each other's static
+key,
 and the profile set is negotiated inside that authenticated transcript. The
 restart hazard v1.7 could only state as an operator obligation therefore ceases
 to exist: a node cannot reuse an epoch it has already used, because it no longer
