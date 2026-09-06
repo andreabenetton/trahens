@@ -1,0 +1,12 @@
+[package]
+name = "trahens-hostile"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+node-runtime = { path = "../../crates/node-runtime" }
+protocol-registry = { path = "../../crates/protocol-registry" }
+
+[lints]
+workspace = true

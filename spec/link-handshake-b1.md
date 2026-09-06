@@ -259,6 +259,15 @@ reader who assumes the counters exist will look for code that is not there.
   implemented, and P1 is stricter than they require: a link gives up after its
   bounded attempts instead of backing off and retrying indefinitely.
 
+`implementation/harness/netns-p1.sh --scenario hostile-peer` is the first test
+that puts a deliberately misbehaving peer on a link: it never handshakes and
+floods its neighbour with well-framed records carrying rubbish. It does not
+exercise the bounds above, which still have nothing to count, and it is not
+claimed to. What it does establish is the property those bounds would protect
+if they were live — that adversarial volume on one link leaves the other links'
+fixed-T2 cadence untouched — and it is the peer the bounds will be tested with
+once a listening socket makes them reachable.
+
 None of this is an argument that the registry values are unnecessary. It is a
 statement of what the P1 evidence covers, so that a deployment which adds a
 listening socket knows it has inherited requirements the prototype never had to

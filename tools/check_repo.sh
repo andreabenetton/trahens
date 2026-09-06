@@ -119,6 +119,7 @@ implementation/rust/fuzz/fuzz_targets/m2.rs
 implementation/rust/fuzz/fuzz_targets/w2.rs
 implementation/harness/netns-p1.sh
 implementation/harness/netns-restart.sh
+implementation/rust/bins/trahens-hostile/src/main.rs
 tools/w2_epochs.py
 tools/b1_records.py
 tools/registry_limit.py

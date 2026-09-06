@@ -15,6 +15,7 @@ members = [
   "crates/node-runtime",
   "crates/conformance",
   "bins/trahens-endpoint",
+  "bins/trahens-hostile",
   "bins/trahens-relay",
   "bins/trahens-rendezvous",
 ]

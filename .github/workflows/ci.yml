@@ -125,6 +125,12 @@ jobs:
           sudo -E implementation/harness/netns-p1.sh \
             --relays 2 --loss 0 --scenario late-peer \
             --timeout-ms 40000 --output "$GITHUB_WORKSPACE/build/p1-late-peer"
+      # Adversarial volume on one link must leave the others' cadence intact.
+      - name: A flooding peer does not disturb the other links
+        run: |
+          sudo -E implementation/harness/netns-p1.sh \
+            --relays 2 --loss 0 --scenario hostile-peer \
+            --timeout-ms 15000 --output "$GITHUB_WORKSPACE/build/p1-hostile"
       - name: A peer whose static key is not the pinned one is refused
         run: |
           sudo -E implementation/harness/netns-p1.sh \

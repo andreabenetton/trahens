@@ -190,6 +190,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "trahens-hostile"
+version = "1.5.0"
+dependencies = [
+ "node-runtime",
+ "protocol-registry",
+]
+
+[[package]]
 name = "trahens-relay"
 version = "1.5.0"
 dependencies = [

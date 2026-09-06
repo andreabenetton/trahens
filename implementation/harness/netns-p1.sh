@@ -219,6 +219,20 @@ case "$SCENARIO" in
     # exit, so the scenario has to fail for the right reason.
     P1_WRONG_PIN=99
     EXPECT_ENDPOINT_FAILURE=1 ;;
+  hostile-peer)
+    # The initiator is replaced by a peer that never handshakes and floods its
+    # neighbour with adversarial datagrams instead: well-framed handshake
+    # records with rubbish inside, things that look like cells with an
+    # unopenable epoch, and datagrams too short to be either.
+    #
+    # The claim under test is not that the flooded link survives -- it must
+    # not come up, and it does not. It is that adversarial volume on one link
+    # leaves the *other* links' cadence untouched. The fixed-T2 trace the P1
+    # gate rests on is a claim about every link, and a worker that parses
+    # every arriving datagram of the right size is a plausible way to lose it.
+    P1_HOSTILE=1
+    ENDPOINT_EXTRA=()
+    EXPECT_ENDPOINT_FAILURE=1 ;;
   rekey)
     # Force a rekey inside the run by lowering the trigger far below the
     # registry ceiling, which no run would otherwise reach. Fixed T2 emits 16
@@ -384,6 +398,9 @@ if [[ -n "$EXTERNAL_ENDPOINT" ]]; then
   # arguments of its own, e.g. "python3 my_endpoint.py".
   read -r -a ENDPOINT_CMD <<< "$EXTERNAL_ENDPOINT"
   echo "interop: initiator is external: ${ENDPOINT_CMD[*]}"
+elif [[ -n "${P1_HOSTILE:-}" ]]; then
+  # Same substitution hook as an external initiator: this one misbehaves.
+  ENDPOINT_CMD=("$BIN_DIR/trahens-hostile")
 else
   ENDPOINT_CMD=("$BIN_DIR/trahens-endpoint")
 fi
@@ -563,6 +580,24 @@ PY
   fi
   echo "scenario ${SCENARIO}: all ${EXPECTED_LINKS} links came up despite the" \
     "${HANDSHAKE_OUTAGE_MS}ms outage"
+fi
+if [[ -n "${P1_HOSTILE:-}" ]]; then
+  # Non-vacuity first. A generator that sent nothing would leave every victim
+  # trivially intact, so the flood has to be shown to have happened before its
+  # absence of effect means anything.
+  SENT=$(grep -o '"datagrams_sent":"[0-9]*"' "$OUTPUT/endpoint.log" 2>/dev/null |
+    grep -o '[0-9]*' | tail -1)
+  if [[ -z "$SENT" ]] || (( SENT < 1000 )); then
+    echo "scenario ${SCENARIO}: the hostile peer sent ${SENT:-no} datagrams, so" >&2
+    echo "the run proves nothing about behaviour under adversarial volume" >&2
+    exit 1
+  fi
+  # The flooded link must not come up: it never authenticates.
+  if ! grep -qs "link_handshake_failed" "$OUTPUT"/*.log "$OUTPUT"/*.err; then
+    echo "scenario ${SCENARIO}: the flooded link reported no handshake failure" >&2
+    exit 1
+  fi
+  echo "scenario ${SCENARIO}: ${SENT} adversarial datagrams, flooded link refused"
 fi
 if [[ -n "${P1_WRONG_PIN:-}" ]]; then
   if ! grep -qs "link_handshake_failed" "$OUTPUT"/*.log "$OUTPUT"/*.err; then
