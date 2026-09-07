@@ -68,7 +68,42 @@ Until that exists, an advertisement is a hint about where to try, not a
 statement about who will answer. A reader MUST NOT treat a verified
 advertisement as evidence of the advertiser's admission identity.
 
-## 4. Conformance
+## 4. The candidate cache
+
+A verified advertisement is retained in a bounded candidate cache and nowhere
+else. ADR 0045 D6: observing one MUST NOT allocate a handshake context, MUST NOT
+perform a public-key operation other than verifying the advertisement itself, and
+MUST NOT cause a socket to be created. A separate step consumes a cache entry and
+decides whether to attempt admission, and that step is bounded independently. If
+discovery could allocate, `max_handshake_contexts` and the cache would be the
+same bound, and an attacker filling one would fill the other.
+
+Entries are keyed by the advertisement key and bounded twice:
+
+| Limit | Role |
+|---|---|
+| `max_candidate_peers` | Candidate peers retained, as `network-bootstrap-b1.md` section 13 requires |
+| `max_candidate_peers_per_source` | What one observed source may occupy |
+| `candidate_ttl_ms` | Longest an entry is retained, whatever the advertisement says |
+
+The per-source bound is the one that answers section 12's Sybil saturation,
+because advertisement keys are free to generate and a global bound alone would
+let a single source fill the cache. Filling it costs
+`max_candidate_peers / max_candidate_peers_per_source` distinct sources.
+
+An entry expires at the earlier of the advertisement's own expiry and
+`candidate_ttl_ms` from when it was observed: an advertiser does not choose how
+long it is remembered.
+
+A full cache **refuses** a new entry rather than evicting an existing one.
+Evicting the oldest would let a flood displace every honest entry, so an attacker
+could guarantee the cache never holds a real candidate; refusing means a flood
+stalls new learning until the TTL drains it and keeps what was learned first.
+An advertisement for a key already held refreshes that entry and stays attributed
+to the source that first inserted it, so replaying someone else's valid
+advertisement cannot move the accounting.
+
+## 5. Conformance
 
 `b12-advertisement-test-vectors.json` fixes three datagrams: a minimal one, one
 carrying a cookie, and one with several profiles per class so the list encoding

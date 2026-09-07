@@ -180,6 +180,9 @@ Byte order for fixed-width integers: **big-endian**.
 | `handshake_backoff_ms` | 5000 |
 | `cookie_window_ms` | 2000 |
 | `cookie_windows_accepted` | 2 |
+| `max_candidate_peers` | 256 |
+| `max_candidate_peers_per_source` | 8 |
+| `candidate_ttl_ms` | 30000 |
 | `max_offered_profiles_per_class` | 8 |
 | `rekey_after_cells` | 4194304 |
 | `rekey_after_ms` | 3600000 |

@@ -13,10 +13,12 @@
 
 pub mod admission;
 pub mod advertisement;
+pub mod candidates;
 pub mod invitation;
 pub mod store;
 pub use admission::{Admission, AdmissionError};
 pub use advertisement::Advertisement;
+pub use candidates::{CacheError, Candidate, CandidateCache};
 pub use invitation::{invitation_psk, Invitation};
 pub use store::{Record, Store, StoreError};
 

@@ -106,6 +106,8 @@ implementation/rust/crates/admission-b12/src/store.rs
 implementation/rust/crates/admission-b12/tests/store.rs
 implementation/rust/crates/admission-b12/src/admission.rs
 implementation/rust/crates/admission-b12/tests/admission.rs
+implementation/rust/crates/admission-b12/src/candidates.rs
+implementation/rust/crates/admission-b12/tests/candidates.rs
 reports/v1.5-bounded-state-models.json
 reports/v1.5-t3-anonymity-metrics.json
 simulator/trahens_spec/generated.py
