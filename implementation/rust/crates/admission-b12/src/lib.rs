@@ -11,9 +11,11 @@
 //! that presents a valid cookie has shown that it receives datagrams at the
 //! address it claims, and nothing else.
 
+pub mod admission;
 pub mod advertisement;
 pub mod invitation;
 pub mod store;
+pub use admission::{Admission, AdmissionError};
 pub use advertisement::Advertisement;
 pub use invitation::{invitation_psk, Invitation};
 pub use store::{Record, Store, StoreError};
