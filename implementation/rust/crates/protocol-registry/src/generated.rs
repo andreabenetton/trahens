@@ -56,6 +56,10 @@ pub const B1_RECORD_REKEY_FINISH: u8 = 6;
 
 pub const B12_DATAGRAM_ADVERTISEMENT: u8 = 1;
 
+pub const B12_STORE_INVITATION_SPENT: u8 = 1;
+pub const B12_STORE_PEER_PINNED: u8 = 2;
+pub const B12_STORE_PEER_REMOVED: u8 = 3;
+
 pub const ERROR_MALFORMED: u16 = 1;
 pub const ERROR_UNSUPPORTED_VERSION: u16 = 2;
 pub const ERROR_UNSUPPORTED_PROFILE: u16 = 3;
@@ -109,6 +113,8 @@ pub const BYTES_B12_INVITATION_ID: usize = 16;
 pub const BYTES_B12_ADVERTISEMENT: usize = 1052;
 pub const BYTES_B12_ADVERTISEMENT_BODY: usize = 987;
 pub const BYTES_B12_ADVERTISEMENT_SIGNATURE: usize = 64;
+pub const BYTES_B12_STORE_LENGTH: usize = 4;
+pub const BYTES_B12_STORE_CHECKSUM: usize = 8;
 pub const BYTES_B1_INITIATE_PAYLOAD_PSK: usize = 1002;
 
 pub const LIMIT_MAX_LOGICAL_MESSAGE_BYTES: usize = 16384;
@@ -203,6 +209,7 @@ pub const DOMAIN_B1_REKEY_CHAIN: &[u8] = b"Trahens-B1-rekey-chain-v1";
 pub const DOMAIN_B1_STATIC_PSK: &[u8] = b"Trahens-B1-static-psk-v1";
 pub const DOMAIN_B12_COOKIE: &[u8] = b"Trahens-B12-cookie-v1";
 pub const DOMAIN_B12_ADVERTISEMENT: &[u8] = b"Trahens-B12-advertisement-v1";
+pub const DOMAIN_B12_STORE_RECORD: &[u8] = b"Trahens-B12-store-record-v1";
 pub const DOMAIN_B12_INVITATION_PSK: &[u8] = b"Trahens-B12-invitation-psk-v1";
 pub const DOMAIN_B1_EPOCH: &[u8] = b"Trahens-B1-epoch-v1";
 pub const DOMAIN_B1_EXPORT: &[u8] = b"Trahens-B1-export-v1";

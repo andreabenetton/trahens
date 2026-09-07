@@ -13,8 +13,10 @@
 
 pub mod advertisement;
 pub mod invitation;
+pub mod store;
 pub use advertisement::Advertisement;
 pub use invitation::{invitation_psk, Invitation};
+pub use store::{Record, Store, StoreError};
 
 use protocol_registry::{
     BYTES_B12_COOKIE, DOMAIN_B12_COOKIE, LIMIT_COOKIE_WINDOWS_ACCEPTED, LIMIT_COOKIE_WINDOW_MS,
