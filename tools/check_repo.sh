@@ -165,6 +165,7 @@ tools/b1_records.py
 tools/registry_limit.py
 docs/external-review-2026-07-30.md
 docs/external-review-2026-09-04.md
+docs/external-work-briefs.md
 docs/review-verification-2026-09-04.md
 docs/review-remediation-v1.4.1.md
 docs/review-remediation-v1.7.md
