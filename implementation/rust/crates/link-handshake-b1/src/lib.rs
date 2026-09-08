@@ -625,16 +625,18 @@ impl Keying<'_> {
 /// Diffie-Hellman.
 ///
 /// Both peers compute it offline from the manifest they already hold, so
-/// nothing carries it on the wire. It is what authenticates the first message:
-/// under plain `XX` that message is unencrypted, so anyone who can reach the
-/// port can produce one, and the responder answers it with Diffie-Hellman work
-/// and its own static key -- both handed to an unauthenticated stranger. Under
-/// `psk0` a forgery fails at the first decryption, before any Diffie-Hellman,
-/// and draws no reply.
+/// nothing carries it on the wire. It gates the first message: under plain `XX`
+/// that message was unencrypted, so anyone who could reach the port could
+/// produce one and the responder answered with its own static key. Under `psk0`
+/// a forgery fails at the first decryption and draws no reply.
 ///
-/// A pre-filter, not the authentication: the presented static key is still
-/// checked against the manifest and the ephemeral Diffie-Hellman still supplies
-/// forward secrecy, so this value alone completes nothing.
+/// A gate, not authentication of the sender, and `spec/link-handshake-b1.md`
+/// section 4.2 says how far it falls short: the message carries no responder
+/// freshness, so a recorded one replays onto a later attempt; and a responder
+/// computes this value and its own public keys when it builds its state, before
+/// it reads any record. The presented static key is still checked against the
+/// manifest and the ephemeral Diffie-Hellman still supplies forward secrecy, so
+/// this value alone completes nothing.
 fn static_psk(
     profile: &Profile,
     static_secret: &[u8; 32],
@@ -1113,9 +1115,10 @@ impl Responder {
     /// the live state before the rest of the record has proved good makes that
     /// retry useless: the transcript has already absorbed the bad record, so
     /// the genuine one that follows can no longer agree with the peer's. One
-    /// malformed datagram would end the exchange. In an initial handshake the
-    /// first message is unencrypted, so producing one costs an attacker
-    /// nothing.
+    /// malformed datagram would end the exchange. Ordinary loss produces such
+    /// records without an attacker, and an attacker holding the pre-shared key
+    /// -- or one recorded message that opened under it -- can produce them
+    /// deliberately.
     pub fn read_initiate(&mut self, record: &[u8]) -> Result<Offer> {
         let mut state = self.state.clone();
         let body = split_record(&self.profile, record, self.mode, Stage::Initiate)?;

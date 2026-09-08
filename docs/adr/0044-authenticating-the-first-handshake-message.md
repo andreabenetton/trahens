@@ -36,10 +36,32 @@ offline from what the manifest already gives them.
 
 ## Consequences
 
-A first message now decrypts only for a sender holding the manifest identity.
-A forgery fails at the first AEAD open, before any Diffie-Hellman, and draws no
-reply, so an unauthenticated prober gets neither the work nor the responder's
-static key.
+A first message now decrypts only for a sender holding the manifest identity. A
+forgery fails at the first AEAD open and draws no reply, so a prober holding no
+manifest identity gets neither a response nor the responder's static key.
+
+*Amended 8 September 2026, after external review.* This paragraph said "before
+any Diffie-Hellman" and "neither the work nor the responder's static key", and
+both were stronger than the construction supports:
+
+- **"Before any Diffie-Hellman" is false of the runtime.** A responder computes
+  the static-static value and both of its own public keys when it constructs its
+  state, which happens before it reads a record. Entering an attempt therefore
+  costs three scalar multiplications whatever arrives. The attempt cap is what
+  bounds that, not this pre-filter.
+- **"Neither the work" does not survive replay.** The first message carries no
+  responder freshness, so a recorded one replays indefinitely and buys a
+  response — `spec/link-handshake-b1.md` section 4.2.
+- **"Nor the responder's static key" holds only against someone without the
+  pre-shared key.** The responder's static is sealed under `psk0` and `ee`; the
+  `es` that needs its static private key comes afterwards. Anyone holding the
+  pre-shared key, with any ephemeral of their own, decrypts it — and then fails
+  the pin at the third message, having already got the identity.
+
+None of these is a break, and none was introduced by this ADR: plain `XX` was
+worse on every one. What was wrong was the description. ADR 0048 D13's challenge
+supplies the missing responder freshness on the B1.2 admission path; the manifest
+path still has none.
 
 Three smaller effects follow, and each is a behaviour change worth naming:
 

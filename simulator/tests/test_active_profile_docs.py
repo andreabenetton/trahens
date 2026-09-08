@@ -171,6 +171,55 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
         self.assertIn("B1.2", evidence)
         self.assertNotIn("belong to the future B1 profile", evidence)
 
+    def test_the_first_message_is_not_described_as_it_was_before_psk0(self) -> None:
+        """Both statements were in the tree at once, which is how drift shows up.
+
+        Since ADR 0044 the first payload is encrypted under `psk0` on both
+        exchanges. Normative text and implementation comments nonetheless still
+        said, in the present tense, that an initial handshake's first message is
+        unencrypted -- the pre-0044 sentence, left behind. An external review
+        found it, and a reader who trusted it would have drawn the wrong
+        conclusion about what a forged first record costs an attacker.
+
+        Past-tense contrasts with plain `XX` are the point and are allowed; what
+        is refused is the claim in the present tense.
+        """
+        stale = (
+            "first message is\nunencrypted",
+            "first message is unencrypted",
+            "message is\nunencrypted",
+            "first message\nis unencrypted",
+        )
+        for relative in (
+            "spec/link-handshake-b1.md",
+            "implementation/rust/crates/link-handshake-b1/src/lib.rs",
+            "simulator/trahens_crypto/b1.py",
+            "docs/adr/0044-authenticating-the-first-handshake-message.md",
+        ):
+            text = self.read(relative)
+            for phrase in stale:
+                with self.subTest(path=relative, phrase=phrase):
+                    self.assertNotIn(phrase, text)
+
+    def test_the_first_message_defence_is_not_overstated(self) -> None:
+        """The three claims an external review falsified, kept falsified.
+
+        Each was true of nothing: a responder computes three scalar
+        multiplications before reading a record, a recorded first message
+        replays, and the responder's static key is disclosed to a holder of the
+        pre-shared key. The spec now says so, and this fails if the overstated
+        forms come back.
+        """
+        spec = self.read("spec/link-handshake-b1.md")
+        for phrase in (
+            "cannot make a responder compute at all",
+            "obtains neither the work nor the identity",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertNotIn(phrase, spec)
+        # And the correction is present rather than merely the claim absent.
+        self.assertIn("replayable bearer prefilter", spec)
+
     def test_the_named_peer_set_claim_holds_while_no_p1_binary_listens(self) -> None:
         """P1's claim rests on where admission runs, so check that, not the prose.
 

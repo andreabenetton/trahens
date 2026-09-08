@@ -272,6 +272,33 @@ single dropped datagram strands a responder that is still waiting while the
 initiator believes the link is up, and on a path of several links the chance of
 that is not small.
 
+### 4.2 What the first message proves, and what it does not
+
+A first message that opens under `psk0` shows that **someone once held** the
+pre-shared key. It does not show that the sender holds it now, and it does not
+show the sender is live.
+
+The message carries no responder freshness. Its ephemeral is the initiator's own
+and every other field is fixed by the pair, so a recorded `handshake_initiate`
+stays valid indefinitely and can be replayed onto a later attempt. The responder
+accepts it, answers, and waits for a third message the replayer cannot produce.
+The replayer learns nothing it did not record — it holds no ephemeral private key
+— but it has spent the responder's attempt, and on a restart it can win the race
+against the genuine initiator by arriving first, leaving the responder committed
+to an exchange that cannot complete.
+
+So the manifest path's first message is a **replayable bearer prefilter**, not
+proof of a live sender. An implementation MUST NOT describe it as authentication
+of the current peer. A deployment that needs liveness here needs responder
+freshness — a challenge, or a replay cache keyed on the first record — and
+neither is specified for the manifest path. A process-local cache would not
+survive the restart the race exploits.
+
+The admission path of section 4.1 does not have this weakness, and not by
+accident: ADR 0048 D13's challenge is the responder freshness this section says
+is missing, so a replayed admission initiate is challenged rather than acted on
+and no state is allocated for it.
+
 ## 5. Negotiation
 
 The initiator's offer is:
@@ -391,13 +418,19 @@ worth stating exactly.
   handshakes on no other path: each link owns a UDP socket connected to its
   peer, so the kernel drops anything from another address before the process
   sees it. There is no listener, so there is no unsolicited context to exhaust.
-- On that same topology `handshake_pubkey_ops_per_interval` is bounded twice
-  over. A responder performs its Diffie-Hellman work in one `write_respond` per
-  attempt and attempts are capped, so the ceiling is a few operations per link
-  rather than a rate to police. And since section 2, it reaches that work only
-  for a first message that decrypted under the static-static key: a sender who
-  does not hold the manifest identity cannot make a responder compute at all,
-  whatever its address.
+- On that same topology `handshake_pubkey_ops_per_interval` is bounded by the
+  attempt cap: a responder performs its Diffie-Hellman work in one
+  `write_respond` per attempt and attempts are capped, so the ceiling is a few
+  operations per link rather than a rate to police.
+
+  It is **not** additionally bounded by the `psk0` prefilter. An earlier version
+  of this section claimed that a sender without the manifest identity could not
+  cause a responder to do any public-key work at all, and two things falsify
+  that. A responder computes the static-static value and both of its own public
+  keys when it constructs its state, which happens before it reads any record,
+  so entering an attempt costs three scalar multiplications whatever arrives.
+  And the first message carries no responder freshness, so a recorded one can be
+  replayed: see section 4.2.
 
 A node that admits an unconfigured source has none of those structural
 arguments, and the counters are what replace them. `admission-b12`'s gate
@@ -476,9 +509,9 @@ record has validated, so a record that fails to open leaves the exchange
 exactly as it was. Without that the retry loops this section relies on are
 worthless: the transcript has already absorbed the bad record, so the genuine
 one that follows can no longer agree with the peer's, and a single malformed
-datagram ends the exchange. An initial handshake's first message is
-unencrypted, so producing one costs an attacker nothing, and ordinary loss
-produces them without an attacker at all.
+datagram ends the exchange. Ordinary loss produces malformed records without an
+attacker at all, and an attacker who holds the pre-shared key — or has recorded
+one message that opened under it — can produce them deliberately.
 
 An implementation SHOULD retry a failed handshake a bounded number of times
 before treating the link as unusable. A single attempt is not enough: an outage
@@ -516,12 +549,22 @@ every link down for longer than one handshake attempt and longer than both
 five-second lifetimes, so a run passes only if neither clock started at process
 start.
 
-Under plain `XX` a responder performed Diffie-Hellman work to answer any
-well-formed first message, before it knew who sent it, and its reply disclosed
-its static key to that sender. The `psk0` construction of section 2 closes
-both: a first message that does not decrypt under the static-static key is
-refused before any Diffie-Hellman and draws no reply, so an unauthenticated
-prober obtains neither the work nor the identity.
+Under plain `XX` a responder answered any well-formed first message and its
+reply disclosed its static key to whoever sent it. The `psk0` construction of
+section 2 narrows that: a first message that does not decrypt under the
+static-static key draws no reply, so a prober holding no manifest identity
+obtains neither a response nor the responder's static key.
+
+Three things it does not do, stated here because the obvious readings are all
+stronger than the truth. It does not stop a responder computing: section 8
+records that entering an attempt costs three scalar multiplications before any
+record is read. It does not make the first message unreplayable: section 4.2.
+And it does not make the responder's static key confidential against a holder of
+the pre-shared key rather than of the static private key — the responder's
+static is encrypted under `psk0` and `ee`, both of which such a holder can
+obtain, and the `es` that would need the static private key comes after. The pin
+still refuses the exchange at the third message, so the attacker completes
+nothing; it has the identity by then.
 
 `implementation/harness/netns-p1.sh --scenario wrong-pin` checks this on the
 wire rather than in a unit test. It gives an initiator a static key its peer

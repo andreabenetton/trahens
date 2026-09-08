@@ -519,12 +519,16 @@ def static_psk(profile: B1Profile, static: Keypair, peer_static: bytes) -> bytes
     offline from the manifest they already hold: neither has to be told it and
     nothing carries it on the wire.
 
-    This is what authenticates the first message. Under plain `XX` that message
-    is unencrypted, so anyone able to reach the port can produce one, and the
-    responder answers it with two Diffie-Hellman operations and its own static
-    key -- work and an identity handed to an unauthenticated stranger. Under
-    `psk0` a forgery fails at the first decryption, before any Diffie-Hellman,
-    and draws no reply at all.
+    This is what gates the first message. Under plain `XX` that message was
+    unencrypted, so anyone able to reach the port could produce one and the
+    responder answered with its own static key -- an identity handed to a
+    stranger. Under `psk0` a forgery fails at the first decryption and draws no
+    reply.
+
+    A gate rather than authentication of the sender, in two ways spec section
+    4.2 sets out: the message carries no responder freshness, so a recorded one
+    replays; and a responder computes the static-static value and its own public
+    keys when it builds its state, before it reads anything.
 
     It is a pre-filter, not the authentication: the presented static key is
     still checked against the manifest, and the ephemeral Diffie-Hellman still
