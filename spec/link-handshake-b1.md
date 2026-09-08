@@ -402,8 +402,26 @@ misbehaving peer on a link: it never handshakes and floods its neighbour with
 well-framed records carrying rubbish. On the connected-socket topology it does
 not exercise the bounds above, and is not claimed to; what it establishes is the
 property those bounds protect — that adversarial volume on one link leaves the
-other links' fixed-T2 cadence untouched. It is the peer the bounds are to be
-tested with over a listening socket, which no harness scenario has yet.
+other links' fixed-T2 cadence untouched.
+
+`node_runtime::listener` is the listening socket, and its tests are where the
+bounds are exercised end to end: a joiner challenged and admitted over a real
+socket, an invitation that stays spent across a restart, a cookie that does not
+transfer between sources, an abandoned exchange reclaimed at
+`handshake_timeout_ms`, and a flood of rubbish that takes no context and leaves
+no tracking entry. A listener holds one exchange per source rather than running
+one to completion inside its receive loop, because the latter would serialise
+admission: a joiner that fell silent would hold every other joiner out for
+`handshake_timeout_ms`, and `max_handshake_contexts` would never bind because
+the socket would bind first.
+
+A listener MUST read a bounded number of datagrams per turn. A receive loop that
+drained the socket would let a flood hold a node past its next scheduled slot,
+breaking the fixed-T2 cadence with the flood rather than with the protocol.
+
+What remains untested over the netns harness is the same flood against a
+listening socket rather than a link. `trahens-hostile` is the peer for it and
+the scenario is not yet written.
 
 A peer that keeps waiting for a record MUST NOT be left worse off by the
 records it refuses. A reader commits nothing to its transcript until a whole

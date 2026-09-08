@@ -136,6 +136,8 @@ implementation/rust/crates/state-machine/src/lib.rs
 implementation/rust/crates/rendezvous-r1/src/lib.rs
 implementation/rust/crates/node-runtime/src/lib.rs
 implementation/rust/crates/node-runtime/src/p1.rs
+implementation/rust/crates/node-runtime/src/listener.rs
+implementation/rust/crates/node-runtime/tests/listener.rs
 implementation/rust/crates/conformance/src/lib.rs
 implementation/rust/bins/trahens-endpoint/src/main.rs
 implementation/rust/bins/trahens-relay/src/main.rs

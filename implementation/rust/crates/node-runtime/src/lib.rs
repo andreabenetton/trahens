@@ -3,6 +3,7 @@
 #![doc = "UDP link runtime shared by Trahens P1 executables."]
 
 pub mod handshake;
+pub mod listener;
 pub mod p1;
 
 use codec_m2::{decode, encode, Envelope};

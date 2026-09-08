@@ -92,7 +92,7 @@ fn offer(suite: [u8; 2]) -> Offer {
     }
 }
 
-fn selection(suite: [u8; 2]) -> Selection {
+pub(crate) fn selection(suite: [u8; 2]) -> Selection {
     Selection {
         version: VERSION,
         w2_profile: WIRE_PROFILE_W2,
