@@ -317,10 +317,22 @@ refused before any Diffie-Hellman.
 Add signed seed manifests and optional local-link discovery, both feeding the
 same bounded candidate-peer cache. Do not mix discovery with admission.
 
-`docs/b1.2-scope.md` scopes this stage. It records that section 13's bounds on
-handshake contexts, public-key operations per source, and failed attempts are
-currently satisfied by P1's connected-socket topology rather than enforced, and
-that this stage is what makes them live requirements.
+`docs/b1.2-scope.md` scopes this stage. It recorded that section 13's bounds on
+handshake contexts, public-key operations per source, and failed attempts were
+satisfied by P1's connected-socket topology rather than enforced, and that this
+stage is what makes them live requirements. They are enforced now: section 8
+describes the gate and the network arms that exercise it.
+
+Admission is delivered and discovery is partial. A node admits a peer with no
+manifest entry, over a listening socket, across namespaces — the cookie, the
+per-joiner invitation, the advertisement, the candidate cache, the admission
+store and the bounded gate all exist in two implementations. What is missing is
+where a joiner learns a candidate from in the first place: signed seed manifests
+are unbuilt, and optional local-link discovery with them.
+
+This changes nothing about P1. Admission runs in separate processes that take no
+part in route discovery, so a P1 node still takes its peer list from
+configuration and P1 still demonstrates route bootstrap over a named peer set.
 
 ### B1.3 — Gateway and directory roots
 

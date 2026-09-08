@@ -171,6 +171,34 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
         self.assertIn("B1.2", evidence)
         self.assertNotIn("belong to the future B1 profile", evidence)
 
+    def test_the_named_peer_set_claim_holds_while_no_p1_binary_listens(self) -> None:
+        """P1's claim rests on where admission runs, so check that, not the prose.
+
+        B1.2's admission path is built and works over a network, and it lives in
+        `trahens-admit` and `trahens-join`, which take no part in route
+        discovery. That separation is the whole reason "route bootstrap over a
+        named peer set" is still exactly accurate, and it is the kind of thing a
+        later change would quietly undo: wiring the listener into a P1 binary is
+        a small edit that would silently make three documents wrong.
+
+        So the assertion is about the code. If a P1 binary starts listening this
+        fails, and whoever made that change has to move the claim with it.
+        """
+        p1_binaries = (
+            "implementation/rust/bins/trahens-endpoint/src/main.rs",
+            "implementation/rust/bins/trahens-relay/src/main.rs",
+            "implementation/rust/bins/trahens-rendezvous/src/main.rs",
+        )
+        for relative in p1_binaries:
+            with self.subTest(path=relative):
+                self.assertNotIn("listener", self.read(relative))
+
+        # And the claim itself is where a reader starts, in the words the code
+        # above is what makes true.
+        roadmap = self.read("ROADMAP.md")
+        self.assertIn("route bootstrap over a named peer set", roadmap)
+        self.assertIn("take no part in route discovery", roadmap)
+
 
 if __name__ == "__main__":
     unittest.main()
