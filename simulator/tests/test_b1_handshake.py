@@ -466,6 +466,21 @@ class B1HandshakeTests(unittest.TestCase):
         with self.assertRaises(HandshakeError):
             responder.read_message_1(initiator.write_message_1())
 
+    def test_the_published_rekey_runs_under_a_key_derived_from_the_export(self) -> None:
+        # The rekey vector publishes both the export key it chains to and the
+        # psk0 key it actually runs with. Those must differ: the export key is
+        # what a session produces and the pre-shared key is what a rekey
+        # consumes, and one value serving both is what the derivation step
+        # exists to prevent. Checked against the published artifact rather
+        # than the function, so a generator that quietly passes the export
+        # through unchanged fails here.
+        vectors = json.loads((ROOT / "spec/b1-test-vectors.json").read_text())
+        rekeys = [vector for vector in vectors["vectors"] if vector["rekey"]]
+        self.assertEqual(len(rekeys), 1)
+        rekey = rekeys[0]
+        self.assertEqual(len(bytes.fromhex(rekey["chained_export_key"])), 32)
+        self.assertNotEqual(rekey["psk"], rekey["chained_export_key"])
+
     def test_vector_generator_is_reproducible(self) -> None:
         published = ROOT / "spec/b1-test-vectors.json"
         with tempfile.TemporaryDirectory() as temporary:

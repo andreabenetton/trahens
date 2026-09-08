@@ -219,6 +219,7 @@ pub const DOMAIN_P1_GATEWAY_OFFER: &[u8] = b"Trahens-P1-gateway-offer-v2";
 pub const DOMAIN_B1_NOISE_PROTOCOL: &[u8] = b"Noise_XXpsk0_25519_ChaChaPoly_SHA256";
 pub const DOMAIN_B1_PROLOGUE: &[u8] = b"Trahens-B1-prologue-v1";
 pub const DOMAIN_B1_REKEY_CHAIN: &[u8] = b"Trahens-B1-rekey-chain-v1";
+pub const DOMAIN_B1_REKEY_PSK: &[u8] = b"Trahens-B1-rekey-psk-v1";
 pub const DOMAIN_B1_STATIC_PSK: &[u8] = b"Trahens-B1-static-psk-v2";
 pub const DOMAIN_B12_COOKIE: &[u8] = b"Trahens-B12-cookie-v1";
 pub const DOMAIN_B12_ADVERTISEMENT: &[u8] = b"Trahens-B12-advertisement-v1";

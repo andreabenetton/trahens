@@ -85,6 +85,7 @@ pub struct Profile {
     pub noise_protocol: Vec<u8>,
     pub prologue_domain: Vec<u8>,
     pub rekey_chain_domain: Vec<u8>,
+    pub rekey_psk_domain: Vec<u8>,
     pub static_psk_domain: Vec<u8>,
     pub epoch_domain: Vec<u8>,
     pub export_domain: Vec<u8>,
@@ -615,10 +616,34 @@ impl Keying<'_> {
             Self::Manifest { peer_static } => static_psk(profile, static_secret, peer_static, role),
             Self::Rekey {
                 previous_export, ..
-            } => Ok(**previous_export),
+            } => rekey_psk(profile, previous_export),
             Self::Admission { psk, .. } => Ok(**psk),
         }
     }
+}
+
+/// The pre-shared key for a rekey, from the export key of the session it
+/// replaces.
+///
+/// The export key is a session output: the value the handshake hands to whoever
+/// holds the session, for whatever the next thing is. Feeding it straight in as
+/// the next exchange's `psk0` made it also a handshake input, and one value
+/// serving two constructions is the pattern that lets a later use of the export
+/// key interact with the rekey chain. One HKDF step under its own domain keeps
+/// the two apart: the export key remains the thing a session produces, and
+/// this is the thing a rekey consumes.
+///
+/// Same shape as [`static_psk`]: the export key is the input keying material,
+/// the domain hashed is the salt, the domain is the info. Nothing else goes in
+/// the info because there is nothing else to bind — the export key already
+/// carries the whole previous transcript.
+fn rekey_psk(profile: &Profile, previous_export: &[u8; 32]) -> Result<[u8; 32]> {
+    let salt = sha256(&profile.rekey_psk_domain)?;
+    let mut derived = hkdf(&salt, previous_export, &profile.rekey_psk_domain, 32)?;
+    let mut psk = [0_u8; 32];
+    psk.copy_from_slice(&derived);
+    zeroize_slice(&mut derived);
+    Ok(psk)
 }
 
 /// Which end of the exchange the local static key belongs to.
@@ -690,8 +715,9 @@ fn static_psk(
 }
 
 /// Both exchanges are `psk0`; only where the key comes from differs. A rekey
-/// chains to the session it replaces through its export key; an initial
-/// handshake has no predecessor and uses the static-static value instead.
+/// chains to the session it replaces through a key derived from its export
+/// key; an initial handshake has no predecessor and derives one from the
+/// static-static value instead.
 fn begin(profile: &Profile, rekey: bool, psk: &[u8; 32]) -> Result<SymmetricState> {
     let prologue = if rekey {
         &profile.rekey_chain_domain

@@ -58,6 +58,7 @@ fn profile() -> Fallible<Profile> {
         noise_protocol: text(&registry, "b1_noise_protocol")?,
         prologue_domain: text(&registry, "b1_prologue")?,
         rekey_chain_domain: text(&registry, "b1_rekey_chain")?,
+        rekey_psk_domain: text(&registry, "b1_rekey_psk")?,
         static_psk_domain: text(&registry, "b1_static_psk")?,
         epoch_domain: text(&registry, "b1_epoch")?,
         export_domain: text(&registry, "b1_export")?,

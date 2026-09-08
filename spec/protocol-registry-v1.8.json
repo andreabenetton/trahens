@@ -216,6 +216,7 @@
     "b1_noise_protocol": "Noise_XXpsk0_25519_ChaChaPoly_SHA256",
     "b1_prologue": "Trahens-B1-prologue-v1",
     "b1_rekey_chain": "Trahens-B1-rekey-chain-v1",
+    "b1_rekey_psk": "Trahens-B1-rekey-psk-v1",
     "b1_static_psk": "Trahens-B1-static-psk-v2",
     "b12_cookie": "Trahens-B12-cookie-v1",
     "b12_advertisement": "Trahens-B12-advertisement-v1",

@@ -58,6 +58,7 @@ class B1Profile:
     noise_protocol: bytes
     prologue_domain: bytes
     rekey_chain_domain: bytes
+    rekey_psk_domain: bytes
     static_psk_domain: bytes
     epoch_domain: bytes
     export_domain: bytes
@@ -91,6 +92,7 @@ def load_profile(registry: dict) -> B1Profile:
         noise_protocol=domains["b1_noise_protocol"].encode(),
         prologue_domain=domains["b1_prologue"].encode(),
         rekey_chain_domain=domains["b1_rekey_chain"].encode(),
+        rekey_psk_domain=domains["b1_rekey_psk"].encode(),
         static_psk_domain=domains["b1_static_psk"].encode(),
         epoch_domain=domains["b1_epoch"].encode(),
         export_domain=domains["b1_export"].encode(),
@@ -583,6 +585,32 @@ def static_psk(
     )
 
 
+def rekey_psk(profile: B1Profile, previous_export: bytes) -> bytes:
+    """The pre-shared key for a rekey, from the export key it chains to.
+
+    The export key is a session output: what the handshake hands to whoever
+    holds the session, for whatever the next thing is. Feeding it straight in
+    as the next exchange's psk0 made it also a handshake input, and one value
+    serving two constructions is the pattern that lets a later use of the
+    export key interact with the rekey chain. One HKDF step under its own
+    domain keeps the two apart: the export key remains the thing a session
+    produces, and this is the thing a rekey consumes.
+
+    Same shape as `static_psk`: the export key is the input keying material,
+    the domain hashed is the salt, the domain is the info. Nothing else goes in
+    the info because there is nothing else to bind -- the export key already
+    carries the whole previous transcript.
+    """
+    if len(previous_export) != HASHLEN:
+        raise HandshakeError("export key must be 32 bytes")
+    return rfc5869_hkdf(
+        _hash(profile.rekey_psk_domain),
+        previous_export,
+        profile.rekey_psk_domain,
+        HASHLEN,
+    )
+
+
 def _begin(profile: B1Profile, rekey: bool, psk: bytes) -> SymmetricState:
     """Both exchanges are `psk0`; only where the key comes from differs.
 
@@ -660,7 +688,7 @@ class Initiator:
         self.admission_identifier = admission_identifier
         self.admission_cookie = admission_cookie or bytes(profile.cookie_bytes)
         if previous_export is not None:
-            psk = previous_export
+            psk = rekey_psk(profile, previous_export)
         elif admission_psk is not None:
             psk = admission_psk
         else:
@@ -812,7 +840,7 @@ class Responder:
             )
         self.rekey = previous_export is not None
         if previous_export is not None:
-            psk = previous_export
+            psk = rekey_psk(profile, previous_export)
         elif admission_psk is not None:
             psk = admission_psk
         else:

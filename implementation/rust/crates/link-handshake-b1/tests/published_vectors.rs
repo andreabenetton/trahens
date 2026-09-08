@@ -68,6 +68,7 @@ fn profile() -> Fallible<Profile> {
         static_psk_domain: text(&registry, "domain_separators", "b1_static_psk")?.into_bytes(),
         prologue_domain: text(&registry, "domain_separators", "b1_prologue")?.into_bytes(),
         rekey_chain_domain: text(&registry, "domain_separators", "b1_rekey_chain")?.into_bytes(),
+        rekey_psk_domain: text(&registry, "domain_separators", "b1_rekey_psk")?.into_bytes(),
         epoch_domain: text(&registry, "domain_separators", "b1_epoch")?.into_bytes(),
         export_domain: text(&registry, "domain_separators", "b1_export")?.into_bytes(),
         record_bytes: number(&registry, "widths_bytes", "b1_record")?,

@@ -24,6 +24,7 @@ from trahens_crypto.b1 import (
     Selection,
     encode_cookie_challenge,
     load_profile,
+    rekey_psk,
     static_psk,
 )
 
@@ -123,16 +124,16 @@ def run_handshake(
         # Empty for an initial handshake. Published so an independent
         # implementation can replay the rekey without deriving it first.
         "chained_export_key": (previous_export or b"").hex(),
-        # The psk0 key this exchange actually runs with: the chained export key
-        # for a rekey, and the static-static value for an initial handshake.
-        # Published for the same reason as the line above -- an independent
-        # implementation replays the records without having to reproduce the
-        # derivation first -- and pinned so that it must reproduce it in the
-        # end. Both ends compute it from the manifest, so it is never sent.
+        # The psk0 key this exchange actually runs with: derived from the
+        # chained export key for a rekey, and from the static-static value for
+        # an initial handshake. Published for the same reason as the line above
+        # -- an independent implementation replays the records without having
+        # to reproduce the derivation first -- and pinned so that it must
+        # reproduce it in the end. Both ends compute it, so it is never sent.
         "psk": (
             admission["psk"]
             if admission is not None
-            else previous_export
+            else rekey_psk(profile, previous_export)
             if previous_export is not None
             else static_psk(
                 profile, initiator_static, responder_static.public, initiator=True

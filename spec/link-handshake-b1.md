@@ -44,9 +44,9 @@ reaches the chaining key as well.
 
 The pre-shared key differs by exchange:
 
-- a **rekey** uses the export key of the session it replaces, which is what
-  stops an unrelated exchange being spliced in as a rekey and what makes a
-  rekey's traffic keys differ from the replaced session's;
+- a **rekey** derives one from the export key of the session it replaces, which
+  is what stops an unrelated exchange being spliced in as a rekey and what
+  makes a rekey's traffic keys differ from the replaced session's;
 - an **initial handshake** derives one from the static-static Diffie-Hellman
   between the two manifest identities. Both peers compute it offline from what
   they already hold, so nothing carries it and no exchange establishes it.
@@ -389,14 +389,31 @@ far more.
 ## 7. Rekey
 
 A rekey is a complete new handshake on the established link, using the
-`rekey_*` record types and the `psk0` instantiation, with the previous
-session's export key as the pre-shared key. A responder that receives a
-`rekey_initiate` record MUST run the handshake with the export key of the
-session it currently holds; an initiator chained to any other session produces
-a first message the responder cannot decrypt. This is what prevents an
-unrelated handshake from being spliced in as a rekey, and because the export
-key reaches the chaining key, it also means a rekey's traffic keys differ from
-the replaced session's even if every ephemeral were to repeat.
+`rekey_*` record types and the `psk0` instantiation, with a pre-shared key
+derived from the previous session's export key:
+
+```
+prk = HKDF-Extract(salt = SHA-256(b1_rekey_psk), IKM = export_key)
+psk = HKDF-Expand(prk, info = b1_rekey_psk, L = 32)
+```
+
+The export key is a session output, the value section 6 hands to whoever holds
+the session. Through Core v1.8 draft revisions it was also fed in unchanged as
+the next exchange's pre-shared key, which made one value both a handshake
+output and a handshake input; an external review noted that one value serving
+two constructions is what lets a later use of the export key interact with the
+rekey chain. The derivation step keeps them apart under their own domain. The
+info carries nothing beyond the domain because there is nothing left to bind:
+the export key already commits to the whole previous transcript. The rekey
+vector in `spec/b1-test-vectors.json` moved with this change.
+
+A responder that receives a `rekey_initiate` record MUST run the handshake with
+the key derived from the export key of the session it currently holds; an
+initiator chained to any other session produces a first message the responder
+cannot decrypt. This is what prevents an unrelated handshake from being spliced
+in as a rekey, and because the derived key reaches the chaining key, it also
+means a rekey's traffic keys differ from the replaced session's even if every
+ephemeral were to repeat.
 
 Only the initiator opens a rekey, by the same lower-identifier rule that decides
 who opens the initial handshake, so two ends cannot rekey past each other. A
