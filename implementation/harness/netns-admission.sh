@@ -26,14 +26,17 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 SCENARIO=ok
 OUTPUT=${OUTPUT:-$ROOT/build/p1-admission}
 TAG=${TAG:-a}
-BUILD=${BUILD:-1}
+# Prebuilt, like netns-p1.sh. This script runs under sudo, and root's PATH does
+# not carry cargo on a CI runner, so building here would fail with a bare 127
+# rather than with anything a reader could act on.
+BIN=${BIN_DIR:-$ROOT/implementation/rust/target/release}
 
 while (( $# )); do
   case "$1" in
     --scenario) SCENARIO="$2"; shift 2 ;;
     --output) OUTPUT="$2"; shift 2 ;;
     --tag) TAG="$2"; shift 2 ;;
-    --no-build) BUILD=0; shift ;;
+    --bin-dir) BIN="$2"; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -43,11 +46,13 @@ case "$SCENARIO" in
   *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;;
 esac
 
-if (( BUILD )); then
-  cargo build --manifest-path "$ROOT/implementation/rust/Cargo.toml" \
-    -p trahens-admit -p trahens-join -p trahens-hostile >/dev/null
-fi
-BIN="$ROOT/implementation/rust/target/debug"
+for binary in trahens-admit trahens-join trahens-hostile; do
+  [[ -x "${BIN}/${binary}" ]] || {
+    echo "missing binary: ${BIN}/${binary}" >&2
+    echo "build it first: cargo build --release -p ${binary}" >&2
+    exit 2
+  }
+done
 
 mkdir -p "$OUTPUT"
 rm -f "$OUTPUT"/*
