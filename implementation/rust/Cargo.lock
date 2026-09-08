@@ -182,6 +182,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "trahens-admit"
+version = "1.5.0"
+dependencies = [
+ "admission-b12",
+ "node-runtime",
+ "protocol-registry",
+ "trahens-crypto",
+]
+
+[[package]]
 name = "trahens-crypto"
 version = "1.5.0"
 dependencies = [
@@ -207,6 +217,17 @@ version = "1.5.0"
 dependencies = [
  "node-runtime",
  "protocol-registry",
+]
+
+[[package]]
+name = "trahens-join"
+version = "1.5.0"
+dependencies = [
+ "admission-b12",
+ "link-handshake-b1",
+ "node-runtime",
+ "protocol-registry",
+ "trahens-crypto",
 ]
 
 [[package]]

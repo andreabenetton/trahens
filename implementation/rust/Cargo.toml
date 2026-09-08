@@ -15,8 +15,10 @@ members = [
   "crates/admission-b12",
   "crates/node-runtime",
   "crates/conformance",
+  "bins/trahens-admit",
   "bins/trahens-endpoint",
   "bins/trahens-hostile",
+  "bins/trahens-join",
   "bins/trahens-relay",
   "bins/trahens-rendezvous",
 ]

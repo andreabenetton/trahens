@@ -136,6 +136,25 @@ jobs:
           sudo -E implementation/harness/netns-p1.sh \
             --relays 2 --loss 0 --scenario wrong-pin \
             --timeout-ms 15000 --output "$GITHUB_WORKSPACE/build/p1-wrong-pin"
+      # B1.2 over a listening socket: a peer admitted with no manifest entry.
+      # These are the first scenarios in which a node accepts a handshake from
+      # an address it was never configured with.
+      - name: A joiner with no manifest entry is challenged and admitted
+        run: |
+          sudo -E implementation/harness/netns-admission.sh --scenario ok \
+            --output "$GITHUB_WORKSPACE/build/p1-admission-ok"
+      - name: A single-use invitation does not admit a second joiner
+        run: |
+          sudo -E implementation/harness/netns-admission.sh --scenario replay \
+            --tag b --output "$GITHUB_WORKSPACE/build/p1-admission-replay"
+      - name: A spent invitation stays spent across a restart
+        run: |
+          sudo -E implementation/harness/netns-admission.sh --scenario restart \
+            --tag c --output "$GITHUB_WORKSPACE/build/p1-admission-restart"
+      - name: A flood against the listening socket does not stop an admission
+        run: |
+          sudo -E implementation/harness/netns-admission.sh --scenario hostile \
+            --tag d --output "$GITHUB_WORKSPACE/build/p1-admission-hostile"
       - name: A link rekeys under live traffic without disturbing the route
         run: |
           sudo -E implementation/harness/netns-p1.sh \

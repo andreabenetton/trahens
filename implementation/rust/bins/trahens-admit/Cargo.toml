@@ -1,0 +1,14 @@
+[package]
+name = "trahens-admit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+node-runtime = { path = "../../crates/node-runtime" }
+protocol-registry = { path = "../../crates/protocol-registry" }
+admission-b12 = { path = "../../crates/admission-b12" }
+trahens-crypto = { path = "../../crates/crypto" }
+
+[lints]
+workspace = true
