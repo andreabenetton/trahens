@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use admission_b12::{Admission, Invitation};
+use trahens_crypto::random_bytes;
 
 /// One `id:secret` pair, both hex. The inviter's own static public key is not
 /// carried here: it is what the joiner pins, and it holds it out of band.
@@ -57,6 +58,10 @@ fn run() -> Result<(), Box<dyn Error>> {
         args.socket("bind")?,
         SUITE_C1_V2,
         static_secret,
+        // Distinct from the static secret: a key is never reused across a
+        // signature scheme and a Diffie-Hellman one. It is short-lived by
+        // design, so a fresh one per run is the shape rather than a shortcut.
+        random_bytes::<32>()?,
         admission,
         args.u32("first-peer-id")?,
         0,

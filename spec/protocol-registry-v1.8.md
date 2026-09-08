@@ -272,5 +272,6 @@ Byte order for fixed-width integers: **big-endian**.
 - `b12_advertisement` = `Trahens-B12-advertisement-v1`
 - `b12_store_record` = `Trahens-B12-store-record-v1`
 - `b12_invitation_psk` = `Trahens-B12-invitation-psk-v1`
+- `b1_transition` = `Trahens-B1-advertisement-transition-v1`
 - `b1_epoch` = `Trahens-B1-epoch-v1`
 - `b1_export` = `Trahens-B1-export-v1`

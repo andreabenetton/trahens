@@ -25,9 +25,14 @@
 //! Noise implementation.
 
 use trahens_crypto::{
-    aead_open, aead_seal, constant_time_equal, hmac_sha256, sha256, x25519, x25519_base,
-    zeroize_slice, CryptoError, SecretBytes,
+    aead_open, aead_seal, constant_time_equal, hmac_sha256, sha256, sign, signing_keypair, verify,
+    x25519, x25519_base, zeroize_slice, CryptoError, SecretBytes,
 };
+
+/// An Ed25519 signature, and the selection that precedes it in an admission
+/// exchange's second message.
+pub const SIGNATURE_BYTES: usize = 64;
+const SELECTION_BYTES: usize = 7;
 
 pub const HASH_BYTES: usize = 32;
 pub const DH_BYTES: usize = 32;
@@ -94,6 +99,7 @@ pub struct Profile {
     pub admission_payload_bytes: usize,
     pub invitation_id_bytes: usize,
     pub cookie_bytes: usize,
+    pub transition_domain: Vec<u8>,
     pub admission_initiate_type: u8,
     pub cookie_challenge_type: u8,
     /// Initiate, respond, finish for an initial handshake.
@@ -560,6 +566,11 @@ pub enum Keying<'a> {
         /// attempt, which is not a special case: it fails to verify, and
         /// failing is what provokes a challenge (ADR 0048 D13).
         cookie: &'a [u8],
+        /// The advertisement signing seed, for a responder. ADR 0049 D16 makes
+        /// the transition unconditional on this path, so a [`Responder`] built
+        /// without one is refused; an [`Initiator`] passes `None`, having
+        /// nothing to sign and only a signature to check.
+        advertisement_secret: Option<&'a [u8; 32]>,
     },
 }
 
@@ -651,6 +662,44 @@ fn begin(profile: &Profile, rekey: bool, psk: &[u8; 32]) -> Result<SymmetricStat
     state.mix_hash(prologue)?;
     state.mix_key_and_hash(psk)?;
     Ok(state)
+}
+
+/// Bind an advertisement key to the exchange that is completing.
+///
+/// ADR 0049 D15. The transcript is signed, not the static key: a signature over
+/// the static key alone would be a standing certificate, replayable into any
+/// exchange by anyone who saw it once.
+///
+/// # Errors
+///
+/// [`HandshakeError`] if the seed does not yield a signing key.
+pub fn sign_transition(
+    profile: &Profile,
+    signing_seed: &[u8; 32],
+    handshake_hash: &[u8; 32],
+) -> Result<[u8; SIGNATURE_BYTES]> {
+    let (_, secret) = signing_keypair(signing_seed)?;
+    let mut message = Vec::with_capacity(profile.transition_domain.len() + handshake_hash.len());
+    message.extend_from_slice(&profile.transition_domain);
+    message.extend_from_slice(handshake_hash);
+    Ok(sign(&secret, &message)?)
+}
+
+/// Whether `advertisement_key` signed this exchange.
+///
+/// # Errors
+///
+/// [`HandshakeError`] unless the signature verifies.
+pub fn verify_transition(
+    profile: &Profile,
+    advertisement_key: &[u8; 32],
+    handshake_hash: &[u8; 32],
+    signature: &[u8; SIGNATURE_BYTES],
+) -> Result<()> {
+    let mut message = Vec::with_capacity(profile.transition_domain.len() + handshake_hash.len());
+    message.extend_from_slice(&profile.transition_domain);
+    message.extend_from_slice(handshake_hash);
+    Ok(verify(advertisement_key, &message, signature)?)
 }
 
 /// The cleartext prefix of an admission initiate: identifier then cookie.
@@ -817,6 +866,10 @@ pub struct Initiator {
     mode: Mode,
     /// Empty on every path but admission.
     header: Vec<u8>,
+    /// Set by `read_respond` on an admission exchange, once the responder has
+    /// proved it holds this advertisement key. Comparing it against a cached
+    /// candidate is the caller's step; this only says the exchange was bound.
+    advertisement_key: Option<[u8; 32]>,
     state: SymmetricState,
     remote_ephemeral: Option<[u8; 32]>,
     selection: Option<Selection>,
@@ -847,11 +900,19 @@ impl Initiator {
             offer,
             mode: keying.mode(),
             header,
+            advertisement_key: None,
             state,
             remote_ephemeral: None,
             selection: None,
             profile,
         })
+    }
+
+    /// The advertisement key this exchange was bound to, once message 2 has
+    /// been read. `None` on every path but admission.
+    #[must_use]
+    pub fn advertisement_key(&self) -> Option<[u8; 32]> {
+        self.advertisement_key
     }
 
     /// `-> [header] e`
@@ -895,9 +956,34 @@ impl Initiator {
         let remote_static = as_key(&state.decrypt_and_hash(&sealed_static)?)?;
         state.mix_key(&x25519(&self.ephemeral_secret.0, &remote_static)?)?;
 
+        // Captured before the payload is decrypted, because that is the value
+        // the responder signed and the one the AEAD is about to consume as
+        // associated data. Reading it afterwards would read a hash that already
+        // covers the signature verifying against it.
+        let signed_hash = state.handshake_hash;
         let framed = state.decrypt_and_hash(body.get(cursor..).ok_or(HandshakeError)?)?;
         let width = self.profile.payload_bytes(self.mode, Stage::Respond);
-        let selection = Selection::decode(&unframe(&framed, width)?)?;
+        let mut payload = unframe(&framed, width)?;
+        if self.mode == Mode::Admission {
+            // ADR 0049: selection, then the advertisement key and its signature.
+            if payload.len() != SELECTION_BYTES + DH_BYTES + SIGNATURE_BYTES {
+                return Err(HandshakeError);
+            }
+            let key = as_key(
+                payload
+                    .get(SELECTION_BYTES..SELECTION_BYTES + DH_BYTES)
+                    .ok_or(HandshakeError)?,
+            )?;
+            let signature: [u8; SIGNATURE_BYTES] = payload
+                .get(SELECTION_BYTES + DH_BYTES..)
+                .ok_or(HandshakeError)?
+                .try_into()
+                .map_err(|_| HandshakeError)?;
+            verify_transition(&self.profile, &key, &signed_hash, &signature)?;
+            self.advertisement_key = Some(key);
+            payload.truncate(SELECTION_BYTES);
+        }
+        let selection = Selection::decode(&payload)?;
 
         // The key authenticated; the question is whether it is the one the
         // manifest names for this peer. Checked before any key is derived.
@@ -956,6 +1042,10 @@ pub struct Responder {
     /// the key and the routability proof belong to the record being read.
     header: Vec<u8>,
     mode: Mode,
+    /// The advertisement signing seed. Present on every admission exchange and
+    /// on no other, because D16 leaves a responder no way to decline to bind
+    /// itself.
+    advertisement_secret: Option<SecretBytes<32>>,
     /// `None` only on an admission handshake, which has no manifest entry.
     expected_peer_static: Option<[u8; 32]>,
     admission: bool,
@@ -974,6 +1064,17 @@ impl Responder {
         keying: Keying<'_>,
     ) -> Result<Self> {
         let psk = keying.psk(&profile, &static_secret)?;
+        // ADR 0049 D16: unconditional on the admission path. A responder that
+        // could decline to bind itself would present a joiner with exactly the
+        // case it cannot tell apart from an attack, so there is no way to
+        // construct one that admits without an advertisement key.
+        let advertisement_secret = match &keying {
+            Keying::Admission {
+                advertisement_secret,
+                ..
+            } => Some(SecretBytes(*(*advertisement_secret).ok_or(HandshakeError)?)),
+            _ => None,
+        };
         let state = begin(&profile, keying.is_rekey(), &psk)?;
         Ok(Self {
             static_public: x25519_base(&static_secret)?,
@@ -984,6 +1085,7 @@ impl Responder {
             admission: keying.is_admission(),
             header: keying.header(&profile)?,
             mode: keying.mode(),
+            advertisement_secret,
             promoted_static: None,
             state,
             remote_ephemeral: None,
@@ -1056,9 +1158,18 @@ impl Responder {
         self.state
             .mix_key(&x25519(&self.static_secret.0, &remote_ephemeral)?)?;
         let width = self.profile.payload_bytes(self.mode, Stage::Respond);
-        let sealed_payload = self
-            .state
-            .encrypt_and_hash(&frame(&selection.encode(), width)?)?;
+        let mut body = selection.encode();
+        if self.mode == Mode::Admission {
+            // ADR 0049 D15/D16. Signed over the transcript as it stands here,
+            // which is the value the AEAD below takes as associated data, so the
+            // initiator holds the same one before it decrypts.
+            let seed = self.advertisement_secret.as_ref().ok_or(HandshakeError)?.0;
+            let (public, _) = signing_keypair(&seed)?;
+            let signature = sign_transition(&self.profile, &seed, &self.state.handshake_hash)?;
+            body.extend_from_slice(&public);
+            body.extend_from_slice(&signature);
+        }
+        let sealed_payload = self.state.encrypt_and_hash(&frame(&body, width)?)?;
 
         let mut record = prefix(&self.profile, self.mode, Stage::Respond);
         record.extend_from_slice(&self.ephemeral_public);

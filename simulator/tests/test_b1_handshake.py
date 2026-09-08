@@ -20,9 +20,12 @@ from trahens_crypto.b1 import (
     peek_admission_header,
 )
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 ROOT = Path(__file__).resolve().parents[2]
 
 INVITATION_ID = bytes.fromhex("a1" * 16)
+ADVERTISEMENT_SECRET = bytes.fromhex("c3" * 32)
 
 
 def seed(label: str) -> bytes:
@@ -140,6 +143,7 @@ class B1HandshakeTests(unittest.TestCase):
             admission_psk=inviter_psk,
             admission_identifier=INVITATION_ID,
             admission_cookie=cookie,
+            advertisement_secret=ADVERTISEMENT_SECRET,
         )
         return joiner, inviter, joiner_static
 
@@ -205,6 +209,7 @@ class B1HandshakeTests(unittest.TestCase):
             None,
             admission_psk=seed("admission"),
             admission_identifier=bytes.fromhex("b2" * 16),
+            advertisement_secret=ADVERTISEMENT_SECRET,
         )
         with self.assertRaises(HandshakeError):
             inviter.read_message_1(record)
@@ -266,6 +271,80 @@ class B1HandshakeTests(unittest.TestCase):
                 Keypair.from_secret(seed("r/ephemeral")),
                 None,
                 admission_psk=seed("admission"),
+            )
+
+    def test_an_admission_exchange_binds_the_advertisement_key(self) -> None:
+        # ADR 0049 D15. The joiner ends holding the key the responder proved it
+        # controls, which is what a cached advertisement is compared against.
+        psk = seed("admission")
+        joiner, inviter, _ = self.admission_parties(psk, psk)
+        self.complete(joiner, inviter)
+        self.assertEqual(joiner.advertisement_key, inviter.advertisement_public)
+
+    def test_the_manifest_path_carries_no_transition(self) -> None:
+        # D16: absent everywhere but admission, so v1.8's published records do
+        # not move and a node with discovery disabled speaks what it always did.
+        initiator, responder = self.parties()
+        self.complete(initiator, responder)
+        self.assertIsNone(initiator.advertisement_key)
+
+    def test_a_transition_from_another_key_is_refused(self) -> None:
+        # The signature is checked against the key the payload carries, so this
+        # is the case where a responder signs with a key it does not hold.
+        psk = seed("admission")
+        joiner, inviter, _ = self.admission_parties(psk, psk)
+        inviter.read_message_1(joiner.write_message_1())
+        selection = Selection(self.profile.protocol_version, 2, 3, 4, 0x0101, 1)
+        record = bytearray(inviter.write_message_2(selection))
+        # Flip a byte inside the encrypted payload: the AEAD refuses first,
+        # which is the outer guarantee. The inner one is checked below.
+        record[-1] ^= 0x01
+        with self.assertRaises(HandshakeError):
+            joiner.read_message_2(bytes(record))
+
+    def test_a_transition_signed_over_another_transcript_is_refused(self) -> None:
+        # The reason the transcript is signed rather than the static key: a
+        # signature over anything an attacker can replay would be a standing
+        # certificate. Signing a different hash must not verify here.
+        from trahens_crypto.b1 import sign_transition, verify_transition
+
+        wrong = sign_transition(self.profile, ADVERTISEMENT_SECRET, seed("other/transcript"))
+        public = (
+            Ed25519PrivateKey.from_private_bytes(ADVERTISEMENT_SECRET)
+            .public_key()
+            .public_bytes_raw()
+        )
+        with self.assertRaises(HandshakeError):
+            verify_transition(self.profile, public, seed("this/transcript"), wrong)
+
+    def test_a_responder_cannot_carry_a_key_it_cannot_sign_for(self) -> None:
+        # The attack the transition exists to stop: copy someone's advertised
+        # key and attract joiners to an address you control. The responder can
+        # carry the key, because it is public, and cannot sign for it.
+        psk = seed("admission")
+        joiner, inviter, _ = self.admission_parties(psk, psk)
+        victim = (
+            Ed25519PrivateKey.from_private_bytes(seed("someone/else"))
+            .public_key()
+            .public_bytes_raw()
+        )
+        inviter.advertisement_public = victim
+        inviter.read_message_1(joiner.write_message_1())
+        selection = Selection(self.profile.protocol_version, 2, 3, 4, 0x0101, 1)
+        record = inviter.write_message_2(selection)
+        with self.assertRaises(HandshakeError):
+            joiner.read_message_2(record)
+
+    def test_an_admission_responder_needs_an_advertisement_key(self) -> None:
+        # D16 again, as a refusal: there is no way to admit without binding.
+        with self.assertRaises(HandshakeError):
+            Responder(
+                self.profile,
+                Keypair.from_secret(seed("r/static")),
+                Keypair.from_secret(seed("r/ephemeral")),
+                None,
+                admission_psk=seed("admission"),
+                admission_identifier=INVITATION_ID,
             )
 
     def test_a_responder_without_a_peer_static_needs_an_admission_key(self) -> None:

@@ -18,6 +18,9 @@ const INVITATION_ID: [u8; 16] = [0xa1; 16];
 /// What a joiner sends before it has been challenged. Not a special case: it is
 /// a cookie that will not verify, which is the only thing that provokes one.
 const NO_COOKIE: [u8; 32] = [0; 32];
+/// An advertisement signing seed, for tests about admission mode rather than
+/// about the published vectors, which carry their own.
+const ADVERTISEMENT_SECRET: [u8; 32] = [0xc3; 32];
 
 fn registry() -> Fallible<Value> {
     Ok(test_vectors::protocol_registry_v18()?)
@@ -76,6 +79,7 @@ fn profile() -> Fallible<Profile> {
         admission_payload_bytes: number(&registry, "widths_bytes", "b1_admission_payload")?,
         invitation_id_bytes: number(&registry, "widths_bytes", "b12_invitation_id")?,
         cookie_bytes: number(&registry, "widths_bytes", "b12_cookie")?,
+        transition_domain: text(&registry, "domain_separators", "b1_transition")?.into_bytes(),
         admission_initiate_type: record_type(&registry, "admission_initiate")?,
         cookie_challenge_type: record_type(&registry, "cookie_challenge")?,
         handshake_record_types: [
@@ -166,6 +170,10 @@ fn replay(label: &str) -> Fallible<()> {
     let psk: [u8; 32] = key(&vector, "psk")?;
     let invitation_id = bytes(&vector, "admission_identifier")?;
     let admission_cookie = bytes(&vector, "admission_cookie")?;
+    // Empty on the manifest and rekey paths, where it is never read.
+    let advertisement_secret: [u8; 32] = bytes(&vector, "advertisement_secret")?
+        .try_into()
+        .unwrap_or([0_u8; 32]);
     // The responder consumes the profile, and the stateless header read below
     // must happen with one a responder has not been given.
     let for_peek = profile.clone();
@@ -206,6 +214,7 @@ fn replay(label: &str) -> Fallible<()> {
                 peer_static: Some(responder_static_public),
                 invitation_id: &invitation_id,
                 cookie: &admission_cookie,
+                advertisement_secret: None,
             },
             (None, false) => Keying::Manifest {
                 peer_static: responder_static_public,
@@ -227,6 +236,7 @@ fn replay(label: &str) -> Fallible<()> {
                 peer_static: None,
                 invitation_id: &invitation_id,
                 cookie: &admission_cookie,
+                advertisement_secret: Some(&advertisement_secret),
             },
             (None, false) => Keying::Manifest {
                 peer_static: initiator_static_public,
@@ -477,6 +487,7 @@ fn a_header_the_responder_did_not_act_on_is_refused() -> Fallible<()> {
             peer_static: None,
             invitation_id: &[0xb2; 16],
             cookie: &bytes(&vector, "admission_cookie")?,
+            advertisement_secret: Some(&ADVERTISEMENT_SECRET),
         },
     )?;
     assert!(inviter.read_initiate(&record).is_err());
@@ -739,6 +750,7 @@ fn an_admission_handshake_promotes_the_presented_key() -> Fallible<()> {
             peer_static: Some(key(&vector, "responder_static_public")?),
             invitation_id: &INVITATION_ID,
             cookie: &NO_COOKIE,
+            advertisement_secret: Some(&ADVERTISEMENT_SECRET),
         },
     )?;
     let mut inviter = Responder::new(
@@ -750,6 +762,7 @@ fn an_admission_handshake_promotes_the_presented_key() -> Fallible<()> {
             peer_static: None,
             invitation_id: &INVITATION_ID,
             cookie: &NO_COOKIE,
+            advertisement_secret: Some(&ADVERTISEMENT_SECRET),
         },
     )?;
 
@@ -804,6 +817,7 @@ fn an_admission_handshake_needs_the_right_key() -> Fallible<()> {
             peer_static: Some(key(&vector, "responder_static_public")?),
             invitation_id: &INVITATION_ID,
             cookie: &NO_COOKIE,
+            advertisement_secret: Some(&ADVERTISEMENT_SECRET),
         },
     )?;
     let mut inviter = Responder::new(
@@ -815,6 +829,7 @@ fn an_admission_handshake_needs_the_right_key() -> Fallible<()> {
             peer_static: None,
             invitation_id: &INVITATION_ID,
             cookie: &NO_COOKIE,
+            advertisement_secret: Some(&ADVERTISEMENT_SECRET),
         },
     )?;
     assert!(inviter.read_initiate(&joiner.write_initiate()?).is_err());
@@ -843,6 +858,7 @@ fn an_initiator_without_a_peer_static_is_refused() -> Fallible<()> {
             peer_static: None,
             invitation_id: &INVITATION_ID,
             cookie: &NO_COOKIE,
+            advertisement_secret: Some(&ADVERTISEMENT_SECRET),
         },
     )
     .is_err());

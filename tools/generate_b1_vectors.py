@@ -59,12 +59,15 @@ def run_handshake(
     # and the inviter has nothing to pin: it passes None and learns the joiner's
     # static key from the exchange.
     admission_kwargs = {}
+    responder_kwargs = {}
     if admission is not None:
         admission_kwargs = {
             "admission_psk": admission["psk"],
             "admission_identifier": admission["identifier"],
             "admission_cookie": admission["cookie"],
         }
+        # ADR 0049 D16: only the responder holds one, and it holds one always.
+        responder_kwargs = {"advertisement_secret": admission["advertisement_secret"]}
     initiator = Initiator(
         profile,
         initiator_static,
@@ -81,6 +84,7 @@ def run_handshake(
         None if admission is not None else initiator_static.public,
         previous_export,
         **admission_kwargs,
+        **responder_kwargs,
     )
     message_1 = initiator.write_message_1()
     responder.read_message_1(message_1)
@@ -106,6 +110,13 @@ def run_handshake(
         # must do before it has any.
         "admission_identifier": (admission["identifier"] if admission else b"").hex(),
         "admission_cookie": (admission["cookie"] if admission else b"").hex(),
+        # ADR 0049. Published so an independent implementation can verify the
+        # transition without deriving the key, and pinned so it must end up
+        # deriving the same one.
+        "advertisement_secret": (
+            admission["advertisement_secret"] if admission else b""
+        ).hex(),
+        "advertisement_key": (initiator.advertisement_key or b"").hex(),
         # The key the inviter had no way to pin and learned from the exchange.
         "promoted_static": (responder.promoted_static or b"").hex(),
         # The export key this exchange chains to, i.e. the psk0 pre-shared key.
@@ -168,17 +179,28 @@ def build(registry: dict) -> dict[str, object]:
     identifier = digest(b"admission/identifier")[: registry["widths_bytes"]["b12_invitation_id"]]
     cookie = digest(b"admission/cookie")[: registry["widths_bytes"]["b12_cookie"]]
     psk = digest(b"admission/psk")
+    advertisement_secret = digest(b"admission/advertisement")
     challenged = run_handshake(
         profile,
         b"admission",
         None,
-        {"psk": psk, "identifier": identifier, "cookie": cookie},
+        {
+            "psk": psk,
+            "identifier": identifier,
+            "cookie": cookie,
+            "advertisement_secret": advertisement_secret,
+        },
     )
     first_attempt = run_handshake(
         profile,
         b"admission",
         None,
-        {"psk": psk, "identifier": identifier, "cookie": bytes(len(cookie))},
+        {
+            "psk": psk,
+            "identifier": identifier,
+            "cookie": bytes(len(cookie)),
+            "advertisement_secret": advertisement_secret,
+        },
     )
     first_attempt["label"] = "admission-first-attempt"
     if first_attempt["handshake_hash"] == challenged["handshake_hash"]:

@@ -108,6 +108,10 @@ pub struct Listener {
     /// datagram would let a flood set the allocation rate.
     profile: Profile,
     static_secret: [u8; 32],
+    /// ADR 0049 D16: an admitting node holds one whether or not it has
+    /// advertised, because a responder that could decline to bind itself would
+    /// present a joiner with the case it cannot tell apart from an attack.
+    advertisement_secret: [u8; 32],
     pending: HashMap<SocketAddr, Pending>,
     next_peer_id: u32,
     metrics: ListenerMetrics,
@@ -127,6 +131,7 @@ impl Listener {
         bind: SocketAddr,
         suite: [u8; 2],
         static_secret: [u8; 32],
+        advertisement_secret: [u8; 32],
         admission: Admission,
         first_peer_id: u32,
         now_ms: u64,
@@ -141,6 +146,7 @@ impl Listener {
             suite,
             profile: profile(suite),
             static_secret,
+            advertisement_secret,
             pending: HashMap::new(),
             next_peer_id: first_peer_id,
             metrics: ListenerMetrics::default(),
@@ -262,6 +268,7 @@ impl Listener {
             peer_static: None,
             invitation_id: &grant.invitation_id,
             cookie: &grant.cookie,
+            advertisement_secret: Some(&self.advertisement_secret),
         };
         let Ok(mut responder) =
             Responder::new(self.profile.clone(), self.static_secret, ephemeral, keying)

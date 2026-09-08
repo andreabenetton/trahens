@@ -75,6 +75,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                 peer_static: Some(inviter_static),
                 invitation_id: &identifier,
                 cookie,
+                // A joiner has nothing to sign: it checks the responder's
+                // transition rather than producing one.
+                advertisement_secret: None,
             },
         )?;
         let record = initiator.write_initiate()?;

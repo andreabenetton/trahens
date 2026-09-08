@@ -57,16 +57,25 @@ Verifying one shows that the advertiser holds the short-lived key and that the
 fields have not been altered. That is all.
 
 It carries **no binding from the short-lived key to the admission identity**
-the advertiser will later use. That binding is D5's signed transition, and it
-cannot live here: putting an admission static key in an unauthenticated
-datagram is exactly the stable network-wide identifier section 6 forbids, and
-exactly what advertising under a long-term key was rejected for. The transition
-therefore belongs inside the handshake transcript, where it is protected, and
-is specified with the admission exchange rather than here.
+the advertiser will later use. That binding cannot live here: putting an
+admission static key in an unauthenticated datagram is exactly the stable
+network-wide identifier section 6 forbids, and exactly what advertising under a
+long-term key was rejected for. The transition therefore lives inside the
+handshake transcript, where it is protected, and is specified with the admission
+exchange in `link-handshake-b1.md` section 4.1 (ADR 0045 D5, ADR 0049).
 
-Until that exists, an advertisement is a hint about where to try, not a
-statement about who will answer. A reader MUST NOT treat a verified
-advertisement as evidence of the advertiser's admission identity.
+So an advertisement on its own is a hint about where to try, not a statement
+about who will answer, and a reader MUST NOT treat a verified advertisement as
+evidence of the advertiser's admission identity. What the transition adds is
+that the claim becomes checkable **after** an exchange: a joiner that completes
+one holds the advertisement key its peer proved control of, and can compare it
+against the candidate it chose. An advertisement that described someone else is
+detected then, rather than never.
+
+It does not become checkable *before*. Doing that would need the advertiser's
+admission identity in the datagram, which section 6 forbids for the reason D5
+exists, so the candidate cache remains a set of hints that are worth acting on
+and are not evidence until acted on.
 
 ## 4. The candidate cache
 

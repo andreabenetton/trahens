@@ -221,6 +221,7 @@ DOMAIN_B12_COOKIE = b'Trahens-B12-cookie-v1'
 DOMAIN_B12_ADVERTISEMENT = b'Trahens-B12-advertisement-v1'
 DOMAIN_B12_STORE_RECORD = b'Trahens-B12-store-record-v1'
 DOMAIN_B12_INVITATION_PSK = b'Trahens-B12-invitation-psk-v1'
+DOMAIN_B1_TRANSITION = b'Trahens-B1-advertisement-transition-v1'
 DOMAIN_B1_EPOCH = b'Trahens-B1-epoch-v1'
 DOMAIN_B1_EXPORT = b'Trahens-B1-export-v1'
 

@@ -26,6 +26,10 @@ import hmac
 from dataclasses import dataclass, field
 
 from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
 from cryptography.hazmat.primitives.asymmetric.x25519 import (
     X25519PrivateKey,
     X25519PublicKey,
@@ -35,6 +39,8 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 HASHLEN = 32
 DHLEN = 32
 TAGLEN = 16
+SIGNATURE_BYTES = 64
+SELECTION_BYTES = 7
 
 
 class HandshakeError(ValueError):
@@ -55,6 +61,7 @@ class B1Profile:
     static_psk_domain: bytes
     epoch_domain: bytes
     export_domain: bytes
+    transition_domain: bytes
     record_bytes: int
     initiate_payload_psk_bytes: int
     admission_header_bytes: int
@@ -87,6 +94,7 @@ def load_profile(registry: dict) -> B1Profile:
         static_psk_domain=domains["b1_static_psk"].encode(),
         epoch_domain=domains["b1_epoch"].encode(),
         export_domain=domains["b1_export"].encode(),
+        transition_domain=domains["b1_transition"].encode(),
         record_bytes=int(widths["b1_record"]),
         initiate_payload_psk_bytes=int(widths["b1_initiate_payload_psk"]),
         admission_header_bytes=int(widths["b1_admission_header"]),
@@ -378,6 +386,31 @@ def admission_header(profile: B1Profile, identifier: bytes, cookie: bytes) -> by
     return header
 
 
+def sign_transition(profile: B1Profile, signing_seed: bytes, handshake_hash: bytes) -> bytes:
+    """Bind an advertisement key to the exchange that is completing.
+
+    ADR 0049 D15. The transcript is signed, not the static key: a signature over
+    the static key alone would be a standing certificate, replayable into any
+    exchange by anyone who saw it once. `handshake_hash` already covers both
+    ephemerals, the responder's static key and the cleartext admission header,
+    so one signature binds the advertisement key to this responder, this joiner
+    and this exchange together.
+    """
+    message = profile.transition_domain + handshake_hash
+    return Ed25519PrivateKey.from_private_bytes(signing_seed).sign(message)
+
+
+def verify_transition(
+    profile: B1Profile, advertisement_key: bytes, handshake_hash: bytes, signature: bytes
+) -> None:
+    """Raise unless `advertisement_key` signed this exchange."""
+    message = profile.transition_domain + handshake_hash
+    try:
+        Ed25519PublicKey.from_public_bytes(advertisement_key).verify(signature, message)
+    except Exception as error:  # noqa: BLE001 -- one outcome, as everywhere here
+        raise HandshakeError("advertisement transition does not verify") from error
+
+
 def peek_admission_header(profile: B1Profile, record: bytes) -> tuple[bytes, bytes]:
     """Read the cleartext header of an admission initiate, holding no state.
 
@@ -589,6 +622,11 @@ class Initiator:
         self.state = _begin(profile, self.rekey, psk)
         self.remote_ephemeral: bytes | None = None
         self.selection: Selection | None = None
+        # Set by read_message_2 on an admission handshake, once the responder
+        # has proved it holds this advertisement key. Comparing it against a
+        # cached candidate is the caller's step: this only says the exchange was
+        # bound to it.
+        self.advertisement_key: bytes | None = None
 
     def _type(self, stage: str) -> str:
         if self.admission and stage == "initiate":
@@ -636,8 +674,23 @@ class Initiator:
         rs = self.state.decrypt_and_hash(record[cursor : cursor + DHLEN + TAGLEN])
         cursor += DHLEN + TAGLEN
         self.state.mix_key(dh(self.ephemeral, rs))
+        # Captured before the payload is decrypted, because that is the value
+        # the responder signed and the one the AEAD is about to consume as
+        # associated data. Reading it afterwards would read a hash that already
+        # covers the signature verifying against it.
+        signed_hash = self.state.handshake_hash
         framed = self.state.decrypt_and_hash(record[cursor:])
-        selection = Selection.decode(_unframe_payload(framed, p.respond_payload_bytes))
+        body = _unframe_payload(framed, p.respond_payload_bytes)
+        if self.admission:
+            # ADR 0049: selection, then the advertisement key and its signature.
+            if len(body) != SELECTION_BYTES + DHLEN + SIGNATURE_BYTES:
+                raise HandshakeError("malformed admission respond payload")
+            advertisement_key = body[SELECTION_BYTES : SELECTION_BYTES + DHLEN]
+            signature = body[SELECTION_BYTES + DHLEN :]
+            verify_transition(p, advertisement_key, signed_hash, signature)
+            self.advertisement_key = advertisement_key
+            body = body[:SELECTION_BYTES]
+        selection = Selection.decode(body)
         # The pin check comes after authentication of the presented key and
         # before any key is derived: a mismatch aborts here.
         if not hmac.compare_digest(rs, self.expected_peer_static):
@@ -673,6 +726,7 @@ class Responder:
         admission_psk: bytes | None = None,
         admission_identifier: bytes | None = None,
         admission_cookie: bytes | None = None,
+        advertisement_secret: bytes | None = None,
     ) -> None:
         """A responder in one of three modes, distinguished by its key source.
 
@@ -692,11 +746,24 @@ class Responder:
             raise HandshakeError("only an admission handshake may omit the peer static")
         if (admission_psk is None) != (admission_identifier is None):
             raise HandshakeError("an admission handshake needs its invitation identifier")
+        # ADR 0049 D16: unconditional on the admission path. A responder that
+        # could decline to bind itself would present the joiner with exactly the
+        # case it cannot tell apart from an attack, so there is no way to admit
+        # without one.
+        if (admission_psk is None) != (advertisement_secret is None):
+            raise HandshakeError("an admission handshake needs an advertisement key")
         self.profile = profile
         self.static = static
         self.ephemeral = ephemeral
         self.expected_peer_static = expected_peer_static
         self.admission = admission_psk is not None
+        if advertisement_secret is not None:
+            self.advertisement_secret = advertisement_secret
+            self.advertisement_public = (
+                Ed25519PrivateKey.from_private_bytes(advertisement_secret)
+                .public_key()
+                .public_bytes_raw()
+            )
         self.rekey = previous_export is not None
         if previous_export is not None:
             psk = previous_export
@@ -764,7 +831,14 @@ class Responder:
         record = _record_prefix(p, self._type("respond")) + self.ephemeral.public
         record += self.state.encrypt_and_hash(self.static.public)
         self.state.mix_key(dh(self.static, self.remote_ephemeral))
-        payload = _frame_payload(selection.encode(), p.respond_payload_bytes)
+        body = selection.encode()
+        if self.admission:
+            # ADR 0049 D15/D16. Signed over the transcript as it stands here,
+            # which is the value the AEAD below uses as associated data, so the
+            # initiator holds the same one before it decrypts.
+            body += self.advertisement_public
+            body += sign_transition(p, self.advertisement_secret, self.state.handshake_hash)
+        payload = _frame_payload(body, p.respond_payload_bytes)
         record += self.state.encrypt_and_hash(payload)
         if len(record) != p.record_bytes:
             raise HandshakeError("record width mismatch")

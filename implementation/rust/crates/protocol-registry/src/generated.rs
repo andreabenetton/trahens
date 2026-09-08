@@ -219,5 +219,6 @@ pub const DOMAIN_B12_COOKIE: &[u8] = b"Trahens-B12-cookie-v1";
 pub const DOMAIN_B12_ADVERTISEMENT: &[u8] = b"Trahens-B12-advertisement-v1";
 pub const DOMAIN_B12_STORE_RECORD: &[u8] = b"Trahens-B12-store-record-v1";
 pub const DOMAIN_B12_INVITATION_PSK: &[u8] = b"Trahens-B12-invitation-psk-v1";
+pub const DOMAIN_B1_TRANSITION: &[u8] = b"Trahens-B1-advertisement-transition-v1";
 pub const DOMAIN_B1_EPOCH: &[u8] = b"Trahens-B1-epoch-v1";
 pub const DOMAIN_B1_EXPORT: &[u8] = b"Trahens-B1-export-v1";

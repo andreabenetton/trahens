@@ -23,6 +23,7 @@ const INVITATION_ID: [u8; 16] = [0xa1; 16];
 const INVITATION_SECRET: [u8; 32] = [0x77; 32];
 const INVITER_STATIC: [u8; 32] = [0x11; 32];
 const JOINER_STATIC: [u8; 32] = [0x22; 32];
+const ADVERTISEMENT_SECRET: [u8; 32] = [0xc3; 32];
 
 struct Scratch(PathBuf);
 
@@ -56,6 +57,7 @@ fn listener(scratch: &Scratch) -> Fallible<Listener> {
         "127.0.0.1:0".parse::<SocketAddr>()?,
         SUITE_C1_V2,
         INVITER_STATIC,
+        ADVERTISEMENT_SECRET,
         admission(scratch)?,
         1_000,
         0,
@@ -103,6 +105,7 @@ impl Joiner {
                 peer_static: Some(x25519_base(&INVITER_STATIC)?),
                 invitation_id: &INVITATION_ID,
                 cookie,
+                advertisement_secret: None,
             },
         )?;
         let record = initiator.write_initiate()?;

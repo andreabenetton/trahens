@@ -216,6 +216,38 @@ first field. It cannot be the whole header, which contains the cookie itself.
 Binding it means a cookie issued for one invitation cannot be spent on another
 from the same address.
 
+The second message's payload differs on this path, and only on this path:
+
+```text
+manifest, rekey:  selection
+admission:        selection || advertisement_key(32) || transition(64)
+```
+
+`transition = Ed25519-Sign(advertisement_secret, b1_transition || h)`, where `h`
+is the handshake hash at the moment that payload is about to be encrypted — the
+same value the AEAD takes as associated data, so both ends hold it without
+carrying a second transcript. It already covers both ephemerals, the responder's
+static key and the cleartext admission header, so one signature binds the
+advertisement key to this responder, this joiner and this exchange.
+
+The transcript is signed rather than the static key. A signature over the static
+key alone would be a standing certificate: replayable into any exchange by
+anyone who saw it once, which is ADR 0045 D5's "the two halves can be attacked
+separately".
+
+An initiator MUST verify it against the key the payload carries. That proves
+whoever completed the exchange holds that advertisement key. Comparing the key
+against a **cached advertisement** is a separate step and is the one that makes
+it a statement about the candidate the joiner chose; a joiner that arrived
+without an advertisement has nothing to compare and is no worse off than before.
+
+It is unconditional here and absent everywhere else (ADR 0049 D16). A responder
+that could decline to bind itself would present a joiner with the one case it
+cannot tell apart from an attack, so an admitting node holds an advertisement
+key whether or not it has advertised. The payload framing is unchanged —
+`b1_respond_payload` (954) has room — so the record stays one cell and the
+manifest and rekey exchanges are byte-identical to what v1.8 publishes.
+
 A responder MUST issue a challenge whether or not it holds the invitation the
 identifier names, and whether or not that invitation has been spent. Replying
 only for invitations it holds would make the reply an oracle: a prober could

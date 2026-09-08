@@ -70,6 +70,7 @@ fn profile() -> Fallible<Profile> {
         admission_payload_bytes: number(&registry, "widths_bytes", "b1_admission_payload")?,
         invitation_id_bytes: number(&registry, "widths_bytes", "b12_invitation_id")?,
         cookie_bytes: number(&registry, "widths_bytes", "b12_cookie")?,
+        transition_domain: text(&registry, "b1_transition")?,
         admission_initiate_type: record_type(&registry, "admission_initiate")?,
         cookie_challenge_type: record_type(&registry, "cookie_challenge")?,
         handshake_record_types: [

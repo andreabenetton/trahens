@@ -38,6 +38,7 @@ fuzz_target!(|data: &[u8]| {
     let chained = [0x5a_u8; 32];
     const INVITATION_ID: [u8; 16] = [0xa1; 16];
     const NO_COOKIE: [u8; 32] = [0; 32];
+    const ADVERTISEMENT_SECRET: [u8; 32] = [0xc3; 32];
 
     let profile = node_runtime::handshake::profile(SUITE_R1);
     let static_secret = [0x11_u8; 32];
@@ -61,6 +62,7 @@ fuzz_target!(|data: &[u8]| {
             peer_static: Some(peer_static),
             invitation_id: &INVITATION_ID,
             cookie: &NO_COOKIE,
+            advertisement_secret: Some(&ADVERTISEMENT_SECRET),
         },
     };
 
