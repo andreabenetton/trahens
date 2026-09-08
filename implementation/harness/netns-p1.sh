@@ -273,7 +273,31 @@ PIDS=()
 NAMES=()
 
 cleanup() {
+  CODE=$?
   set +e
+  # A failing run must say why in its own output. Every node writes its stderr
+  # and its structured events to files under $OUTPUT, and CI does not upload
+  # that directory, so until now a CI failure carried the metrics and nothing
+  # else: the second "the route never set up" failure on the rekey scenario was
+  # diagnosed as far as "the route never set up" and no further, because the
+  # reason was sitting in a file nobody would ever see. Printing on the failure
+  # path only, so a passing run is as quiet as before.
+  if (( CODE != 0 )); then
+    for path in "$OUTPUT"/*.err; do
+      [[ -s "$path" ]] || continue
+      echo "--- ${path##*/} (last 20 lines) ---" >&2
+      tail -20 "$path" >&2
+    done
+    # The events that say how far the run got. A node that never reached these
+    # prints nothing here, which is itself the answer.
+    for path in "$OUTPUT"/*.log; do
+      [[ -s "$path" ]] || continue
+      MARKS=$(grep -oE '"(link_not_ready|link_handshake_failed|discovery_sent|candidate_held|candidate_selected|no_candidate|transport_failure|ready_proof)"' "$path" | sort | uniq -c)
+      [[ -n "$MARKS" ]] || continue
+      echo "--- ${path##*/} milestones ---" >&2
+      echo "$MARKS" >&2
+    done
+  fi
   for pid in "${PIDS[@]:-}"; do kill "$pid" 2>/dev/null; done
   for name in "${NAMES[@]:-}"; do ip netns del "$name" 2>/dev/null; done
 }
