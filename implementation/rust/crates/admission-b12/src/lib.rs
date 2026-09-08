@@ -22,7 +22,7 @@ pub use admission::{Admission, AdmissionError};
 pub use advertisement::Advertisement;
 pub use candidates::{CacheError, Candidate, CandidateCache};
 pub use gate::{Gate, GateError, Lease, ReturnRoutable};
-pub use inbound::{classify, Disposition, DropReason, FrontEnd, Kind};
+pub use inbound::{classify, Datagram, Disposition, DropReason, FrontEnd, Grant, Kind};
 pub use invitation::{invitation_psk, Invitation};
 pub use store::{Record, Store, StoreError};
 

@@ -7,6 +7,9 @@ license.workspace = true
 [dependencies]
 protocol-registry = { path = "../protocol-registry" }
 trahens-crypto = { path = "../crypto" }
+# B1.2 admits over the B1.1 handshake, so the header layout stays in the crate
+# that owns the records rather than being re-parsed at fixed offsets here.
+link-handshake-b1 = { path = "../link-handshake-b1" }
 
 [dev-dependencies]
 test-vectors = { path = "../test-vectors" }

@@ -211,8 +211,26 @@ receiver MUST reject a challenge whose padding is non-zero, as for every other
 record.
 
 `admission-cookie-b12.md` defines the cookie's `offer` input as the parameters
-offered so far; on this path that is the cleartext admission header, so a cookie
-issued for one invitation cannot be spent on another from the same address.
+offered so far; on this path that is **the invitation identifier**, the header's
+first field. It cannot be the whole header, which contains the cookie itself.
+Binding it means a cookie issued for one invitation cannot be spent on another
+from the same address.
+
+A responder MUST issue a challenge whether or not it holds the invitation the
+identifier names, and whether or not that invitation has been spent. Replying
+only for invitations it holds would make the reply an oracle: a prober could
+enumerate which identifiers a node is carrying, and — because a spent invitation
+stops being live — which it has already used.
+
+A responder MUST look the invitation up **after** allocating, not before. Before
+the gate, anyone holding a cookie could probe for valid identifiers at the cost
+of a hash lookup; after it, a probe spends the prober's own public-key budget and
+counts toward its backoff. The context MUST be released as a *failure* when the
+lookup refuses, or the probe costs nothing after all.
+
+A node that holds no admission state MUST refuse rather than challenge. ADR 0047
+D12 requires a store path for any node that can admit, and a challenge a node
+could not follow through on is a reply it should not have sent.
 
 Nothing acknowledges the third message, so an initiator that sent it cannot
 know it arrived. A responder that has not received it MUST keep resending its

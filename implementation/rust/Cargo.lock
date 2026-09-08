@@ -7,6 +7,7 @@ name = "admission-b12"
 version = "1.5.0"
 dependencies = [
  "hex",
+ "link-handshake-b1",
  "protocol-registry",
  "test-vectors",
  "trahens-crypto",

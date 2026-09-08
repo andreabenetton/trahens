@@ -42,11 +42,11 @@ IPv4 and 16 for IPv6. `offer` is the parameter set the sender offered so far.
 `responder_secret` is 32 bytes and is never transmitted.
 
 On the admission path of `link-handshake-b1.md` section 4.1, `offer` is the
-cleartext admission header — the invitation identifier — because that is
-everything the sender has offered in the clear at the moment the cookie is
-issued, the rest being encrypted under a key the cookie precedes. Binding it
-means a cookie issued for one invitation cannot be spent on another from the
-same address.
+invitation identifier: everything the sender has offered in the clear at the
+moment the cookie is issued, the rest being encrypted under a key the cookie
+precedes. It is the identifier alone and not the whole cleartext header, which
+contains the cookie itself. Binding it means a cookie issued for one invitation
+cannot be spent on another from the same address.
 
 Every variable-length field is length-prefixed. Without that a source address
 and an offer could be split differently and produce the same message, so a
