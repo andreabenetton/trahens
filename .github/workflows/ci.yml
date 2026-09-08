@@ -167,6 +167,10 @@ jobs:
         run: |
           sudo -E implementation/harness/netns-admission.sh --scenario seeded \
             --tag g --output "$GITHUB_WORKSPACE/build/p1-admission-seeded"
+      - name: An advertisement is what puts a candidate in the cache
+        run: |
+          sudo -E implementation/harness/netns-admission.sh --scenario discovery \
+            --tag i --output "$GITHUB_WORKSPACE/build/p1-admission-discovery"
       - name: A trusted seed naming the wrong key does not admit the joiner
         run: |
           sudo -E implementation/harness/netns-admission.sh --scenario malicious-seed \

@@ -24,6 +24,8 @@
 #   malicious-seed
 #              a manifest signed by the same trusted key names the wrong
 #              advertisement key, and the joiner refuses
+#   discovery  a node advertises, another caches what it receives, and the
+#              advertisement is the only thing that put a candidate there
 #
 # The last two need a third namespace, because the property they check is that
 # one source's behaviour does not decide another's. With attacker and victim at
@@ -56,7 +58,7 @@ while (( $# )); do
 done
 
 case "$SCENARIO" in
-  ok|replay|restart|hostile|spoof|exhaustion|seeded|malicious-seed) ;;
+  ok|replay|restart|hostile|spoof|exhaustion|seeded|malicious-seed|discovery) ;;
   *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;;
 esac
 
@@ -274,6 +276,29 @@ if [[ "$SCENARIO" == hostile ]]; then
   sleep 4.5
 fi
 
+if [[ "$SCENARIO" == discovery ]]; then
+  # A second admitting node in the joiner namespace, advertising to the first.
+  # Two admitters rather than an admitter and a joiner because the candidate
+  # cache lives behind a listening socket: only a node that listens can receive
+  # an advertisement, which is D6's separation showing up in the topology.
+  ip netns exec "$JOINER_NS" "$BIN/trahens-admit" \
+    --bind "$JOINER_IP:$PORT" \
+    --store "$OUTPUT/advertiser.store" \
+    --static-secret "$SECOND_JOINER_SECRET" \
+    --advertisement-secret "$(printf '66%.0s' {1..32})" \
+    --invitations "$ID_TWO:$SECRET_TWO" \
+    --first-peer-id 2000 \
+    --advertise-to "$INVITER_IP:$PORT" \
+    --advertise-interval-ms 100 \
+    --timeout-ms "$ADMIT_TIMEOUT_MS" \
+    >"$OUTPUT/advertiser.log" 2>"$OUTPUT/advertiser.err" &
+  PIDS+=($!)
+  for _ in $(seq 1 200); do
+    if grep -qs '"event":"listening"' "$OUTPUT/advertiser.log"; then break; fi
+    sleep 0.05
+  done
+fi
+
 if [[ "$SCENARIO" == exhaustion ]]; then
   # One address opens exchanges and walks away from each. The count is derived
   # from the budget rather than written down, so the scenario moves when the
@@ -290,6 +315,55 @@ if [[ "$SCENARIO" == exhaustion ]]; then
       ABANDONED=$((ABANDONED + 1))
     fi
   done
+fi
+
+if [[ "$SCENARIO" == discovery ]]; then
+  # No joiner: what is under test is that an advertisement, and only an
+  # advertisement, put a candidate in the receiver's cache.
+  # Both nodes report their counters when they stop, and they do not stop
+  # together: the advertiser started later, so reading its log when the receiver
+  # finished would read it before it had written anything.
+  for _ in $(seq 1 600); do
+    if grep -qs '"event":"stopped"' "$INVITER_LOG" &&
+      grep -qs '"event":"stopped"' "$OUTPUT/advertiser.log"; then
+      break
+    fi
+    sleep 0.05
+  done
+  SENT=$(grep -o '"advertisements_sent":"[0-9]*"' "$OUTPUT/advertiser.log" |
+    grep -o '[0-9]*' | tail -1 || true)
+  CACHED=$(grep -o '"advertisements_cached":"[0-9]*"' "$INVITER_LOG" |
+    grep -o '[0-9]*' | tail -1 || true)
+  CANDIDATES=$(grep -o '"candidates":"[0-9]*"' "$INVITER_LOG" |
+    grep -o '[0-9]*' | tail -1 || true)
+  if [[ -z "$SENT" ]] || (( SENT < 2 )); then
+    echo "scenario discovery: the advertiser sent ${SENT:-no} advertisements, so" >&2
+    echo "the receiver having none proves nothing" >&2
+    exit 1
+  fi
+  if [[ "${CACHED:-0}" == "0" ]]; then
+    echo "scenario discovery: ${SENT} advertisements were sent and none was" >&2
+    echo "cached, so nothing reached the receiver or nothing verified" >&2
+    exit 1
+  fi
+  if [[ "${CANDIDATES:-0}" == "0" ]]; then
+    echo "scenario discovery: advertisements were cached and the candidate cache" >&2
+    echo "is empty, which cannot both be true" >&2
+    exit 1
+  fi
+  # D6: receiving an advertisement allocates nothing but a cache entry.
+  OPEN=$(grep -o '"handshake_contexts_open":"[0-9]*"' "$INVITER_LOG" |
+    grep -o '[0-9]*' | tail -1 || true)
+  ADMITTED=$(grep -o '"admissions_completed":"[0-9]*"' "$INVITER_LOG" |
+    grep -o '[0-9]*' | tail -1 || true)
+  if [[ "${OPEN:-1}" != "0" || "${ADMITTED:-1}" != "0" ]]; then
+    echo "scenario discovery: discovery allocated handshake state, which ADR 0045" >&2
+    echo "D6 forbids: ${OPEN} contexts open, ${ADMITTED} admissions" >&2
+    exit 1
+  fi
+  echo "scenario discovery: ${SENT} advertisements sent, ${CACHED} cached," \
+    "${CANDIDATES} candidate(s) held, and no handshake state allocated"
+  exit 0
 fi
 
 JOIN_STATUS=0
