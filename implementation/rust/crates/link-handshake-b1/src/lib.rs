@@ -62,6 +62,17 @@ pub enum Stage {
     Finish,
 }
 
+/// Which of the three exchanges a record belongs to.
+///
+/// A second boolean beside `rekey` would have admitted a state that means
+/// nothing -- a rekey that is also an admission -- so the two are one value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Manifest,
+    Rekey,
+    Admission,
+}
+
 /// The registry values the handshake needs.
 #[derive(Debug, Clone)]
 pub struct Profile {
@@ -77,6 +88,14 @@ pub struct Profile {
     pub initiate_payload_psk_bytes: usize,
     pub respond_payload_bytes: usize,
     pub finish_payload_bytes: usize,
+    /// The cleartext header an admission initiate carries, and the narrower
+    /// payload it frames because of it (ADR 0048 D14).
+    pub admission_header_bytes: usize,
+    pub admission_payload_bytes: usize,
+    pub invitation_id_bytes: usize,
+    pub cookie_bytes: usize,
+    pub admission_initiate_type: u8,
+    pub cookie_challenge_type: u8,
     /// Initiate, respond, finish for an initial handshake.
     pub handshake_record_types: [u8; 3],
     /// The same three for a rekey.
@@ -88,8 +107,14 @@ pub struct Profile {
 }
 
 impl Profile {
-    fn record_type(&self, rekey: bool, stage: Stage) -> u8 {
-        let table = if rekey {
+    fn record_type(&self, mode: Mode, stage: Stage) -> u8 {
+        // Only the first message of an admission exchange differs. Its second
+        // and third are ordinary handshake records, because by then the peers
+        // are inside a transcript and nothing distinguishes the paths.
+        if mode == Mode::Admission && stage == Stage::Initiate {
+            return self.admission_initiate_type;
+        }
+        let table = if mode == Mode::Rekey {
             &self.rekey_record_types
         } else {
             &self.handshake_record_types
@@ -101,10 +126,12 @@ impl Profile {
         }
     }
 
-    fn payload_bytes(&self, stage: Stage) -> usize {
+    fn payload_bytes(&self, mode: Mode, stage: Stage) -> usize {
         match stage {
             // Both exchanges are psk0, so both encrypt this payload and both
-            // carry its tag; the record is one cell either way.
+            // carry its tag; the record is one cell either way. An admission
+            // initiate frames a narrower one, having spent bytes on its header.
+            Stage::Initiate if mode == Mode::Admission => self.admission_payload_bytes,
             Stage::Initiate => self.initiate_payload_psk_bytes,
             Stage::Respond => self.respond_payload_bytes,
             Stage::Finish => self.finish_payload_bytes,
@@ -525,6 +552,14 @@ pub enum Keying<'a> {
     Admission {
         psk: &'a [u8; 32],
         peer_static: Option<[u8; 32]>,
+        /// The invitation this exchange is keyed by, in the clear on the first
+        /// record so a responder can find the key without trial-decrypting
+        /// against every live invitation (ADR 0046 D8).
+        invitation_id: &'a [u8],
+        /// The cookie echoed back to the responder. All zero on a first
+        /// attempt, which is not a special case: it fails to verify, and
+        /// failing is what provokes a challenge (ADR 0048 D13).
+        cookie: &'a [u8],
     },
 }
 
@@ -533,6 +568,26 @@ impl Keying<'_> {
         match self {
             Self::Manifest { peer_static } | Self::Rekey { peer_static, .. } => Some(*peer_static),
             Self::Admission { peer_static, .. } => *peer_static,
+        }
+    }
+
+    fn mode(&self) -> Mode {
+        match self {
+            Self::Manifest { .. } => Mode::Manifest,
+            Self::Rekey { .. } => Mode::Rekey,
+            Self::Admission { .. } => Mode::Admission,
+        }
+    }
+
+    /// The cleartext header this keying puts on the first record, if any.
+    fn header(&self, profile: &Profile) -> Result<Vec<u8>> {
+        match self {
+            Self::Admission {
+                invitation_id,
+                cookie,
+                ..
+            } => admission_header(profile, invitation_id, cookie),
+            _ => Ok(Vec::new()),
         }
     }
 
@@ -598,12 +653,122 @@ fn begin(profile: &Profile, rekey: bool, psk: &[u8; 32]) -> Result<SymmetricStat
     Ok(state)
 }
 
-fn prefix(profile: &Profile, rekey: bool, stage: Stage) -> Vec<u8> {
+/// The cleartext prefix of an admission initiate: identifier then cookie.
+///
+/// Cleartext but not unprotected. It is mixed into the transcript before the
+/// ephemeral, so altering either field makes the payload fail to open, and a
+/// man in the middle can neither strip the cookie nor move it onto another
+/// invitation.
+///
+/// # Errors
+///
+/// [`HandshakeError`] if either field is not the width the registry fixes.
+pub fn admission_header(profile: &Profile, invitation_id: &[u8], cookie: &[u8]) -> Result<Vec<u8>> {
+    if invitation_id.len() != profile.invitation_id_bytes || cookie.len() != profile.cookie_bytes {
+        return Err(HandshakeError);
+    }
+    let mut header = Vec::with_capacity(profile.admission_header_bytes);
+    header.extend_from_slice(invitation_id);
+    header.extend_from_slice(cookie);
+    if header.len() != profile.admission_header_bytes {
+        return Err(HandshakeError);
+    }
+    Ok(header)
+}
+
+/// Read the cleartext header of an admission initiate, holding no state.
+///
+/// What a responder calls first: it needs the identifier to find the invitation
+/// the key comes from, and the cookie to decide whether to allocate at all.
+/// Both happen before any Diffie-Hellman, which is why they are in the clear.
+///
+/// # Errors
+///
+/// [`HandshakeError`] if the record is not an admission initiate of the right
+/// width.
+pub fn peek_admission_header(profile: &Profile, record: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
+    let body = split_record(profile, record, Mode::Admission, Stage::Initiate)?;
+    let identifier = body
+        .get(..profile.invitation_id_bytes)
+        .ok_or(HandshakeError)?
+        .to_vec();
+    let cookie = body
+        .get(profile.invitation_id_bytes..profile.admission_header_bytes)
+        .ok_or(HandshakeError)?
+        .to_vec();
+    Ok((identifier, cookie))
+}
+
+/// The responder's answer to a first message whose cookie did not verify.
+///
+/// ADR 0048 D13. It allocates nothing and authenticates nothing: a joiner that
+/// acts on a forged one echoes a cookie that will not verify and is challenged
+/// again. One cell wide like every other record, so answering a spoofed source
+/// amplifies by a factor of one.
+///
+/// # Errors
+///
+/// [`HandshakeError`] if either field is the wrong width.
+pub fn encode_cookie_challenge(
+    profile: &Profile,
+    invitation_id: &[u8],
+    cookie: &[u8],
+) -> Result<Vec<u8>> {
+    let mut record = vec![0_u8; profile.record_prefix_bytes];
+    if let Some(slot) = record.last_mut() {
+        *slot = profile.cookie_challenge_type;
+    }
+    record.extend_from_slice(&admission_header(profile, invitation_id, cookie)?);
+    record.resize(profile.record_bytes, 0);
+    Ok(record)
+}
+
+/// Parse a challenge into its identifier and cookie.
+///
+/// The padding is checked because a receiver must not accept a record with
+/// anything hidden behind its declared fields, even one carrying no
+/// authentication of its own.
+///
+/// # Errors
+///
+/// [`HandshakeError`] on a wrong width, a wrong type, or non-zero padding.
+pub fn decode_cookie_challenge(profile: &Profile, record: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
+    if record.len() != profile.record_bytes {
+        return Err(HandshakeError);
+    }
+    let mut expected = vec![0_u8; profile.record_prefix_bytes];
+    if let Some(slot) = expected.last_mut() {
+        *slot = profile.cookie_challenge_type;
+    }
+    if record.get(..expected.len()) != Some(expected.as_slice()) {
+        return Err(HandshakeError);
+    }
+    let body = record.get(expected.len()..).ok_or(HandshakeError)?;
+    let identifier = body
+        .get(..profile.invitation_id_bytes)
+        .ok_or(HandshakeError)?
+        .to_vec();
+    let cookie = body
+        .get(profile.invitation_id_bytes..profile.admission_header_bytes)
+        .ok_or(HandshakeError)?
+        .to_vec();
+    if body
+        .get(profile.admission_header_bytes..)
+        .ok_or(HandshakeError)?
+        .iter()
+        .any(|byte| *byte != 0)
+    {
+        return Err(HandshakeError);
+    }
+    Ok((identifier, cookie))
+}
+
+fn prefix(profile: &Profile, mode: Mode, stage: Stage) -> Vec<u8> {
     // The leading zero is what lets a receiver tell a handshake record from a
     // W2 cell without trial decryption: derived epochs have their top bit set.
     let mut out = vec![0_u8; profile.record_prefix_bytes];
     if let Some(slot) = out.last_mut() {
-        *slot = profile.record_type(rekey, stage);
+        *slot = profile.record_type(mode, stage);
     }
     out
 }
@@ -611,13 +776,13 @@ fn prefix(profile: &Profile, rekey: bool, stage: Stage) -> Vec<u8> {
 fn split_record<'a>(
     profile: &Profile,
     record: &'a [u8],
-    rekey: bool,
+    mode: Mode,
     stage: Stage,
 ) -> Result<&'a [u8]> {
     if record.len() != profile.record_bytes {
         return Err(HandshakeError);
     }
-    let expected = prefix(profile, rekey, stage);
+    let expected = prefix(profile, mode, stage);
     if record.get(..expected.len()) != Some(expected.as_slice()) {
         return Err(HandshakeError);
     }
@@ -649,7 +814,9 @@ pub struct Initiator {
     ephemeral_public: [u8; 32],
     expected_peer_static: [u8; 32],
     offer: Offer,
-    rekey: bool,
+    mode: Mode,
+    /// Empty on every path but admission.
+    header: Vec<u8>,
     state: SymmetricState,
     remote_ephemeral: Option<[u8; 32]>,
     selection: Option<Selection>,
@@ -669,6 +836,7 @@ impl Initiator {
         // learning an identity it did not already hold.
         let expected_peer_static = keying.peer_static().ok_or(HandshakeError)?;
         let psk = keying.psk(&profile, &static_secret)?;
+        let header = keying.header(&profile)?;
         let state = begin(&profile, keying.is_rekey(), &psk)?;
         Ok(Self {
             static_public: x25519_base(&static_secret)?,
@@ -677,7 +845,8 @@ impl Initiator {
             ephemeral_secret: SecretBytes(ephemeral_secret),
             expected_peer_static,
             offer,
-            rekey: keying.is_rekey(),
+            mode: keying.mode(),
+            header,
             state,
             remote_ephemeral: None,
             selection: None,
@@ -685,15 +854,21 @@ impl Initiator {
         })
     }
 
-    /// `-> e`
+    /// `-> [header] e`
     pub fn write_initiate(&mut self) -> Result<Vec<u8>> {
+        // Mixed before the ephemeral, so the cleartext header is inside the
+        // transcript and altering it makes the payload fail to open.
+        if !self.header.is_empty() {
+            self.state.mix_hash(&self.header)?;
+        }
         self.state.mix_ephemeral(&self.ephemeral_public)?;
-        let width = self.profile.payload_bytes(Stage::Initiate);
+        let width = self.profile.payload_bytes(self.mode, Stage::Initiate);
         let mut payload = frame(&self.offer.encode(&self.profile)?, width)?;
         let sealed = self.state.encrypt_and_hash(&payload);
         zeroize_slice(&mut payload);
 
-        let mut record = prefix(&self.profile, self.rekey, Stage::Initiate);
+        let mut record = prefix(&self.profile, self.mode, Stage::Initiate);
+        record.extend_from_slice(&self.header);
         record.extend_from_slice(&self.ephemeral_public);
         record.extend_from_slice(&sealed?);
         if record.len() != self.profile.record_bytes {
@@ -709,7 +884,7 @@ impl Initiator {
     /// makes every one of those retries fail.
     pub fn read_respond(&mut self, record: &[u8]) -> Result<()> {
         let mut state = self.state.clone();
-        let body = split_record(&self.profile, record, self.rekey, Stage::Respond)?;
+        let body = split_record(&self.profile, record, self.mode, Stage::Respond)?;
         let mut cursor = 0_usize;
         let remote_ephemeral = as_key(body.get(..DH_BYTES).ok_or(HandshakeError)?)?;
         cursor += DH_BYTES;
@@ -721,7 +896,7 @@ impl Initiator {
         state.mix_key(&x25519(&self.ephemeral_secret.0, &remote_static)?)?;
 
         let framed = state.decrypt_and_hash(body.get(cursor..).ok_or(HandshakeError)?)?;
-        let width = self.profile.payload_bytes(Stage::Respond);
+        let width = self.profile.payload_bytes(self.mode, Stage::Respond);
         let selection = Selection::decode(&unframe(&framed, width)?)?;
 
         // The key authenticated; the question is whether it is the one the
@@ -746,10 +921,10 @@ impl Initiator {
         let sealed_static = self.state.encrypt_and_hash(&self.static_public)?;
         self.state
             .mix_key(&x25519(&self.static_secret.0, &remote_ephemeral)?)?;
-        let width = self.profile.payload_bytes(Stage::Finish);
+        let width = self.profile.payload_bytes(self.mode, Stage::Finish);
         let sealed_payload = self.state.encrypt_and_hash(&frame(&[], width)?)?;
 
-        let mut record = prefix(&self.profile, self.rekey, Stage::Finish);
+        let mut record = prefix(&self.profile, self.mode, Stage::Finish);
         record.extend_from_slice(&sealed_static);
         record.extend_from_slice(&sealed_payload);
         if record.len() != self.profile.record_bytes {
@@ -775,11 +950,16 @@ pub struct Responder {
     static_public: [u8; 32],
     ephemeral_secret: SecretBytes<32>,
     ephemeral_public: [u8; 32],
+    /// What the caller already read from the record's cleartext header and
+    /// acted on: the identifier it found the key from, and the cookie it
+    /// verified. `read_initiate` confirms the record carries exactly these, so
+    /// the key and the routability proof belong to the record being read.
+    header: Vec<u8>,
+    mode: Mode,
     /// `None` only on an admission handshake, which has no manifest entry.
     expected_peer_static: Option<[u8; 32]>,
     admission: bool,
     promoted_static: Option<[u8; 32]>,
-    rekey: bool,
     state: SymmetricState,
     remote_ephemeral: Option<[u8; 32]>,
     offer: Option<Offer>,
@@ -802,8 +982,9 @@ impl Responder {
             ephemeral_secret: SecretBytes(ephemeral_secret),
             expected_peer_static: keying.peer_static(),
             admission: keying.is_admission(),
+            header: keying.header(&profile)?,
+            mode: keying.mode(),
             promoted_static: None,
-            rekey: keying.is_rekey(),
             state,
             remote_ephemeral: None,
             offer: None,
@@ -835,11 +1016,26 @@ impl Responder {
     /// nothing.
     pub fn read_initiate(&mut self, record: &[u8]) -> Result<Offer> {
         let mut state = self.state.clone();
-        let body = split_record(&self.profile, record, self.rekey, Stage::Initiate)?;
-        let remote_ephemeral = as_key(body.get(..DH_BYTES).ok_or(HandshakeError)?)?;
+        let body = split_record(&self.profile, record, self.mode, Stage::Initiate)?;
+        let mut cursor = 0_usize;
+        if !self.header.is_empty() {
+            let found = body
+                .get(..self.profile.admission_header_bytes)
+                .ok_or(HandshakeError)?;
+            // A record whose header is not the one the caller acted on is a
+            // different record: the key would be right and the routability
+            // proof would belong to something else.
+            if !constant_time_equal(found, &self.header) {
+                return Err(HandshakeError);
+            }
+            state.mix_hash(found)?;
+            cursor += self.profile.admission_header_bytes;
+        }
+        let remote_ephemeral = as_key(body.get(cursor..cursor + DH_BYTES).ok_or(HandshakeError)?)?;
+        cursor += DH_BYTES;
         state.mix_ephemeral(&remote_ephemeral)?;
-        let framed = state.decrypt_and_hash(body.get(DH_BYTES..).ok_or(HandshakeError)?)?;
-        let width = self.profile.payload_bytes(Stage::Initiate);
+        let framed = state.decrypt_and_hash(body.get(cursor..).ok_or(HandshakeError)?)?;
+        let width = self.profile.payload_bytes(self.mode, Stage::Initiate);
         let offer = Offer::decode(&self.profile, &unframe(&framed, width)?)?;
         self.state = state;
         self.remote_ephemeral = Some(remote_ephemeral);
@@ -859,12 +1055,12 @@ impl Responder {
         let sealed_static = self.state.encrypt_and_hash(&self.static_public)?;
         self.state
             .mix_key(&x25519(&self.static_secret.0, &remote_ephemeral)?)?;
-        let width = self.profile.payload_bytes(Stage::Respond);
+        let width = self.profile.payload_bytes(self.mode, Stage::Respond);
         let sealed_payload = self
             .state
             .encrypt_and_hash(&frame(&selection.encode(), width)?)?;
 
-        let mut record = prefix(&self.profile, self.rekey, Stage::Respond);
+        let mut record = prefix(&self.profile, self.mode, Stage::Respond);
         record.extend_from_slice(&self.ephemeral_public);
         record.extend_from_slice(&sealed_static);
         record.extend_from_slice(&sealed_payload);
@@ -883,7 +1079,7 @@ impl Responder {
     pub fn read_finish(&mut self, record: &[u8]) -> Result<Session> {
         let selection = self.selection.ok_or(HandshakeError)?;
         let mut state = self.state.clone();
-        let body = split_record(&self.profile, record, self.rekey, Stage::Finish)?;
+        let body = split_record(&self.profile, record, self.mode, Stage::Finish)?;
         let mut cursor = 0_usize;
 
         let sealed_static = take_static(body, &mut cursor)?;
@@ -891,7 +1087,7 @@ impl Responder {
         state.mix_key(&x25519(&self.ephemeral_secret.0, &remote_static)?)?;
 
         let framed = state.decrypt_and_hash(body.get(cursor..).ok_or(HandshakeError)?)?;
-        let width = self.profile.payload_bytes(Stage::Finish);
+        let width = self.profile.payload_bytes(self.mode, Stage::Finish);
         if !unframe(&framed, width)?.is_empty() {
             return Err(HandshakeError);
         }

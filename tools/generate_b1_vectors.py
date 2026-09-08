@@ -149,9 +149,22 @@ def build(registry: dict) -> dict[str, object]:
     initial = run_handshake(profile, b"initial", None)
     rekey = run_handshake(profile, b"rekey", bytes.fromhex(str(initial["export_key"])))
     # Two admission exchanges: one as a joiner sends it first, with no cookie it
-    # could yet hold, and one as it resends after being challenged. They differ
-    # in the header alone, and every derived value differs with it, which is what
-    # says the header is inside the transcript.
+    # could yet hold, and one as it resends after being challenged.
+    #
+    # Both run under the same label, so they share every key including the
+    # ephemeral. That is deliberate and is what makes them a controlled
+    # comparison: the cookie is the only thing that differs, so anything that
+    # differs between them was caused by the cookie. A real joiner generates a
+    # fresh ephemeral when it retries.
+    #
+    # The consequence of sharing one is worth naming, because the vectors show
+    # it. The header is mixed with MixHash, where Noise puts pre-handshake
+    # public data, so it changes the transcript hash, every record, and the
+    # epoch and export key derived from the hash -- but not the directional
+    # cell keys, because Split derives from the chaining key and MixHash does
+    # not touch it. With distinct ephemerals those would differ too, from the
+    # first Diffie-Hellman on. What the cookie must be is authenticated, and the
+    # hash being the AEAD's associated data is what authenticates it.
     identifier = digest(b"admission/identifier")[: registry["widths_bytes"]["b12_invitation_id"]]
     cookie = digest(b"admission/cookie")[: registry["widths_bytes"]["b12_cookie"]]
     psk = digest(b"admission/psk")

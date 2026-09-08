@@ -57,17 +57,56 @@ fn noise_message(vector: &Value, name: &str) -> Fallible<Vec<u8>> {
     Ok(record[width("b1_record_prefix")?..].to_vec())
 }
 
-fn vector(rekey: bool) -> Fallible<Value> {
+/// Select by label, and refuse a label that is not unique.
+///
+/// This used to select on the `rekey` flag, which stopped identifying a vector
+/// once the admission exchanges were published: three of the four are not
+/// rekeys, so the search returned whichever the generator emitted first and
+/// kept passing. A cross-check that silently compares the wrong record against
+/// an independent implementation is worse than one that fails.
+fn labelled(label: &str) -> Fallible<Value> {
     let document = test_vectors::b1()?;
-    let vectors = document
+    let matching: Vec<Value> = document
         .get("vectors")
         .and_then(Value::as_array)
         .ok_or("b1 vectors document has no vectors array")?
-        .clone();
-    vectors
-        .into_iter()
-        .find(|candidate| candidate.get("rekey").and_then(Value::as_bool) == Some(rekey))
-        .ok_or_else(|| format!("no vector with rekey={rekey}").into())
+        .iter()
+        .filter(|candidate| candidate.get("label").and_then(Value::as_str) == Some(label))
+        .cloned()
+        .collect();
+    match matching.as_slice() {
+        [only] => Ok(only.clone()),
+        [] => Err(format!("no vector labelled {label}").into()),
+        _ => Err(format!("{label} is not unique among the published vectors").into()),
+    }
+}
+
+fn vector(rekey: bool) -> Fallible<Value> {
+    labelled(if rekey { "rekey" } else { "initial" })
+}
+
+/// The admission exchanges are deliberately not cross-checked against `snow`.
+///
+/// Their first record mixes a cleartext header into the transcript after the
+/// `psk0` material and before the `e` token. That is a `MixHash` in a position
+/// no Noise pattern names, so `snow` cannot express it: its prologue is fixed at
+/// build time, before the pre-shared key. Reproducing it would mean
+/// hand-rolling the state machine, which is not an independent implementation
+/// and would check this code against a copy of itself.
+///
+/// What is cross-checked is the construction the admission records extend: the
+/// `XXpsk0` exchange below. The header's own behaviour is checked in
+/// `link-handshake-b1`'s vector tests against the Python reference, and the
+/// property that matters -- that a modified header makes the payload fail to
+/// open -- is a consequence of the hash being the AEAD's associated data, which
+/// this cross-check does cover.
+#[test]
+fn the_admission_exchanges_are_out_of_scope_for_this_cross_check() -> Fallible<()> {
+    // Named so the omission is a stated decision rather than an oversight
+    // someone has to infer from an absence.
+    assert!(labelled("admission").is_ok(), "the vectors exist");
+    assert!(labelled("admission-first-attempt").is_ok());
+    Ok(())
 }
 
 /// Trahens payload framing: a two-byte length, the body, zero padding.
