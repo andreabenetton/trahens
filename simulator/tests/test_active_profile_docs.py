@@ -217,8 +217,18 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
         ):
             with self.subTest(phrase=phrase):
                 self.assertNotIn(phrase, spec)
-        # And the correction is present rather than merely the claim absent.
-        self.assertIn("replayable bearer prefilter", spec)
+        # And each correction is present rather than merely the claim absent.
+        # This assertion used to cover only the first of the three the docstring
+        # names, which made the docstring the kind of coverage claim nothing
+        # checked: the third correction was not in the spec at all and this
+        # still passed.
+        for correction in (
+            "replayable bearer prefilter",
+            "before it reads any record",
+            "disclosed to a holder of the pre-shared key",
+        ):
+            with self.subTest(correction=correction):
+                self.assertIn(correction, spec)
 
     def test_the_named_peer_set_claim_holds_while_no_p1_binary_listens(self) -> None:
         """P1's claim rests on where admission runs, so check that, not the prose.

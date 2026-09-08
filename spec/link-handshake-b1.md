@@ -320,6 +320,23 @@ accident: ADR 0048 D13's challenge is the responder freshness this section says
 is missing, so a replayed admission initiate is challenged rather than acted on
 and no state is allocated for it.
 
+The pre-shared key is also a **bearer credential in its own right**, and holding
+it is not the same as holding the static private key it was derived from. It is
+a separate 32-byte value that can be lost separately — cached, copied out of
+process memory, mishandled by a caller — and a holder who does not have the
+pinned initiator static private key can still choose its own ephemeral and
+produce a first message that opens. The responder answers. In `XX` the
+responder's static key is encrypted after `ee` and before `es`, so that holder
+computes `ee` with its own ephemeral private key and decrypts it.
+
+So the responder's static key is disclosed to a holder of the pre-shared key,
+not only to a holder of a manifest static private key. What the holder cannot do
+is finish: the third message needs `se`, and that needs the pinned initiator
+static private key it does not have. Section 2's derivation binds both static
+public keys in role order, so a pre-shared key lost this way is specific to one
+ordered pair and does not carry to any other peer — but within that pair it is
+enough to elicit the responder's identity.
+
 ## 5. Negotiation
 
 The initiator's offer is:
