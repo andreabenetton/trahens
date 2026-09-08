@@ -84,6 +84,14 @@ pub fn b12_advertisement() -> Result<Value, VectorError> {
     )
 }
 
+/// `spec/b12-seed-manifest-vectors.json`.
+pub fn b12_seed_manifest() -> Result<Value, VectorError> {
+    parse(
+        "b12-seed-manifest",
+        include_str!("../../../../../spec/b12-seed-manifest-vectors.json"),
+    )
+}
+
 /// `spec/protocol-registry-v1.8.json`, the B1.1 draft.
 ///
 /// v1.8 is not the active profile and generates no bindings, so a test that

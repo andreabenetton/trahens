@@ -17,6 +17,7 @@ pub mod candidates;
 pub mod gate;
 pub mod inbound;
 pub mod invitation;
+pub mod seed;
 pub mod store;
 pub use admission::{Admission, AdmissionError};
 pub use advertisement::Advertisement;
@@ -24,6 +25,7 @@ pub use candidates::{CacheError, Candidate, CandidateCache};
 pub use gate::{Gate, GateError, Lease, ReturnRoutable};
 pub use inbound::{classify, Datagram, Disposition, DropReason, FrontEnd, Grant, Kind};
 pub use invitation::{invitation_psk, Invitation};
+pub use seed::{SeedEntry, SeedManifest};
 pub use store::{Record, Store, StoreError};
 
 use protocol_registry::{

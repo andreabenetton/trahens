@@ -1,0 +1,49 @@
+{
+  "schema": "trahens-b12-seed-manifest-vectors-v1",
+  "registry_version": "1.8.0",
+  "version": 3,
+  "seed_signing_seed": "98097eb8dc9129ea420b4a3a7ba373681b0478220c82b8bbe4b1039ad0216c41",
+  "seed_public_key": "6df115683f02d516ab8984133c41c0de93f7ed3db5c2e2de2b9800824ab30a17",
+  "vectors": [
+    {
+      "label": "single-v4",
+      "issued_ms": 1000,
+      "expiry_ms": 3601000,
+      "entries": [
+        {
+          "advertisement_key": "41af61badf3ee22ad57a3b3b88be4d77a0a2fdb3ca82ba18700d5372f718a556",
+          "family": 4,
+          "address": "0ac90001",
+          "port": 45301
+        }
+      ],
+      "document": "0300000000000003e8000000000036f2680141af61badf3ee22ad57a3b3b88be4d77a0a2fdb3ca82ba18700d5372f718a556040ac90001b0f5bcbd3ca9398ae908eebe309d1869233e120312e73f5518aa07de4fdf651bb6262cef824d9f68d07b8e1ffe17f226ba913b92875ca793e8c4943c86efaa253509"
+    },
+    {
+      "label": "mixed-families",
+      "issued_ms": 2000,
+      "expiry_ms": 86402000,
+      "entries": [
+        {
+          "advertisement_key": "41af61badf3ee22ad57a3b3b88be4d77a0a2fdb3ca82ba18700d5372f718a556",
+          "family": 4,
+          "address": "0ac90001",
+          "port": 45301
+        },
+        {
+          "advertisement_key": "8023c3ed1476bdad54425b04f0cc4591714e7e597451cc6638d19b8c63093f51",
+          "family": 6,
+          "address": "27d014009ac8023e1d1ab8272fec9b86",
+          "port": 45302
+        },
+        {
+          "advertisement_key": "fca16e58b066cb412a8a16e881f4cab201b4f3296d75accc76cc59102ac1c2e7",
+          "family": 4,
+          "address": "0ac90101",
+          "port": 1
+        }
+      ],
+      "document": "0300000000000007d000000000052663d00341af61badf3ee22ad57a3b3b88be4d77a0a2fdb3ca82ba18700d5372f718a556040ac90001b0f58023c3ed1476bdad54425b04f0cc4591714e7e597451cc6638d19b8c63093f510627d014009ac8023e1d1ab8272fec9b86b0f6fca16e58b066cb412a8a16e881f4cab201b4f3296d75accc76cc59102ac1c2e7040ac901010001f5d0f1e6cd58bc0e4451dacac0f030599c6d51f502ed25dbdb81248bccc16e1fbb813abca0cf00073c49c4cfc9177e1c63013d02c8e625b7450bedf75328f20d"
+    }
+  ]
+}

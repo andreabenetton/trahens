@@ -127,6 +127,9 @@ Byte order for fixed-width integers: **big-endian**.
 | `b12_advertisement` | 1052 |
 | `b12_advertisement_body` | 987 |
 | `b12_advertisement_signature` | 64 |
+| `b12_seed_signature` | 64 |
+| `b12_seed_address_v4` | 4 |
+| `b12_seed_address_v6` | 16 |
 | `b12_store_length` | 4 |
 | `b12_store_checksum` | 8 |
 | `b1_initiate_payload_psk` | 1002 |
@@ -184,6 +187,8 @@ Byte order for fixed-width integers: **big-endian**.
 | `handshake_backoff_ms` | 5000 |
 | `cookie_window_ms` | 2000 |
 | `cookie_windows_accepted` | 2 |
+| `max_seed_entries` | 32 |
+| `seed_manifest_ttl_ms` | 604800000 |
 | `max_tracked_sources` | 1024 |
 | `max_candidate_peers` | 256 |
 | `max_candidate_peers_per_source` | 8 |
@@ -272,6 +277,7 @@ Byte order for fixed-width integers: **big-endian**.
 - `b12_advertisement` = `Trahens-B12-advertisement-v1`
 - `b12_store_record` = `Trahens-B12-store-record-v1`
 - `b12_invitation_psk` = `Trahens-B12-invitation-psk-v1`
+- `b12_seed_manifest` = `Trahens-B12-seed-manifest-v1`
 - `b1_transition` = `Trahens-B1-advertisement-transition-v1`
 - `b1_epoch` = `Trahens-B1-epoch-v1`
 - `b1_export` = `Trahens-B1-export-v1`

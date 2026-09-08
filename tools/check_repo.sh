@@ -100,6 +100,11 @@ spec/b12-advertisement-test-vectors.json
 simulator/trahens_crypto/advertisement.py
 simulator/tests/test_b12_advertisement.py
 tools/generate_advertisement_vectors.py
+spec/seed-manifest-b12.md
+spec/b12-seed-manifest-vectors.json
+simulator/trahens_crypto/seed.py
+simulator/tests/test_b12_seed_manifest.py
+tools/generate_seed_vectors.py
 implementation/rust/crates/admission-b12/src/invitation.rs
 implementation/rust/crates/admission-b12/src/advertisement.rs
 implementation/rust/crates/admission-b12/src/store.rs
@@ -379,6 +384,10 @@ advertisement_vectors_tmp=$(mktemp)
 PYTHONPATH=simulator python tools/generate_advertisement_vectors.py --output "$advertisement_vectors_tmp"
 cmp spec/b12-advertisement-test-vectors.json "$advertisement_vectors_tmp"
 rm -f "$advertisement_vectors_tmp"
+seed_vectors_tmp=$(mktemp)
+PYTHONPATH=simulator python tools/generate_seed_vectors.py --output "$seed_vectors_tmp"
+cmp spec/b12-seed-manifest-vectors.json "$seed_vectors_tmp"
+rm -f "$seed_vectors_tmp"
 PYTHONPATH=simulator python tools/generate_t1_vectors.py --output "$t1_vectors_tmp"
 cmp spec/t1-test-vectors.json "$t1_vectors_tmp"
 PYTHONPATH=simulator python tools/generate_t2_vectors.py --output "$t2_vectors_tmp"
