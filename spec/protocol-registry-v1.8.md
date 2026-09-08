@@ -262,7 +262,7 @@ Byte order for fixed-width integers: **big-endian**.
 - `w2_link_key` = `Trahens-W2-link-key-v1`
 - `r1_capability` = `Trahens-R1-capability-v1`
 - `r1_capability_commitment` = `Trahens-R1-capability-commitment-v1`
-- `p1_route_extract` = `Trahens-P1-route-extract-v2`
+- `p1_route_extract` = `Trahens-P1-route-extract-v3`
 - `p1_route_key_e2g` = `Trahens-P1-route-key-e2g-v2`
 - `p1_route_key_g2e` = `Trahens-P1-route-key-g2e-v2`
 - `p1_control` = `Trahens-P1-control-v1`

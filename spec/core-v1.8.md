@@ -225,11 +225,18 @@ hop-local label, and forward a newly encoded M2 message on the next link.
 ### 7.1 Route channel
 
 The route channel is directional. Both ends derive two keys from the route
-secret by HKDF: an extract step over `p1_route_extract || route_secret`, then
-one expand per direction under `p1_route_key_e2g` and `p1_route_key_g2e`, with
-the selected offer's transcript hash as expansion context. A route secret
-presented under any other offer therefore derives different keys and fails
-closed.
+secret by HKDF: an extract step over the route secret with
+`SHA-256(p1_route_extract)` as the salt, then one expand per direction under
+`p1_route_key_e2g` and `p1_route_key_g2e`, with the selected offer's transcript
+hash as expansion context. A route secret presented under any other offer
+therefore derives different keys and fails closed.
+
+Through Core v1.8 draft revisions the extract step instead ran over
+`p1_route_extract || route_secret` with a zero salt. That put the domain in the
+input keying material, where RFC 5869 defines the salt for the purpose; a fixed
+public string in front of the secret separates nothing an attacker could not
+already separate. The domain is now `Trahens-P1-route-extract-v3` and
+`spec/route-channel-test-vectors.json` moved with it.
 
 Each record's AEAD nonce is a 32-bit direction code followed by a 64-bit
 sequence, which fills the nonce exactly. Sequences begin at zero and increase by

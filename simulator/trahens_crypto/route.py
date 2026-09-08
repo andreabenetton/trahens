@@ -47,9 +47,8 @@ class RouteError(ValueError):
     """Any failure. Callers must not distinguish causes on the wire."""
 
 
-def _hkdf_extract(ikm: bytes) -> bytes:
-    # Salt is 32 zero bytes, matching the implementation's hkdf_extract.
-    return hmac.new(bytes(KEY_BYTES), ikm, hashlib.sha256).digest()
+def _hkdf_extract(salt: bytes, ikm: bytes) -> bytes:
+    return hmac.new(salt, ikm, hashlib.sha256).digest()
 
 
 def _hkdf_expand(prk: bytes, info: bytes, length: int) -> bytes:
@@ -93,6 +92,14 @@ def route_keys(route_secret: bytes, offer_transcript_hash: bytes) -> RouteKeys:
     secret presented under any other offer derives different keys and fails
     closed. An all-zero secret is refused rather than silently keying the
     channel off a value that carries no entropy.
+
+    The extract step takes the domain as its salt. Through Core v1.8 draft
+    revisions it instead prefixed the domain to the route secret and extracted
+    over the concatenation under a zero salt, which an external review pointed
+    out is the domain in the wrong field: RFC 5869 defines the salt for exactly
+    this, and putting a fixed public string in front of the input keying
+    material separates nothing an attacker could not already separate. The
+    domain carries `-v3` because the derived keys change.
     """
     if len(route_secret) != KEY_BYTES:
         raise RouteError("route secret must be 32 bytes")
@@ -100,7 +107,7 @@ def route_keys(route_secret: bytes, offer_transcript_hash: bytes) -> RouteKeys:
         raise RouteError("route secret must not be zero")
     if len(offer_transcript_hash) != KEY_BYTES:
         raise RouteError("offer transcript hash must be 32 bytes")
-    prk = _hkdf_extract(DOMAIN_P1_ROUTE_EXTRACT + route_secret)
+    prk = _hkdf_extract(hashlib.sha256(DOMAIN_P1_ROUTE_EXTRACT).digest(), route_secret)
     return RouteKeys(
         endpoint_to_gateway=_hkdf_expand(
             prk, _direction_domain(ENDPOINT_TO_GATEWAY) + offer_transcript_hash, KEY_BYTES

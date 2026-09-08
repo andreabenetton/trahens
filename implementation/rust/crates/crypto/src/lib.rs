@@ -778,6 +778,14 @@ impl RouteKeys {
 /// The selected offer's transcript hash is bound into the expansion, so the
 /// keys are valid only for the offer that was actually chosen: a route secret
 /// presented under any other offer derives different keys and fails closed.
+///
+/// The extract step takes the domain as its salt. Through Core v1.8 draft
+/// revisions it instead prefixed the domain to the route secret and extracted
+/// over the concatenation under a zero salt, which an external review pointed
+/// out is the domain in the wrong field: RFC 5869 defines the salt for exactly
+/// this, and putting a fixed public string in front of the input keying
+/// material separates nothing an attacker could not already separate. The
+/// domain carries `-v3` because the derived keys change.
 pub fn route_keys(
     route_secret: &[u8; 32],
     offer_transcript_hash: &[u8; 32],
@@ -785,11 +793,8 @@ pub fn route_keys(
     if *route_secret == [0_u8; 32] {
         return Err(CryptoError::InvalidEncoding);
     }
-    let mut ikm =
-        Vec::with_capacity(protocol_registry::DOMAIN_P1_ROUTE_EXTRACT.len() + route_secret.len());
-    ikm.extend_from_slice(protocol_registry::DOMAIN_P1_ROUTE_EXTRACT);
-    ikm.extend_from_slice(route_secret);
-    let prk = hkdf_extract(&ikm)?;
+    let salt = sha256(protocol_registry::DOMAIN_P1_ROUTE_EXTRACT)?;
+    let prk = hkdf_extract_salted(&salt, route_secret)?;
     Ok(RouteKeys {
         endpoint_to_gateway: SecretBytes(expand_route_key(
             &prk,
