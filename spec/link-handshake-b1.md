@@ -273,44 +273,63 @@ duration (`handshake_timeout_ms`) and retransmissions
 (`max_handshake_retransmits`); and consecutive failures before backing off a
 source (`max_failed_handshakes_before_backoff`, `handshake_backoff_ms`).
 
-How the P1 prototype meets each of those is worth stating exactly, because only
-two are enforced by a counter and the rest are satisfied by its structure. A
-reader who assumes the counters exist will look for code that is not there.
+How each is met differs between a node with only configured links and one that
+accepts handshakes from a source it was not told about, and the difference is
+worth stating exactly.
 
-- `handshake_timeout_ms` and `max_handshake_retransmits` are enforced directly:
-  each attempt runs to a deadline and divides it into that many sends.
-- `max_handshake_contexts` has nothing to count. A P1 node opens exactly one
-  context per configured link, at startup, and accepts handshakes on no other
-  path: each link owns a UDP socket connected to its peer, so the kernel drops
-  anything from another address before the process sees it. There is no
-  listener, so there is no unsolicited context to exhaust. A node that accepted
-  a handshake from an unconfigured source would need the counter, and that is
-  B1.2.
-- `handshake_pubkey_ops_per_interval` is bounded twice over. A responder
-  performs its Diffie-Hellman work in one `write_respond` per attempt and
-  attempts are capped, so the ceiling is a few operations per link rather than
-  a rate to police. And since section 2, it reaches that work only for a first
-  message that decrypted under the static-static key: a sender who does not
-  hold the manifest identity cannot make a responder compute at all, whatever
-  its address. That is the difference between a bound that holds because of the
-  topology and one that holds against an active attacker.
-- `max_failed_handshakes_before_backoff` and `handshake_backoff_ms` are not
-  implemented, and P1 is stricter than they require: a link gives up after its
-  bounded attempts instead of backing off and retrying indefinitely.
+- `handshake_timeout_ms` and `max_handshake_retransmits` are enforced directly
+  on every path: each attempt runs to a deadline and divides it into that many
+  sends.
+- On the P1 topology alone, `max_handshake_contexts` has nothing to count. A
+  node opens exactly one context per configured link, at startup, and accepts
+  handshakes on no other path: each link owns a UDP socket connected to its
+  peer, so the kernel drops anything from another address before the process
+  sees it. There is no listener, so there is no unsolicited context to exhaust.
+- On that same topology `handshake_pubkey_ops_per_interval` is bounded twice
+  over. A responder performs its Diffie-Hellman work in one `write_respond` per
+  attempt and attempts are capped, so the ceiling is a few operations per link
+  rather than a rate to police. And since section 2, it reaches that work only
+  for a first message that decrypted under the static-static key: a sender who
+  does not hold the manifest identity cannot make a responder compute at all,
+  whatever its address.
 
-`implementation/harness/netns-p1.sh --scenario hostile-peer` is the first test
-that puts a deliberately misbehaving peer on a link: it never handshakes and
-floods its neighbour with well-framed records carrying rubbish. It does not
-exercise the bounds above, which still have nothing to count, and it is not
-claimed to. What it does establish is the property those bounds would protect
-if they were live — that adversarial volume on one link leaves the other links'
-fixed-T2 cadence untouched — and it is the peer the bounds will be tested with
-once a listening socket makes them reachable.
+A node that admits an unconfigured source has none of those structural
+arguments, and the counters are what replace them. `admission-b12`'s gate
+enforces all four, in an order that is itself the requirement: each check is
+cheaper than the one after it, and each is reached only by a sender that passed
+the one before.
 
-None of this is an argument that the registry values are unnecessary. It is a
-statement of what the P1 evidence covers, so that a deployment which adds a
-listening socket knows it has inherited requirements the prototype never had to
-meet.
+1. The cookie of `admission-cookie-b12.md`, one HMAC, proving the sender
+   receives datagrams at the address it claims.
+2. Backoff, one lookup: a source that has failed
+   `max_failed_handshakes_before_backoff` times consecutively is refused for
+   `handshake_backoff_ms`. A success clears the run, so a lossy link is not
+   eventually banned; a handshake abandoned past `handshake_timeout_ms` counts
+   as a failure, so abandoning is not cheaper than failing.
+3. The per-source public-key rate, `handshake_pubkey_ops_per_interval` per
+   `handshake_interval_ms`, charged when a context is allocated because that is
+   when the responder does the work.
+4. The global context pool, `max_handshake_contexts`, which is the only step
+   that allocates. It is checked last on purpose: it is the shared resource, and
+   a source must have spent its own budget before it can compete for it.
+
+A node MUST NOT reverse that order, because each inversion lets a cheaper attack
+reach a more expensive resource.
+
+Per-source accounting is itself state an attacker would otherwise grow for free,
+so it is bounded by `max_tracked_sources` and refuses rather than evicting: a
+flood that could evict entries could flush a backoff it had just earned. What
+makes that bound safe is the cookie coming first — an entry appears only for an
+address that answered, so a sender cannot populate the table from addresses it
+does not hold.
+
+`implementation/harness/netns-p1.sh --scenario hostile-peer` puts a deliberately
+misbehaving peer on a link: it never handshakes and floods its neighbour with
+well-framed records carrying rubbish. On the connected-socket topology it does
+not exercise the bounds above, and is not claimed to; what it establishes is the
+property those bounds protect — that adversarial volume on one link leaves the
+other links' fixed-T2 cadence untouched. It is the peer the bounds are to be
+tested with over a listening socket, which no harness scenario has yet.
 
 A peer that keeps waiting for a record MUST NOT be left worse off by the
 records it refuses. A reader commits nothing to its transcript until a whole
