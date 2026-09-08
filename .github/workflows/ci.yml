@@ -155,6 +155,14 @@ jobs:
         run: |
           sudo -E implementation/harness/netns-admission.sh --scenario hostile \
             --tag d --output "$GITHUB_WORKSPACE/build/p1-admission-hostile"
+      - name: A cookie issued for one address does not work from another
+        run: |
+          sudo -E implementation/harness/netns-admission.sh --scenario spoof \
+            --tag e --output "$GITHUB_WORKSPACE/build/p1-admission-spoof"
+      - name: Abandoned exchanges from one address do not lock out another
+        run: |
+          sudo -E implementation/harness/netns-admission.sh --scenario exhaustion \
+            --tag f --output "$GITHUB_WORKSPACE/build/p1-admission-exhaustion"
       - name: A link rekeys under live traffic without disturbing the route
         run: |
           sudo -E implementation/harness/netns-p1.sh \

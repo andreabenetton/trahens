@@ -10,16 +10,25 @@
 #
 # The scenarios and what each is for:
 #
-#   ok        a joiner is admitted, and the invitation and pin reach the store
-#   replay    a second joiner presenting the same invitation is refused (D8)
-#   restart   the admitting node restarts; the invitation is still spent (D8+D10)
-#   hostile   trahens-hostile floods the listening socket, and a legitimate
-#             joiner is still admitted afterwards -- the bounds of section 8
-#             against the peer they were written for
+#   ok         a joiner is admitted, and the invitation and pin reach the store
+#   replay     a second joiner presenting the same invitation is refused (D8)
+#   restart    the admitting node restarts; the invitation is still spent
+#   hostile    trahens-hostile floods the listening socket, and a legitimate
+#              joiner is still admitted afterwards -- the bounds of section 8
+#              against the peer they were written for
+#   spoof      a cookie issued for one address does not work from another
+#   exhaustion a peer at one address opens exchanges and abandons them, and a
+#              joiner at a different address is admitted regardless
 #
-# The hostile arm is the one that needs care. A flood that did not happen would
-# leave every assertion below trivially true, so the run asserts the flood
-# occurred before asserting it did no harm.
+# The last two need a third namespace, because the property they check is that
+# one source's behaviour does not decide another's. With attacker and victim at
+# the same address there would be nothing to tell apart: the gate's per-source
+# accounting keys on the address, so a two-namespace run would have the innocent
+# joiner sharing the attacker's budget and its refusal would prove nothing.
+#
+# Every adversarial arm asserts the attack happened before asserting it failed.
+# A flood that did not arrive, or an exchange that was never opened, would leave
+# the rest of the run trivially true.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -42,7 +51,7 @@ while (( $# )); do
 done
 
 case "$SCENARIO" in
-  ok|replay|restart|hostile) ;;
+  ok|replay|restart|hostile|spoof|exhaustion) ;;
   *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;;
 esac
 
@@ -59,10 +68,16 @@ rm -f "$OUTPUT"/*
 
 INVITER_NS="ta${TAG}inviter"
 JOINER_NS="ta${TAG}joiner"
+OTHER_NS="ta${TAG}other"
 LEFT="ta${TAG}l"
 RIGHT="ta${TAG}r"
+LEFT2="ta${TAG}m"
+RIGHT2="ta${TAG}n"
 INVITER_IP=10.201.0.1
 JOINER_IP=10.201.0.2
+# A second joiner on its own subnet, so it is a different source to the gate.
+INVITER_IP2=10.201.1.1
+OTHER_IP=10.201.1.2
 PORT=45301
 
 PIDS=()
@@ -71,13 +86,16 @@ cleanup() {
   for pid in "${PIDS[@]:-}"; do kill "$pid" 2>/dev/null; done
   ip netns del "$INVITER_NS" 2>/dev/null
   ip netns del "$JOINER_NS" 2>/dev/null
+  ip netns del "$OTHER_NS" 2>/dev/null
 }
 trap cleanup EXIT
 
 ip netns add "$INVITER_NS"
 ip netns add "$JOINER_NS"
+ip netns add "$OTHER_NS"
 ip -n "$INVITER_NS" link set lo up
 ip -n "$JOINER_NS" link set lo up
+ip -n "$OTHER_NS" link set lo up
 ip link add "$LEFT" type veth peer name "$RIGHT"
 ip link set "$LEFT" netns "$INVITER_NS"
 ip link set "$RIGHT" netns "$JOINER_NS"
@@ -85,6 +103,14 @@ ip -n "$INVITER_NS" addr add "$INVITER_IP/30" dev "$LEFT"
 ip -n "$JOINER_NS" addr add "$JOINER_IP/30" dev "$RIGHT"
 ip -n "$INVITER_NS" link set "$LEFT" up
 ip -n "$JOINER_NS" link set "$RIGHT" up
+
+ip link add "$LEFT2" type veth peer name "$RIGHT2"
+ip link set "$LEFT2" netns "$INVITER_NS"
+ip link set "$RIGHT2" netns "$OTHER_NS"
+ip -n "$INVITER_NS" addr add "$INVITER_IP2/30" dev "$LEFT2"
+ip -n "$OTHER_NS" addr add "$OTHER_IP/30" dev "$RIGHT2"
+ip -n "$INVITER_NS" link set "$LEFT2" up
+ip -n "$OTHER_NS" link set "$RIGHT2" up
 
 # One invitation per joiner, because ADR 0046 D8 makes them per-joiner. The
 # second is offered in every scenario and used only by `replay`, so that arm
@@ -106,8 +132,10 @@ fi
 
 start_inviter() {
   local log="$1"
+  # The wildcard, because the inviter has an interface per joiner subnet and a
+  # node that admits strangers does not know which one a stranger arrives on.
   ip netns exec "$INVITER_NS" "$BIN/trahens-admit" \
-    --bind "$INVITER_IP:$PORT" \
+    --bind "0.0.0.0:$PORT" \
     --store "$STORE" \
     --static-secret "$INVITER_SECRET" \
     --invitations "$ID_ONE:$SECRET_ONE,$ID_TWO:$SECRET_TWO" \
@@ -155,17 +183,33 @@ wait_for_admission() {
   return 1
 }
 
+# join <log> <static> <id> <invitation-secret> <inviter-static> <port> [extra...]
+#
+# Runs in the joiner namespace. `join_from` is the same thing anywhere else, and
+# exists because the scenarios that matter are about two sources being told
+# apart.
 join() {
-  local log="$1" secret="$2" identifier="$3" invitation_secret="$4" static="$5" port="$6"
-  ip netns exec "$JOINER_NS" "$BIN/trahens-join" \
-    --bind "$JOINER_IP:$port" \
-    --peer "$INVITER_IP:$PORT" \
+  join_from "$JOINER_NS" "$JOINER_IP" "$INVITER_IP" "$@"
+}
+
+join_from() {
+  local ns="$1" from="$2" to="$3" log="$4" secret="$5" identifier="$6"
+  local invitation_secret="$7" static="$8" port="$9"
+  shift 9
+  ip netns exec "$ns" "$BIN/trahens-join" \
+    --bind "$from:$port" \
+    --peer "$to:$PORT" \
     --static-secret "$secret" \
     --invitation-id "$identifier" \
     --invitation-secret "$invitation_secret" \
     --inviter-static "$static" \
     --timeout-ms 6000 \
+    "$@" \
     >"$log" 2>"${log%.log}.err"
+}
+
+cookie_from() {
+  grep -o '"cookie":"[0-9a-f]*"' "$1" | head -1 | grep -o '[0-9a-f]\{64\}'
 }
 
 FIRST_INVITER_LOG="$OUTPUT/inviter.log"
@@ -189,9 +233,36 @@ if [[ "$SCENARIO" == hostile ]]; then
   sleep 4.5
 fi
 
+if [[ "$SCENARIO" == exhaustion ]]; then
+  # One address opens exchanges and walks away from each. The count is derived
+  # from the budget rather than written down, so the scenario moves when the
+  # registry does instead of leaving a literal behind that silently stops
+  # exceeding anything: at or below the budget nothing is refused and the
+  # assertion below has no signal to read.
+  BUDGET=$(python3 "$ROOT/tools/registry_limit.py" handshake_pubkey_ops_per_interval)
+  ATTEMPTS=$((BUDGET + 8))
+  ABANDONED=0
+  for index in $(seq 1 "$ATTEMPTS"); do
+    if join_from "$JOINER_NS" "$JOINER_IP" "$INVITER_IP" \
+      "$OUTPUT/abandon-${index}.log" "$JOINER_SECRET" "$ID_TWO" "$SECRET_TWO" \
+      "$STATIC" $((45400 + index)) --abandon 1; then
+      ABANDONED=$((ABANDONED + 1))
+    fi
+  done
+fi
+
 JOIN_STATUS=0
-join "$OUTPUT/joiner-1.log" "$JOINER_SECRET" "$ID_ONE" "$SECRET_ONE" "$STATIC" 45311 \
-  || JOIN_STATUS=$?
+if [[ "$SCENARIO" == exhaustion ]]; then
+  # The innocent joiner is at a different address, which is the whole point: the
+  # gate accounts per source, so a run with both at one address would prove
+  # nothing about isolation.
+  join_from "$OTHER_NS" "$OTHER_IP" "$INVITER_IP2" \
+    "$OUTPUT/joiner-1.log" "$SECOND_JOINER_SECRET" "$ID_ONE" "$SECRET_ONE" \
+    "$STATIC" 45311 || JOIN_STATUS=$?
+else
+  join "$OUTPUT/joiner-1.log" "$JOINER_SECRET" "$ID_ONE" "$SECRET_ONE" "$STATIC" 45311 \
+    || JOIN_STATUS=$?
+fi
 
 case "$SCENARIO" in
   replay)
@@ -201,6 +272,20 @@ case "$SCENARIO" in
     SECOND_STATUS=0
     join "$OUTPUT/joiner-2.log" "$SECOND_JOINER_SECRET" "$ID_ONE" "$SECRET_ONE" \
       "$STATIC" 45312 || SECOND_STATUS=$?
+    ;;
+  spoof)
+    # A cookie proves the sender receives datagrams where it says. Handing one
+    # to a peer at a different address must not carry that proof with it.
+    STOLEN=$(cookie_from "$OUTPUT/joiner-1.log")
+    if [[ -z "$STOLEN" ]]; then
+      echo "scenario spoof: the first joiner reported no cookie, so there was" >&2
+      echo "nothing to present from elsewhere" >&2
+      exit 1
+    fi
+    SECOND_STATUS=0
+    join_from "$OTHER_NS" "$OTHER_IP" "$INVITER_IP2" \
+      "$OUTPUT/joiner-2.log" "$SECOND_JOINER_SECRET" "$ID_TWO" "$SECRET_TWO" \
+      "$STATIC" 45312 --cookie "$STOLEN" || SECOND_STATUS=$?
     ;;
   restart)
     # Stop the inviter, start a new one over the same store, and re-offer every
@@ -294,6 +379,46 @@ case "$SCENARIO" in
     fi
     echo "scenario ${SCENARIO}: the second joiner was challenged and then refused," \
       "so the invitation stayed spent"
+    ;;
+  spoof)
+    if (( SECOND_STATUS == 0 )); then
+      echo "scenario spoof: a cookie issued for another address was accepted," >&2
+      echo "so it proves nothing about where its holder receives datagrams" >&2
+      exit 1
+    fi
+    # Non-vacuity: the second joiner has to have reached the point of presenting
+    # the stolen cookie. A run where it never got that far would fail for an
+    # unrelated reason and say nothing about binding.
+    if ! grep -qs '"event":"challenged"' "$OUTPUT/joiner-2.log"; then
+      echo "scenario spoof: the second joiner never presented a cookie" >&2
+      exit 1
+    fi
+    echo "scenario spoof: a cookie issued for one address did not admit its" \
+      "holder from another"
+    ;;
+  exhaustion)
+    if (( ABANDONED <= BUDGET )); then
+      echo "scenario exhaustion: ${ABANDONED} exchanges were opened against a" >&2
+      echo "budget of ${BUDGET}, so nothing exceeded it and the refusal below" >&2
+      echo "would have nothing to read" >&2
+      exit 1
+    fi
+    REFUSED=$(grep -o '"dropped_by_gate":"[0-9]*"' "$FIRST_INVITER_LOG" |
+      grep -o '[0-9]*' | tail -1 || true)
+    if [[ -z "$REFUSED" ]] || (( REFUSED < 1 )); then
+      echo "scenario exhaustion: the gate refused nothing, so ${ABANDONED} abandoned" >&2
+      echo "exchanges from one source were all allocated for" >&2
+      exit 1
+    fi
+    OPEN=$(grep -o '"handshake_contexts_open":"[0-9]*"' "$FIRST_INVITER_LOG" |
+      grep -o '[0-9]*' | tail -1 || true)
+    if [[ "${OPEN:-1}" != "0" ]]; then
+      echo "scenario exhaustion: ${OPEN} contexts were still held at the end, so" >&2
+      echo "abandoning an exchange costs the responder indefinitely" >&2
+      exit 1
+    fi
+    echo "scenario exhaustion: ${ABANDONED} abandoned exchanges from one address," \
+      "${REFUSED} refused by the gate, and a joiner elsewhere still admitted"
     ;;
   hostile)
     # `|| true` on each: an empty grep exits non-zero, and with pipefail that

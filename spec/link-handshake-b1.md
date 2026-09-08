@@ -419,9 +419,24 @@ A listener MUST read a bounded number of datagrams per turn. A receive loop that
 drained the socket would let a flood hold a node past its next scheduled slot,
 breaking the fixed-T2 cadence with the flood rather than with the protocol.
 
-What remains untested over the netns harness is the same flood against a
-listening socket rather than a link. `trahens-hostile` is the peer for it and
-the scenario is not yet written.
+`implementation/harness/netns-admission.sh` carries that to a network. Its
+`hostile` arm points the same flooding peer at a listening socket rather than a
+link, and two further arms check what the bounds are for rather than merely that
+they exist:
+
+- `spoof` presents a cookie issued for one address from another, and requires it
+  to be refused. A cookie that travelled with its holder would prove nothing
+  about where that holder receives datagrams, which is the only thing a cookie
+  claims.
+- `exhaustion` has one address open `handshake_pubkey_ops_per_interval + 8`
+  exchanges and abandon each, and requires the gate to have refused some, no
+  context to remain held at the end, and a joiner **at a different address** to
+  be admitted regardless. The count comes from the registry rather than being
+  written down, so the arm keeps exceeding the budget when the budget moves.
+
+The third address is what makes the last of those an assertion at all: the gate
+accounts per source, so an attacker and a victim sharing an address would share
+a budget, and the victim's refusal would say nothing about isolation.
 
 A peer that keeps waiting for a record MUST NOT be left worse off by the
 records it refuses. A reader commits nothing to its transcript until a whole

@@ -100,9 +100,34 @@ fn run() -> Result<(), Box<dyn Error>> {
         structured_event("join", "no_challenge", &[]);
         return Err("the inviter never challenged".into());
     };
-    structured_event("join", "challenged", &[]);
+    // Published so a harness can hand this cookie to a joiner at a different
+    // address and check that it is refused there. A cookie is a correlation
+    // handle for as long as it is valid, which is why it is short-lived; a test
+    // that could not read one could not check that it is bound.
+    structured_event(
+        "join",
+        "challenged",
+        &[("cookie", node_runtime::hex(&cookie))],
+    );
+
+    // A cookie supplied on the command line overrides the one just issued, so a
+    // scenario can present a cookie that was issued for somewhere else.
+    let cookie = match args.optional("cookie", "") {
+        "" => cookie,
+        supplied => parse_hex::<32>(supplied)?.to_vec(),
+    };
 
     let (mut initiator, second) = build(&cookie)?;
+
+    // Open the exchange and walk away. This is the shape that costs a responder
+    // a handshake context for nothing, and the reason handshake_timeout_ms and
+    // the backoff exist; a scenario needs a peer that does it on purpose.
+    if args.flag("abandon") {
+        socket.send(&second)?;
+        structured_event("join", "abandoned", &[]);
+        return Ok(());
+    }
+
     let session = loop {
         if Instant::now() >= deadline {
             structured_event("join", "no_respond", &[]);
