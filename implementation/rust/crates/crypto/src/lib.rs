@@ -323,7 +323,32 @@ pub(crate) fn encode_fields(label: &[u8], fields: &[&[u8]]) -> Result<Vec<u8>, C
 }
 
 fn hkdf_extract(ikm: &[u8]) -> Result<[u8; 32], CryptoError> {
-    hmac_sha256(&[0_u8; 32], ikm)
+    hkdf_extract_salted(&[0_u8; 32], ikm)
+}
+
+fn hkdf_extract_salted(salt: &[u8; 32], ikm: &[u8]) -> Result<[u8; 32], CryptoError> {
+    hmac_sha256(salt, ikm)
+}
+
+/// RFC 5869 HKDF, both stages, with each input in the place RFC 5869 puts it.
+///
+/// Offered as one call because the mistake this exists to prevent is putting a
+/// domain separator into the IKM: an extract over `domain || secret` looks like
+/// binding and is not, because `info` is the field defined for context and the
+/// salt is the field defined for a domain. Two derivations in this tree did
+/// exactly that before an external review pointed it out.
+///
+/// # Errors
+///
+/// [`CryptoError`] if `length` exceeds what HKDF can expand to.
+pub fn hkdf(
+    salt: &[u8; 32],
+    ikm: &[u8],
+    info: &[u8],
+    length: usize,
+) -> Result<Vec<u8>, CryptoError> {
+    let prk = hkdf_extract_salted(salt, ikm)?;
+    hkdf_expand(&prk, info, length)
 }
 
 fn hkdf_expand(prk: &[u8; 32], info: &[u8], length: usize) -> Result<Vec<u8>, CryptoError> {

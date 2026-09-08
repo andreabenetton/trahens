@@ -134,7 +134,9 @@ def run_handshake(
             if admission is not None
             else previous_export
             if previous_export is not None
-            else static_psk(profile, initiator_static, responder_static.public)
+            else static_psk(
+                profile, initiator_static, responder_static.public, initiator=True
+            )
         ).hex(),
         "initiator_static_secret": initiator_static.secret.hex(),
         "initiator_static_public": initiator_static.public.hex(),

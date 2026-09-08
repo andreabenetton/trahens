@@ -47,14 +47,35 @@ The pre-shared key differs by exchange:
 - a **rekey** uses the export key of the session it replaces, which is what
   stops an unrelated exchange being spliced in as a rekey and what makes a
   rekey's traffic keys differ from the replaced session's;
-- an **initial handshake** uses `HMAC-SHA256(k = X25519(s, rs), m =
-  b1_static_psk)`, the static-static Diffie-Hellman between the two manifest
-  identities. Both peers compute it offline from what they already hold, so
-  nothing carries it and no exchange establishes it.
+- an **initial handshake** derives one from the static-static Diffie-Hellman
+  between the two manifest identities. Both peers compute it offline from what
+  they already hold, so nothing carries it and no exchange establishes it.
 
-The static-static value is keyed as the HMAC key rather than the message
-because it is a fixed 32 bytes and the domain is not, which is the arrangement
-both a Python and a Rust implementation can express identically.
+The initial-handshake derivation is RFC 5869 HKDF over that shared secret, with
+each input in the field RFC 5869 defines for it:
+
+```
+ss  = X25519(s, rs)
+prk = HKDF-Extract(salt = SHA-256(b1_static_psk), IKM = ss)
+psk = HKDF-Expand(prk,
+        info = b1_static_psk || initiator_static || responder_static,
+        L = 32)
+```
+
+Both public keys are in the info, in role order: the initiator's first, then the
+responder's. Two peers that swap roles therefore derive different pre-shared
+keys from the same shared secret, and a value derived for one pair cannot be
+presented as belonging to another.
+
+Through Core v1.8 draft revisions this was `HMAC-SHA256(k = ss, m =
+b1_static_psk)`, under domain `Trahens-B1-static-psk-v1`. That is a sound KDF —
+the secret is uniform and 32 bytes — but it put the domain separator in HMAC's
+message field rather than the salt, and it bound no public keys, so the derived
+value carried nothing saying which two identities it belonged to. An external
+review raised both points. The domain is now `Trahens-B1-static-psk-v2`, and
+`spec/b1-test-vectors.json` moved with it: the two forms produce different keys,
+so peers on different revisions fail at the first decryption rather than
+silently diverging.
 
 An initial handshake therefore requires the manifest entry to *begin*, not only
 to verify. That is not a new assumption — section 1 already has each peer

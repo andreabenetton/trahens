@@ -25,8 +25,8 @@
 //! Noise implementation.
 
 use trahens_crypto::{
-    aead_open, aead_seal, constant_time_equal, hmac_sha256, sha256, sign, signing_keypair, verify,
-    x25519, x25519_base, zeroize_slice, CryptoError, SecretBytes,
+    aead_open, aead_seal, constant_time_equal, hkdf, hmac_sha256, sha256, sign, signing_keypair,
+    verify, x25519, x25519_base, zeroize_slice, CryptoError, SecretBytes,
 };
 
 /// An Ed25519 signature, and the selection that precedes it in an admission
@@ -610,15 +610,27 @@ impl Keying<'_> {
         matches!(self, Self::Admission { .. })
     }
 
-    fn psk(&self, profile: &Profile, static_secret: &[u8; 32]) -> Result<[u8; 32]> {
+    fn psk(&self, profile: &Profile, static_secret: &[u8; 32], role: Role) -> Result<[u8; 32]> {
         match self {
-            Self::Manifest { peer_static } => static_psk(profile, static_secret, peer_static),
+            Self::Manifest { peer_static } => static_psk(profile, static_secret, peer_static, role),
             Self::Rekey {
                 previous_export, ..
             } => Ok(**previous_export),
             Self::Admission { psk, .. } => Ok(**psk),
         }
     }
+}
+
+/// Which end of the exchange the local static key belongs to.
+///
+/// The static-static Diffie-Hellman is symmetric, so a derivation over it alone
+/// gives both peers the same value however the keys are arranged. Naming the
+/// roles is what lets the two public keys enter the derivation in an order both
+/// peers agree on without sorting them.
+#[derive(Clone, Copy)]
+enum Role {
+    Initiator,
+    Responder,
 }
 
 /// The pre-shared key for an initial handshake, from the static-static
@@ -637,18 +649,44 @@ impl Keying<'_> {
 /// it reads any record. The presented static key is still checked against the
 /// manifest and the ephemeral Diffie-Hellman still supplies forward secrecy, so
 /// this value alone completes nothing.
+///
+/// RFC 5869 HKDF, with each input where RFC 5869 puts it: the shared secret is
+/// the input keying material, the domain is the salt, and the context — the
+/// domain again, then both public keys in role order — is the info. The previous
+/// form was `HMAC(ss, domain)`, which is a defensible KDF but put the domain in
+/// the message field and bound no public keys at all, so the same value came out
+/// for every pair sharing a secret and nothing in it said which two keys it
+/// belonged to. An external review raised both; the domain carries `-v2` because
+/// the value on the wire changes.
+///
+/// The keys go in as `initiator || responder` rather than sorted, because the
+/// exchange already has an asymmetry to name and sorting hides it: two peers
+/// that swap roles derive different values, which is what a transcript binding
+/// should do.
 fn static_psk(
     profile: &Profile,
     static_secret: &[u8; 32],
     peer_static: &[u8; 32],
+    role: Role,
 ) -> Result<[u8; 32]> {
-    // Keyed on the shared secret with the domain as the message: the secret is
-    // a fixed 32 bytes and the domain is not, which is the way round both
-    // implementations can express identically.
-    Ok(hmac_sha256(
-        &x25519(static_secret, peer_static)?,
-        &profile.static_psk_domain,
-    )?)
+    let local_static = x25519_base(static_secret)?;
+    let (initiator, responder) = match role {
+        Role::Initiator => (local_static, *peer_static),
+        Role::Responder => (*peer_static, local_static),
+    };
+    let mut info = Vec::with_capacity(profile.static_psk_domain.len() + 64);
+    info.extend_from_slice(&profile.static_psk_domain);
+    info.extend_from_slice(&initiator);
+    info.extend_from_slice(&responder);
+    let salt = sha256(&profile.static_psk_domain)?;
+    let mut shared = x25519(static_secret, peer_static)?;
+    let derived = hkdf(&salt, &shared, &info, 32);
+    zeroize_slice(&mut shared);
+    let mut derived = derived?;
+    let mut psk = [0_u8; 32];
+    psk.copy_from_slice(&derived);
+    zeroize_slice(&mut derived);
+    Ok(psk)
 }
 
 /// Both exchanges are `psk0`; only where the key comes from differs. A rekey
@@ -890,7 +928,7 @@ impl Initiator {
         // out-of-band invitation can carry it; only the inviter is left
         // learning an identity it did not already hold.
         let expected_peer_static = keying.peer_static().ok_or(HandshakeError)?;
-        let psk = keying.psk(&profile, &static_secret)?;
+        let psk = keying.psk(&profile, &static_secret, Role::Initiator)?;
         let header = keying.header(&profile)?;
         let state = begin(&profile, keying.is_rekey(), &psk)?;
         Ok(Self {
@@ -1065,7 +1103,7 @@ impl Responder {
         ephemeral_secret: [u8; 32],
         keying: Keying<'_>,
     ) -> Result<Self> {
-        let psk = keying.psk(&profile, &static_secret)?;
+        let psk = keying.psk(&profile, &static_secret, Role::Responder)?;
         // ADR 0049 D16: unconditional on the admission path. A responder that
         // could decline to bind itself would present a joiner with exactly the
         // case it cannot tell apart from an attack, so there is no way to

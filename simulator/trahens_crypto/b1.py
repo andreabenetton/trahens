@@ -131,6 +131,27 @@ def noise_hkdf(chaining_key: bytes, input_key_material: bytes, count: int) -> li
     return outputs
 
 
+def rfc5869_hkdf(salt: bytes, ikm: bytes, info: bytes, length: int) -> bytes:
+    """HKDF as RFC 5869 defines it, both stages, each input in its own field.
+
+    Distinct from `noise_hkdf` above, which is the variant the Noise
+    specification writes in section 4.3 and applies to the chaining key. This is
+    the one to reach for outside the handshake state machine, where the salt is
+    the field for a domain separator and the info is the field for context.
+    """
+    if length > 255 * HASHLEN:
+        raise HandshakeError("invalid HKDF output length")
+    prk = _hmac(salt, ikm)
+    output = b""
+    block = b""
+    counter = 1
+    while len(output) < length:
+        block = _hmac(prk, block + info + bytes([counter]))
+        output += block
+        counter += 1
+    return output[:length]
+
+
 def _nonce(counter: int) -> bytes:
     # ChaChaPoly in Noise: 32 zero bits then the 64-bit counter little-endian.
     return b"\x00" * 4 + counter.to_bytes(8, "little")
@@ -512,7 +533,9 @@ def _mix_ephemeral(state: SymmetricState, public: bytes) -> None:
     state.mix_key(public)
 
 
-def static_psk(profile: B1Profile, static: Keypair, peer_static: bytes) -> bytes:
+def static_psk(
+    profile: B1Profile, static: Keypair, peer_static: bytes, *, initiator: bool
+) -> bytes:
     """The pre-shared key for an initial handshake.
 
     Derived from the static-static Diffie-Hellman, which both peers can compute
@@ -534,11 +557,30 @@ def static_psk(profile: B1Profile, static: Keypair, peer_static: bytes) -> bytes
     still checked against the manifest, and the ephemeral Diffie-Hellman still
     supplies forward secrecy. Someone holding this value alone cannot complete
     an exchange.
+
+    RFC 5869 HKDF, with each input where RFC 5869 puts it: the shared secret is
+    the input keying material, the domain is the salt, and the context -- the
+    domain again, then both public keys in role order -- is the info. The
+    previous form was `HMAC(ss, domain)`, which is a defensible KDF but put the
+    domain in the message field and bound no public keys at all, so the same
+    value came out for every pair sharing a secret and nothing in it said which
+    two keys it belonged to. An external review raised both; the domain carries
+    `-v2` because the value on the wire changes.
+
+    The keys go in as initiator then responder rather than sorted, because the
+    exchange already has an asymmetry to name and sorting hides it: two peers
+    that swap roles derive different values, which is what a transcript binding
+    should do.
     """
-    # Keyed on the shared secret with the domain as the message: the secret is
-    # a fixed 32 bytes and the domain is not, which is the way round both
-    # implementations can express identically.
-    return _hmac(dh(static, peer_static), profile.static_psk_domain)
+    ordered = (
+        static.public + peer_static if initiator else peer_static + static.public
+    )
+    return rfc5869_hkdf(
+        _hash(profile.static_psk_domain),
+        dh(static, peer_static),
+        profile.static_psk_domain + ordered,
+        HASHLEN,
+    )
 
 
 def _begin(profile: B1Profile, rekey: bool, psk: bytes) -> SymmetricState:
@@ -622,7 +664,7 @@ class Initiator:
         elif admission_psk is not None:
             psk = admission_psk
         else:
-            psk = static_psk(profile, static, expected_peer_static)
+            psk = static_psk(profile, static, expected_peer_static, initiator=True)
         self.state = _begin(profile, self.rekey, psk)
         self.remote_ephemeral: bytes | None = None
         self.selection: Selection | None = None
@@ -774,7 +816,7 @@ class Responder:
         elif admission_psk is not None:
             psk = admission_psk
         else:
-            psk = static_psk(profile, static, expected_peer_static)
+            psk = static_psk(profile, static, expected_peer_static, initiator=False)
         self.state = _begin(profile, self.rekey, psk)
         # What the caller already read from the record's cleartext header and
         # acted on: the identifier it found the key from, and the cookie it

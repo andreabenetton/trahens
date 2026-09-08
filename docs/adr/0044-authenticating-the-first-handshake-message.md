@@ -28,11 +28,35 @@ Both exchanges use `Noise_XXpsk0_25519_ChaChaPoly_SHA256`. They differ only in
 where the pre-shared key comes from:
 
 - a rekey chains to the session it replaces, through its export key, as before;
-- an initial handshake uses `HMAC-SHA256(k = X25519(s, rs), m = b1_static_psk)`,
-  the static-static Diffie-Hellman between the two manifest identities.
+- an initial handshake derives one from the static-static Diffie-Hellman between
+  the two manifest identities.
 
 Nothing carries that value and no exchange establishes it; both peers derive it
 offline from what the manifest already gives them.
+
+**Amendment, 2026-09-08.** This record originally specified that derivation as
+`HMAC-SHA256(k = X25519(s, rs), m = b1_static_psk)`, and defended putting the
+shared secret in the key field on the grounds that it is a fixed 32 bytes while
+the domain is not. That reasoning was about which of the two implementations
+could express the construction identically, and it answered a question nobody
+had asked; the construction it produced put a domain separator in HMAC's message
+field and bound no public keys.
+
+An external review raised both. The derivation is now RFC 5869 HKDF with each
+input in its own field — the secret as IKM, `SHA-256(b1_static_psk)` as the
+salt, and `b1_static_psk || initiator_static || responder_static` as the info —
+which fixes the misplaced domain and adds the binding that was missing.
+`spec/link-handshake-b1.md` section 2 carries the derivation; the domain is now
+`Trahens-B1-static-psk-v2` and the published vectors moved with it.
+
+The binding is worth stating for what it does and does not buy. The unbound
+value was not attackable through anything B1.1 does: the presented static key is
+still checked against the manifest, and the pre-shared key still reaches only
+the exchange between that pair. What it lacked was any statement of its own
+about which two identities it belonged to, so a derived value carried no context
+a later use of it could rely on. Binding the keys is cheap insurance against a
+future construction reusing this value somewhere the pinning is not there to
+save it.
 
 ## Consequences
 

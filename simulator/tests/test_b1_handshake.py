@@ -18,6 +18,7 @@ from trahens_crypto.b1 import (
     encode_cookie_challenge,
     load_profile,
     peek_admission_header,
+    static_psk,
 )
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -114,6 +115,20 @@ class B1HandshakeTests(unittest.TestCase):
         )
         with self.assertRaises(HandshakeError):
             responder.read_message_1(outsider.write_message_1())
+
+    def test_the_static_pre_shared_key_binds_the_roles(self) -> None:
+        # The static-static Diffie-Hellman is symmetric, so the previous
+        # HMAC(ss, domain) form gave both peers the same value however they saw
+        # each other. Now the two public keys enter in role order, so agreeing
+        # requires agreeing on who is the initiator: the same pair with the
+        # roles read the other way round derives a different key.
+        left = Keypair.from_secret(seed("role/left"))
+        right = Keypair.from_secret(seed("role/right"))
+        agreed_left = static_psk(self.profile, left, right.public, initiator=True)
+        agreed_right = static_psk(self.profile, right, left.public, initiator=False)
+        self.assertEqual(agreed_left, agreed_right)
+        both_initiators = static_psk(self.profile, right, left.public, initiator=True)
+        self.assertNotEqual(agreed_left, both_initiators)
 
     def admission_parties(self, joiner_psk, inviter_psk, cookie=None):
         """A joiner with no manifest entry at the inviter.
