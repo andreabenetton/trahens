@@ -237,6 +237,26 @@ one per record sent in that direction. An implementation MUST NOT reuse a
 sequence under one key and MUST fail closed rather than wrap when the sequence
 space is exhausted.
 
+**A directional key and its send sequence are one state object, and neither may
+be recreated independently of the other.** Beginning at zero is safe only
+because a route derives fresh keys; a sequence that restarts under a key that
+survived repeats a nonce, and a repeated key and nonce loses the plaintext XOR
+and the authentication with it. The generation in the associated data does not
+rescue this — a repeated key and nonce is forbidden whatever the associated data
+says.
+
+Three ways to reach that state, none of which this profile reaches today and all
+of which a later change might: resuming or persisting a route without persisting
+its send high-water mark atomically; two sender instances sharing a directional
+key; and a snapshot or rollback that restores key and counter together and then
+sends different records. An implementation that adds route resumption MUST
+either persist the high-water mark with the key or derive a fresh key before
+resetting the sequence.
+
+The same applies to the receiver's replay window. Resetting it while keeping the
+key makes previously accepted records acceptable again; a fresh key on route
+reconstruction is what makes resetting it safe.
+
 A receiver MUST reject a record whose direction code is not the one it expects,
 MUST keep a bounded acceptance window per direction sized by
 `limits.route_replay_window`, and MUST commit a sequence to that window only

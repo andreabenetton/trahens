@@ -538,6 +538,21 @@ impl RouteReplayWindow {
 
 /// Monotonic sequence source for one outgoing direction.
 #[derive(Debug, Default)]
+/// The send counter half of a directional route key.
+///
+/// **A directional key and its sequencer are one state object.** Neither may be
+/// recreated without the other: the nonce is `direction || sequence`, so a
+/// sequencer that restarts at zero under a key that survived repeats a
+/// ChaCha20-Poly1305 nonce, which loses the plaintext XOR and the authentication
+/// with it. Deriving a fresh key on route reconstruction is what makes restarting
+/// at zero safe, and it is the only thing that does — the generation in the AAD
+/// does not help, because a repeated key and nonce is forbidden whatever the
+/// associated data says.
+///
+/// `spec/core-v1.8.md` section 7.1 states this as a requirement. The test
+/// `two_sequencers_under_one_key_repeat_a_nonce` documents the forbidden state
+/// rather than preventing it, because nothing in this type can prevent it: a
+/// caller that holds an old key is outside what the type can see.
 pub struct RouteSequencer {
     next: u64,
 }
@@ -565,6 +580,52 @@ mod tests {
     use trahens_crypto::{
         blind_public, random_nonzero_16, random_scalar, route_keys, scalar_base, signing_keypair,
     };
+
+    /// The forbidden lifecycle state, written down as a test because nothing in
+    /// the types can prevent it.
+    ///
+    /// A directional key and its sequencer are one state object. Recreate the
+    /// sequencer while the key survives — a resumed route, a restored snapshot,
+    /// two senders sharing a key — and the second seal reuses a nonce. This
+    /// asserts the consequence rather than the intention: the two records carry
+    /// the same nonce, and the keystream XOR recovers the difference of the two
+    /// plaintexts from the ciphertexts alone.
+    ///
+    /// Nothing in the shipped code reaches this. Every route object builds its
+    /// sequencer next to freshly derived keys, which is what makes starting at
+    /// zero safe. The test exists so that a later change adding route
+    /// resumption or persistence has to confront it.
+    #[test]
+    fn two_sequencers_under_one_key_repeat_a_nonce() -> Result<(), P1Error> {
+        let key = [0x5a_u8; 32];
+        let mut first = RouteSequencer::new();
+        let mut second = RouteSequencer::new();
+
+        let one = first.next()?;
+        let two = second.next()?;
+        assert_eq!(one, two, "both sequencers start at zero");
+
+        let left = b"the first plaintext...";
+        let right = b"a different payload!!!";
+        let sealed_left = route_seal(&key, RouteDirection::EndpointToGateway, one, left, b"aad")?;
+        let sealed_right = route_seal(&key, RouteDirection::EndpointToGateway, two, right, b"aad")?;
+
+        // The nonce is carried in the clear ahead of the ciphertext, and it is
+        // the same nonce under the same key: forbidden by RFC 8439.
+        assert_eq!(sealed_left[..12], sealed_right[..12], "nonce repeated");
+
+        // And the consequence, rather than only the condition. Under one
+        // keystream the ciphertext XOR is the plaintext XOR, so an observer with
+        // both records learns the difference of the plaintexts without the key.
+        let recovered: Vec<u8> = sealed_left[12..12 + left.len()]
+            .iter()
+            .zip(&sealed_right[12..12 + right.len()])
+            .map(|(a, b)| a ^ b)
+            .collect();
+        let expected: Vec<u8> = left.iter().zip(right).map(|(a, b)| a ^ b).collect();
+        assert_eq!(recovered, expected, "plaintext XOR leaked");
+        Ok(())
+    }
 
     fn arrival() -> CandidateArrival {
         CandidateArrival {
