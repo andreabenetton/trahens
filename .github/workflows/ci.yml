@@ -338,6 +338,9 @@ jobs:
       - name: Check the B1 rekey overlap model
         working-directory: formal
         run: java -cp /tmp/tla2tools.jar tlc2.TLC -config B1Rekey.cfg B1Rekey.tla
+      - name: Check the B1.2 cookie window model
+        working-directory: formal
+        run: java -cp /tmp/tla2tools.jar tlc2.TLC -config B12CookieWindow.cfg B12CookieWindow.tla
 
   paper:
     runs-on: ubuntu-latest

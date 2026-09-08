@@ -77,6 +77,13 @@ secret stops verifying even inside a window that is otherwise still accepted.
 life at between two and four seconds. Both are registry values rather than
 local choices.
 
+`formal/B12CookieWindow.tla` models the rotation. It checks the bound in both
+directions, because the two pull against each other: held secrets never exceed
+`cookie_windows_accepted` and nothing verifies more than one window after it was
+issued, and a cookie issued in the window a rotation is leaving still verifies in
+the window it arrives at. The second is what more than one secret is retained
+for, and it fails if `cookie_windows_accepted` is set to 1.
+
 ## 4. What this does not provide
 
 A cookie bound to a source address is a correlation handle for as long as it is
