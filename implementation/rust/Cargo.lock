@@ -255,6 +255,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "trahens-seed"
+version = "1.5.0"
+dependencies = [
+ "admission-b12",
+ "node-runtime",
+ "protocol-registry",
+ "trahens-crypto",
+]
+
+[[package]]
 name = "transport-t1"
 version = "1.5.0"
 dependencies = [

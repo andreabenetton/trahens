@@ -155,6 +155,7 @@ implementation/harness/netns-restart.sh
 implementation/harness/netns-admission.sh
 implementation/rust/bins/trahens-admit/src/main.rs
 implementation/rust/bins/trahens-join/src/main.rs
+implementation/rust/bins/trahens-seed/src/main.rs
 implementation/rust/bins/trahens-hostile/src/main.rs
 implementation/rust/crates/admission-b12/src/lib.rs
 tools/w2_epochs.py

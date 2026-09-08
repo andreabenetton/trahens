@@ -163,6 +163,14 @@ jobs:
         run: |
           sudo -E implementation/harness/netns-admission.sh --scenario exhaustion \
             --tag f --output "$GITHUB_WORKSPACE/build/p1-admission-exhaustion"
+      - name: A joiner follows a signed seed manifest and checks where it arrived
+        run: |
+          sudo -E implementation/harness/netns-admission.sh --scenario seeded \
+            --tag g --output "$GITHUB_WORKSPACE/build/p1-admission-seeded"
+      - name: A trusted seed naming the wrong key does not admit the joiner
+        run: |
+          sudo -E implementation/harness/netns-admission.sh --scenario malicious-seed \
+            --tag h --output "$GITHUB_WORKSPACE/build/p1-admission-malicious-seed"
       - name: A link rekeys under live traffic without disturbing the route
         run: |
           sudo -E implementation/harness/netns-p1.sh \

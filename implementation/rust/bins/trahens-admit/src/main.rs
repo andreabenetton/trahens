@@ -40,6 +40,15 @@ fn run() -> Result<(), Box<dyn Error>> {
     let static_secret = parse_hex::<32>(args.required("static-secret")?)?;
     let inviter_static = trahens_crypto::x25519_base(&static_secret)?;
     let store = PathBuf::from(args.required("store")?);
+    // Distinct from the static secret: a key is never reused across a signature
+    // scheme and a Diffie-Hellman one. Short-lived by design, so a fresh one per
+    // run is the shape; it is settable so that a seed manifest can name this
+    // node, which is the only way a joiner can check it reached who it meant.
+    let advertisement_secret = match args.optional("advertisement-secret", "") {
+        "" => random_bytes::<32>()?,
+        supplied => parse_hex::<32>(supplied)?,
+    };
+    let advertisement_public = trahens_crypto::signing_keypair(&advertisement_secret)?.0;
 
     // ADR 0047 D12: the store path is required for any node that can admit, so
     // there is no default and no in-memory fallback. A node that cannot record
@@ -58,10 +67,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         args.socket("bind")?,
         SUITE_C1_V2,
         static_secret,
-        // Distinct from the static secret: a key is never reused across a
-        // signature scheme and a Diffie-Hellman one. It is short-lived by
-        // design, so a fresh one per run is the shape rather than a shortcut.
-        random_bytes::<32>()?,
+        advertisement_secret,
         admission,
         args.u32("first-peer-id")?,
         0,
@@ -82,6 +88,12 @@ fn run() -> Result<(), Box<dyn Error>> {
             // harness reads it here rather than deriving it a second time:
             // a second derivation is a second place to get it wrong.
             ("static_public", node_runtime::hex(&inviter_static)),
+            // What a seed manifest would name for this node, and what a joiner
+            // checks the transition of ADR 0049 against.
+            (
+                "advertisement_public",
+                node_runtime::hex(&advertisement_public),
+            ),
         ],
     );
 

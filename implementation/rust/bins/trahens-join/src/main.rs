@@ -147,6 +147,11 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    // ADR 0049 made checkable. The exchange proved the responder holds this
+    // advertisement key; whether it is the one the joiner was told to expect is
+    // a separate question, and only a seed manifest can answer it.
+    confirm_seed(&args, &socket, initiator.advertisement_key())?;
+
     structured_event(
         "join",
         "admitted",
@@ -156,6 +161,87 @@ fn run() -> Result<(), Box<dyn Error>> {
         ],
     );
     Ok(())
+}
+
+/// Check the completed exchange against what a seed manifest named.
+///
+/// ADR 0049 made checkable. The exchange proved the responder holds some
+/// advertisement key; whether it is the one the joiner was told to expect is a
+/// separate question, and only a seed manifest can answer it.
+fn confirm_seed(
+    args: &CliArgs,
+    socket: &UdpSocket,
+    bound: Option<[u8; 32]>,
+) -> Result<(), Box<dyn Error>> {
+    let Some(expected) = expected_advertisement_key(args, socket)? else {
+        return Ok(());
+    };
+    match bound {
+        Some(found) if found == expected => {
+            structured_event(
+                "join",
+                "seed_confirmed",
+                &[("advertisement_key", node_runtime::hex(&found))],
+            );
+            Ok(())
+        }
+        Some(found) => {
+            // The node answered, and it is not the node the manifest named. A
+            // joiner that ignored this would have followed a seed that pointed
+            // it somewhere else, which is the whole reason the transition
+            // exists.
+            structured_event(
+                "join",
+                "seed_mismatch",
+                &[
+                    ("expected", node_runtime::hex(&expected)),
+                    ("found", node_runtime::hex(&found)),
+                ],
+            );
+            Err("the peer is not the one the seed manifest named".into())
+        }
+        None => {
+            structured_event("join", "no_transition", &[]);
+            Err("no advertisement transition to check the seed against".into())
+        }
+    }
+}
+
+/// The advertisement key a seed manifest names for the peer being contacted.
+///
+/// `None` when no manifest was supplied, which is the ordinary case: a joiner
+/// handed an address directly has nothing to check against and is no worse off
+/// than before manifests existed.
+fn expected_advertisement_key(
+    args: &CliArgs,
+    socket: &UdpSocket,
+) -> Result<Option<[u8; 32]>, Box<dyn Error>> {
+    let path = args.optional("seed", "");
+    if path.is_empty() {
+        return Ok(None);
+    }
+    let seed_key = parse_hex::<32>(args.required("seed-key")?)?;
+    let document = std::fs::read(path)?;
+    // `now` is the manifest's own issue time here, because a harness and an
+    // operator do not share a clock and this binary has no protocol clock of
+    // its own; a node with one checks the expiry against that instead.
+    let manifest = admission_b12::seed::decode(&document, &seed_key, 0)
+        .map_err(|_| "the seed manifest did not verify")?;
+
+    let peer = socket.peer_addr()?;
+    let wanted = match peer.ip() {
+        std::net::IpAddr::V4(v4) => v4.octets().to_vec(),
+        std::net::IpAddr::V6(v6) => v6.octets().to_vec(),
+    };
+    for entry in &manifest.entries {
+        if entry.address == wanted && entry.port == peer.port() {
+            return Ok(Some(entry.advertisement_key));
+        }
+    }
+    // A manifest that does not name this peer cannot vouch for it. Proceeding
+    // as though it had would let an unrelated entry stand in for the one that
+    // is missing.
+    Err("the seed manifest does not name this peer".into())
 }
 
 fn main() {

@@ -19,6 +19,11 @@
 #   spoof      a cookie issued for one address does not work from another
 #   exhaustion a peer at one address opens exchanges and abandons them, and a
 #              joiner at a different address is admitted regardless
+#   seeded     a joiner follows a signed seed manifest and confirms, after the
+#              exchange, that it reached the node the manifest named
+#   malicious-seed
+#              a manifest signed by the same trusted key names the wrong
+#              advertisement key, and the joiner refuses
 #
 # The last two need a third namespace, because the property they check is that
 # one source's behaviour does not decide another's. With attacker and victim at
@@ -51,11 +56,11 @@ while (( $# )); do
 done
 
 case "$SCENARIO" in
-  ok|replay|restart|hostile|spoof|exhaustion) ;;
+  ok|replay|restart|hostile|spoof|exhaustion|seeded|malicious-seed) ;;
   *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;;
 esac
 
-for binary in trahens-admit trahens-join trahens-hostile; do
+for binary in trahens-admit trahens-join trahens-hostile trahens-seed; do
   [[ -x "${BIN}/${binary}" ]] || {
     echo "missing binary: ${BIN}/${binary}" >&2
     echo "build it first: cargo build --release -p ${binary}" >&2
@@ -119,6 +124,8 @@ ip -n "$OTHER_NS" link set "$RIGHT2" up
 INVITER_SECRET=1111111111111111111111111111111111111111111111111111111111111111
 JOINER_SECRET=2222222222222222222222222222222222222222222222222222222222222222
 SECOND_JOINER_SECRET=3333333333333333333333333333333333333333333333333333333333333333
+SEED_SIGNING_SEED=4444444444444444444444444444444444444444444444444444444444444444
+INVITER_ADVERTISEMENT=5555555555555555555555555555555555555555555555555555555555555555
 ID_ONE=a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
 ID_TWO=b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2
 SECRET_ONE=7777777777777777777777777777777777777777777777777777777777777777
@@ -138,6 +145,7 @@ start_inviter() {
     --bind "0.0.0.0:$PORT" \
     --store "$STORE" \
     --static-secret "$INVITER_SECRET" \
+    --advertisement-secret "$INVITER_ADVERTISEMENT" \
     --invitations "$ID_ONE:$SECRET_ONE,$ID_TWO:$SECRET_TWO" \
     --first-peer-id 1000 \
     --timeout-ms "$ADMIT_TIMEOUT_MS" \
@@ -221,6 +229,39 @@ if [[ -z "$STATIC" ]]; then
   exit 1
 fi
 
+SEED_ARGS=()
+if [[ "$SCENARIO" == seeded || "$SCENARIO" == malicious-seed ]]; then
+  # What the inviter actually holds, read from its own event rather than
+  # derived a second time here.
+  ADVERTISED=$(grep -o '"advertisement_public":"[0-9a-f]*"' "$INVITER_LOG" |
+    head -1 | grep -o '[0-9a-f]\{64\}')
+  if [[ -z "$ADVERTISED" ]]; then
+    echo "admission: the inviter did not publish its advertisement key" >&2
+    exit 1
+  fi
+  # The malicious arm differs in exactly one thing: which key the manifest
+  # names. Same signer, same address, same everything else, so what the joiner
+  # reacts to can only be the key.
+  NAMED="$ADVERTISED"
+  if [[ "$SCENARIO" == malicious-seed ]]; then
+    NAMED=$(printf 'ee%.0s' {1..32})
+  fi
+  "$BIN/trahens-seed" \
+    --out "$OUTPUT/seed.manifest" \
+    --signing-seed "$SEED_SIGNING_SEED" \
+    --entries "${NAMED}@${INVITER_IP}:${PORT}" \
+    --issued-ms 0 --lifetime-ms 3600000 \
+    >"$OUTPUT/seed.log" 2>"$OUTPUT/seed.err"
+  SEED_PUBLIC=$(grep -o '"seed_public":"[0-9a-f]*"' "$OUTPUT/seed.log" |
+    head -1 | grep -o '[0-9a-f]\{64\}')
+  if [[ -z "$SEED_PUBLIC" ]]; then
+    echo "admission: no seed manifest was written" >&2
+    cat "$OUTPUT/seed.err" >&2 || true
+    exit 1
+  fi
+  SEED_ARGS=(--seed "$OUTPUT/seed.manifest" --seed-key "$SEED_PUBLIC")
+fi
+
 if [[ "$SCENARIO" == hostile ]]; then
   # The flood runs against the listening socket itself, which is the case
   # section 8's bounds were written for and which no scenario reached before.
@@ -261,7 +302,7 @@ if [[ "$SCENARIO" == exhaustion ]]; then
     "$STATIC" 45311 || JOIN_STATUS=$?
 else
   join "$OUTPUT/joiner-1.log" "$JOINER_SECRET" "$ID_ONE" "$SECRET_ONE" "$STATIC" 45311 \
-    || JOIN_STATUS=$?
+    ${SEED_ARGS[@]+"${SEED_ARGS[@]}"} || JOIN_STATUS=$?
 fi
 
 case "$SCENARIO" in
@@ -329,6 +370,31 @@ fi
 # Assertions.
 # ---------------------------------------------------------------------------
 
+if [[ "$SCENARIO" == malicious-seed ]]; then
+  # The joiner is expected to refuse, so the ordinary success assertions below
+  # do not apply and this arm finishes here.
+  if (( JOIN_STATUS == 0 )); then
+    echo "scenario malicious-seed: the joiner accepted a peer the manifest did" >&2
+    echo "not name, so the transition of ADR 0049 is not being checked" >&2
+    exit 1
+  fi
+  if ! grep -qs '"event":"seed_mismatch"' "$OUTPUT/joiner-1.log"; then
+    echo "scenario malicious-seed: the joiner failed for some other reason than" >&2
+    echo "the advertisement key, so the run says nothing about the seed" >&2
+    cat "$OUTPUT/joiner-1.log" >&2 || true
+    exit 1
+  fi
+  # Non-vacuity: the exchange has to have got far enough to produce a
+  # transition, or a refusal proves nothing about checking one.
+  if ! grep -qs '"event":"challenged"' "$OUTPUT/joiner-1.log"; then
+    echo "scenario malicious-seed: the joiner never reached the exchange" >&2
+    exit 1
+  fi
+  echo "scenario malicious-seed: the manifest was signed and trusted, named the" \
+    "wrong advertisement key, and the joiner refused after the exchange"
+  exit 0
+fi
+
 if (( JOIN_STATUS != 0 )); then
   echo "scenario ${SCENARIO}: the first joiner was not admitted" >&2
   cat "$OUTPUT/joiner-1.log" >&2 || true
@@ -364,6 +430,15 @@ case "$SCENARIO" in
   ok)
     echo "scenario ok: a joiner with no manifest entry was challenged, admitted," \
       "and recorded"
+    ;;
+  seeded)
+    if ! grep -qs '"event":"seed_confirmed"' "$OUTPUT/joiner-1.log"; then
+      echo "scenario seeded: the joiner did not confirm the advertisement key," >&2
+      echo "so it followed the manifest without checking where it arrived" >&2
+      exit 1
+    fi
+    echo "scenario seeded: the joiner followed a signed manifest and confirmed" \
+      "after the exchange that it reached the node the manifest named"
     ;;
   replay|restart)
     if (( SECOND_STATUS == 0 )); then
