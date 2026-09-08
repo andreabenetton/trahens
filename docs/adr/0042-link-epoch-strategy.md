@@ -8,8 +8,24 @@ Accepted in part, amended by ADR 0043. The key-derived epoch (option C) stands
 as the mechanism. The persistent high-water check (option A as a detector) is
 **dropped**: once every session derives its own keys, a repeated epoch under
 different keys is harmless, and a repeated epoch under the same keys requires
-the same ephemerals, which is an RNG failure that now fails closed. A detector
-would guard against nothing the keys do not already cover.
+the same ephemerals. A detector would guard against nothing the keys do not
+already cover.
+
+*Amended 8 September 2026, after external review.* This said repeated ephemerals
+were "an RNG failure that now fails closed", and that conflates two different
+failures. What fails closed is the randomness **API returning an error**: the
+runtime propagates it and derives nothing. What does not fail closed is the
+randomness **returning the same bytes twice** — from a snapshot rollback, a
+forked VM image, or a broken generator that reports success. Nothing detects
+that, and Noise is explicit that ephemeral reuse is likely to be catastrophic:
+the same ephemerals with the same pre-shared key give the same handshake keys and
+nonces.
+
+The accurate statement is therefore two statements. An RNG error fails closed.
+Repeated RNG output is assumed not to happen, and that assumption is
+security-critical rather than incidental. Dropping the epoch detector remains
+right — it would have caught this only after the damage, and only sometimes —
+but the property it was dropped in favour of is narrower than this ADR claimed.
 
 Originally proposed to supply the explicit evaluation
 `network-bootstrap-b1.md` section 9 requires before B1.1 can specify an epoch

@@ -348,6 +348,23 @@ Uniqueness of the epoch follows from both ephemeral contributions being fresh,
 not from any stored counter. `docs/adr/0042-link-epoch-strategy.md` records why
 the alternatives were rejected.
 
+Ephemeral freshness is therefore a **security-critical assumption, not something
+this construction enforces**. An implementation MUST treat a failure of its
+randomness source as fatal to the handshake, and nothing here detects a source
+that returns the same bytes twice while reporting success — a rolled-back
+snapshot, a cloned VM image, a broken generator. Reusing an ephemeral with the
+same pre-shared key repeats the handshake keys and nonces, which is
+catastrophic, and no epoch check would catch it: the epoch would repeat too,
+being derived from the same transcript.
+
+The epoch is also not a unique session identifier and MUST NOT be used as one.
+Its top bit is forced, so it carries 31 bits, and independent sessions collide
+with probability about a half at roughly 55,000 sessions. That is harmless
+because nonce uniqueness rests on the key being fresh rather than on the epoch
+being distinct — but a deployment that inverted that reasoning, and leaned on
+epoch entropy to excuse a reused key, would be relying on 31 bits where it needed
+far more.
+
 ## 7. Rekey
 
 A rekey is a complete new handshake on the established link, using the
