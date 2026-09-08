@@ -111,7 +111,7 @@ deployment that must accept handshakes from peers it has no manifest entry for
 cannot use this first-message defence at all, having no static-static value to
 key from. B1.2's cookie gate is what covers that case.
 
-### B1.2 — Bounded peer discovery — **admission delivered, discovery partial**
+### B1.2 — Bounded peer discovery — **delivered, except local-link discovery**
 
 Add signed seed manifests and optional local-link or underlay-native discovery.
 Discovery must feed a bounded candidate cache and remain separate from
@@ -119,18 +119,26 @@ admission. Stateless return-routability cookies should precede expensive
 cryptographic state.
 
 **What exists.** A node admits a peer it was never configured with, over a
-listening socket, on a real network. The admission cookie, the per-joiner
-invitation and its `psk0` derivation, the discovery advertisement, the
-append-only admission store, the bounded candidate cache, the four registry
-bounds of `link-handshake-b1.md` section 8, the receive-path demultiplexer, the
-challenge-and-retry first message of ADR 0048 and the advertisement transition
-of ADR 0049 are implemented in both the Python reference and Rust, with
-published vectors where there is a wire format.
-`implementation/harness/netns-admission.sh` runs six scenarios across
-namespaces: an admission, a single-use invitation refused a second time, an
-invitation still spent after a restart, a flood against the listening socket, a
-cookie presented from the address it was not issued for, and one source
-abandoning exchanges without locking out another.
+listening socket, on a real network, and learns where to try from a signed seed
+manifest or from an advertisement it received. The admission cookie, the
+per-joiner invitation and its `psk0` derivation, the discovery advertisement and
+its emission, the signed seed manifest, the append-only admission store, the
+bounded candidate cache, the four registry bounds of `link-handshake-b1.md`
+section 8, the receive-path demultiplexer, the challenge-and-retry first message
+of ADR 0048 and the advertisement transition of ADR 0049 are implemented in both
+the Python reference and Rust, with published vectors wherever there is a wire
+format. `formal/B12CookieWindow.tla` models the cookie window rotation in both
+directions.
+
+`implementation/harness/netns-admission.sh` runs nine scenarios across
+namespaces: an admission; a single-use invitation refused a second time; an
+invitation still spent after a restart; a flood against the listening socket; a
+cookie presented from the address it was not issued for; one source abandoning
+exchanges without locking out another; a joiner following a seed manifest and
+confirming after the exchange that it reached the node the manifest named; the
+same manifest signed by the same trusted key naming the wrong advertisement key,
+which the joiner refuses; and an advertisement putting a candidate in a
+receiver's cache while allocating no handshake state.
 
 **What this does not change.** P1's claim above is unchanged, and deliberately.
 Admission runs in `trahens-admit` and `trahens-join`, which are separate
@@ -141,13 +149,10 @@ still demonstrates route bootstrap over a named peer set. A reader who concludes
 from the paragraph above that Trahens now bootstraps autonomously has read more
 into it than is there.
 
-**What remains.** Signed seed manifests, so a joiner has somewhere to learn a
-candidate from other than being handed one; optional local-link discovery; the
-malicious-seed and advertisement-replay scenarios, which need seed manifests to
-exist before they can be written; a formal model of the cookie window overlap;
-and the disposition of the advertisement's `cookie` field, which ADR 0048 left
-without a specified use. Admission is also not wired into a P1 node, which is
-what the first paragraph of this section is about.
+**What remains.** Optional local-link or underlay-native discovery, which the
+stage lists and which nothing here needs: a node learns candidates from a
+manifest or an advertisement already. And admission is not wired into a P1 node,
+which is what the paragraph above is about and which is the larger of the two.
 
 `docs/b1.2-scope.md` scopes this stage and ADR 0045 records its seven
 decisions, all taken as recommended: the invitation model first, with the
