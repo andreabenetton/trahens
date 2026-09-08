@@ -36,6 +36,8 @@ fuzz_target!(|data: &[u8]| {
         None => return,
     };
     let chained = [0x5a_u8; 32];
+    const INVITATION_ID: [u8; 16] = [0xa1; 16];
+    const NO_COOKIE: [u8; 32] = [0; 32];
 
     let profile = node_runtime::handshake::profile(SUITE_R1);
     let static_secret = [0x11_u8; 32];
@@ -52,9 +54,13 @@ fuzz_target!(|data: &[u8]| {
             previous_export: &chained,
             peer_static,
         },
+        // The cookie is all zero, which is what a joiner sends before it has
+        // been challenged, so the corpus reaches the first-attempt shape too.
         _ => Keying::Admission {
             psk: &chained,
             peer_static: Some(peer_static),
+            invitation_id: &INVITATION_ID,
+            cookie: &NO_COOKIE,
         },
     };
 
