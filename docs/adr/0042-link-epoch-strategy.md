@@ -11,7 +11,8 @@ different keys is harmless, and a repeated epoch under the same keys requires
 the same ephemerals. A detector would guard against nothing the keys do not
 already cover.
 
-*Amended 8 September 2026, after external review.* This said repeated ephemerals
+*Amended 8 September 2026, after external review
+(`docs/external-review-2026-09-08.md`, B1-F).* This said repeated ephemerals
 were "an RNG failure that now fails closed", and that conflates two different
 failures. What fails closed is the randomness **API returning an error**: the
 runtime propagates it and derives nothing. What does not fail closed is the

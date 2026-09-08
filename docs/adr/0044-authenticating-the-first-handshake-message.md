@@ -42,7 +42,8 @@ could express the construction identically, and it answered a question nobody
 had asked; the construction it produced put a domain separator in HMAC's message
 field and bound no public keys.
 
-An external review raised both. The derivation is now RFC 5869 HKDF with each
+An external review raised both (`docs/external-review-2026-09-08.md`, B1-E,
+which also records what was not taken). The derivation is now RFC 5869 HKDF with each
 input in its own field — the secret as IKM, `SHA-256(b1_static_psk)` as the
 salt, and `b1_static_psk || initiator_static || responder_static` as the info —
 which fixes the misplaced domain and adds the binding that was missing.

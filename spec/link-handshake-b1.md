@@ -72,7 +72,8 @@ b1_static_psk)`, under domain `Trahens-B1-static-psk-v1`. That is a sound KDF �
 the secret is uniform and 32 bytes — but it put the domain separator in HMAC's
 message field rather than the salt, and it bound no public keys, so the derived
 value carried nothing saying which two identities it belonged to. An external
-review raised both points. The domain is now `Trahens-B1-static-psk-v2`, and
+review raised both points (`docs/external-review-2026-09-08.md`, B1-E). The
+domain is now `Trahens-B1-static-psk-v2`, and
 `spec/b1-test-vectors.json` moved with it: the two forms produce different keys,
 so peers on different revisions fail at the first decryption rather than
 silently diverging.
@@ -419,7 +420,7 @@ the session. Through Core v1.8 draft revisions it was also fed in unchanged as
 the next exchange's pre-shared key, which made one value both a handshake
 output and a handshake input; an external review noted that one value serving
 two constructions is what lets a later use of the export key interact with the
-rekey chain. The derivation step keeps them apart under their own domain. The
+rekey chain (`docs/external-review-2026-09-08.md` §3). The derivation step keeps them apart under their own domain. The
 info carries nothing beyond the domain because there is nothing left to bind:
 the export key already commits to the whole previous transcript. The rekey
 vector in `spec/b1-test-vectors.json` moved with this change.
