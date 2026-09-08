@@ -97,12 +97,19 @@ class AdvertisementTests(unittest.TestCase):
                 Advertisement(3, self.key, 1, 1, 1, (), (3,), (4,), (0x0101,)), self.seed
             )
 
-    def test_a_cookie_of_the_wrong_width_is_refused(self) -> None:
-        with self.assertRaises(AdvertisementError):
-            encode(
-                Advertisement(3, self.key, 1, 1, 1, (2,), (3,), (4,), (0x0101,), b"short"),
-                self.seed,
-            )
+    def test_the_body_has_no_optional_fields(self) -> None:
+        # ADR 0048's open item, closed by removing the cookie: the body is now
+        # fixed in shape for a given profile-list length, so a decoder has no
+        # branch to be steered down. Two advertisements differing only in scalar
+        # fields must therefore encode to the same length.
+        one = encode(
+            Advertisement(3, self.key, 1, 1, 1, (2,), (3,), (4,), (0x0101,)), self.seed
+        )
+        two = encode(
+            Advertisement(3, self.key, 9, 7, 5, (2,), (3,), (4,), (0x0101,)), self.seed
+        )
+        self.assertEqual(len(one), len(two))
+        self.assertNotEqual(one, two)
 
     def test_vector_generator_is_reproducible(self) -> None:
         published = ROOT / "spec/b12-advertisement-test-vectors.json"
@@ -127,7 +134,6 @@ class AdvertisementTests(unittest.TestCase):
         )
         for entry in document["cases"]:
             seed = bytes.fromhex(entry["signing_seed"])
-            cookie = bytes.fromhex(entry["cookie"]) if entry["cookie"] else None
             advertisement = Advertisement(
                 entry["version"],
                 bytes.fromhex(entry["key"]),
@@ -138,7 +144,6 @@ class AdvertisementTests(unittest.TestCase):
                 tuple(entry["t1_profiles"]),
                 tuple(entry["t2_profiles"]),
                 tuple(entry["suites"]),
-                cookie,
             )
             self.assertEqual(
                 encode(advertisement, seed).hex(), entry["datagram"], entry["name"]

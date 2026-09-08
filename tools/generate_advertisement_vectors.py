@@ -49,14 +49,12 @@ def case(name: str, signing_seed: bytes, build) -> dict:
         "t1_profiles": list(advertisement.t1_profiles),
         "t2_profiles": list(advertisement.t2_profiles),
         "suites": list(advertisement.suites),
-        "cookie": advertisement.cookie.hex() if advertisement.cookie else "",
         "datagram": datagram.hex(),
     }
 
 
 def build() -> dict[str, object]:
     signing_seed = seed("advertiser")
-    cookie = seed("cookie")
 
     cases = [
         case(
@@ -64,12 +62,16 @@ def build() -> dict[str, object]:
             signing_seed,
             lambda key: Advertisement(3, key, 1_757_000_000_000, 1, 1, (2,), (3,), (4,), (0x0101,)),
         ),
-        # A cookie present, which is the only optional field.
+        # The same shape with every scalar field different, so a decoder that
+        # read one of them from the wrong offset is caught. This replaced a
+        # "with_cookie" case when the cookie field was removed: the body has no
+        # optional fields left, and a vector that differed only in a field that
+        # no longer exists would have been a vector of nothing.
         case(
-            "with_cookie",
+            "distinct_scalars",
             signing_seed,
             lambda key: Advertisement(
-                3, key, 1_757_000_000_000, 1, 1, (2,), (3,), (4,), (0x0101,), cookie
+                3, key, 1_757_000_000_001, 7, 9, (2,), (3,), (4,), (0x0101,)
             ),
         ),
         # Several profiles per class, so the list encoding is exercised beyond

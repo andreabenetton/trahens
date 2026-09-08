@@ -3,7 +3,7 @@
 
 use admission_b12::advertisement::{decode, encode};
 use admission_b12::Advertisement;
-use protocol_registry::{B12_DATAGRAM_ADVERTISEMENT, BYTES_B12_ADVERTISEMENT, BYTES_B12_COOKIE};
+use protocol_registry::{B12_DATAGRAM_ADVERTISEMENT, BYTES_B12_ADVERTISEMENT};
 use std::error::Error;
 use test_vectors::Value;
 use trahens_crypto::signing_keypair;
@@ -38,15 +38,6 @@ fn rebuild(case: &Value) -> Fallible<Advertisement> {
     let key: [u8; 32] = bytes(case, "key")?
         .try_into()
         .map_err(|_| "key is not 32 bytes")?;
-    let cookie_hex = bytes(case, "cookie")?;
-    let cookie = if cookie_hex.is_empty() {
-        None
-    } else {
-        Some(
-            <[u8; BYTES_B12_COOKIE]>::try_from(cookie_hex.as_slice())
-                .map_err(|_| "cookie is not the registry width")?,
-        )
-    };
     Ok(Advertisement {
         version: u8::try_from(number(case, "version")?)?,
         key,
@@ -69,7 +60,6 @@ fn rebuild(case: &Value) -> Fallible<Advertisement> {
             .into_iter()
             .map(u16::try_from)
             .collect::<Result<_, _>>()?,
-        cookie,
     })
 }
 

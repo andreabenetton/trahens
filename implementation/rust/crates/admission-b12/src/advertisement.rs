@@ -14,7 +14,7 @@
 use crate::CookieError;
 use protocol_registry::{
     B12_DATAGRAM_ADVERTISEMENT, BYTES_B12_ADVERTISEMENT, BYTES_B12_ADVERTISEMENT_BODY,
-    BYTES_B12_ADVERTISEMENT_SIGNATURE, BYTES_B12_COOKIE, DOMAIN_B12_ADVERTISEMENT,
+    BYTES_B12_ADVERTISEMENT_SIGNATURE, DOMAIN_B12_ADVERTISEMENT,
     LIMIT_MAX_OFFERED_PROFILES_PER_CLASS,
 };
 use trahens_crypto::{sign, verify, SecretBytes};
@@ -35,7 +35,6 @@ pub struct Advertisement {
     pub t1_profiles: Vec<u8>,
     pub t2_profiles: Vec<u8>,
     pub suites: Vec<u16>,
-    pub cookie: Option<[u8; BYTES_B12_COOKIE]>,
 }
 
 fn push_list_u8(out: &mut Vec<u8>, values: &[u8]) -> Result<()> {
@@ -99,13 +98,6 @@ impl Advertisement {
         push_list_u8(&mut body, &self.t1_profiles)?;
         push_list_u8(&mut body, &self.t2_profiles)?;
         push_list_u16(&mut body, &self.suites)?;
-        match self.cookie {
-            None => body.push(0),
-            Some(cookie) => {
-                body.push(1);
-                body.extend_from_slice(&cookie);
-            }
-        }
         Ok(body)
     }
 
@@ -128,22 +120,6 @@ impl Advertisement {
         let t1_profiles = take_list_u8(body, &mut cursor)?;
         let t2_profiles = take_list_u8(body, &mut cursor)?;
         let suites = take_list_u16(body, &mut cursor)?;
-        let present = *body.get(cursor).ok_or(CookieError)?;
-        cursor += 1;
-        let cookie = match present {
-            0 => None,
-            1 => {
-                let taken: [u8; BYTES_B12_COOKIE] = body
-                    .get(cursor..cursor + BYTES_B12_COOKIE)
-                    .ok_or(CookieError)?
-                    .try_into()
-                    .map_err(|_| CookieError)?;
-                cursor += BYTES_B12_COOKIE;
-                Some(taken)
-            }
-            // Any other flag value is refused rather than read as present.
-            _ => return Err(CookieError),
-        };
         if cursor != body.len() {
             return Err(CookieError);
         }
@@ -157,7 +133,6 @@ impl Advertisement {
             t1_profiles,
             t2_profiles,
             suites,
-            cookie,
         })
     }
 }

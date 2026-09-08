@@ -41,11 +41,19 @@ version(1) || key(32) || expiry_ms(8) || capacity_class(1) || auth_modes(1)
   || n || t1 profile ids (n)
   || n || t2 profile ids (n)
   || n || suite ids (2n)
-  || cookie_present(1) || [cookie(32)]
 ```
 
-Each `n` is at least 1 and at most `max_offered_profiles_per_class`. The cookie
-flag MUST be 0 or 1; any other value is refused rather than treated as present.
+Each `n` is at least 1 and at most `max_offered_profiles_per_class`.
+
+**The body has no optional fields**, so for a given set of list lengths its shape
+is fixed and a decoder has no branch a sender can steer. It carried an optional
+cookie until ADR 0048 found that field could not do what it appeared to: an
+advertisement is produced before the advertiser has observed any source, so a
+cookie in one binds to nothing and any holder could echo it from any address.
+Nothing else survived being unbound from a source either — a "cookies required"
+flag would be true for every node, because a responder challenges any first
+message whose cookie does not verify — so it was removed rather than redefined.
+A cookie is obtained by being challenged: `link-handshake-b1.md` section 4.1.
 
 `key` is the short-lived advertisement key of D5, and is the only identity the
 datagram carries. Section 6's exclusions hold: no descriptor, no capability, no
@@ -115,8 +123,9 @@ advertisement cannot move the accounting.
 ## 5. Conformance
 
 `b12-advertisement-test-vectors.json` fixes three datagrams: a minimal one, one
-carrying a cookie, and one with several profiles per class so the list encoding
-is exercised beyond a single entry. The generator refuses to publish if any two
+with every scalar field different so a decoder reading one from the wrong offset
+is caught, and one with several profiles per class so the list encoding is
+exercised beyond a single entry. The generator refuses to publish if any two
 collide. An implementation MUST reproduce each datagram byte for byte and MUST
 refuse a datagram whose signature, padding, width, or discriminator has been
 altered.

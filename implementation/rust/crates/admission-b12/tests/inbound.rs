@@ -158,7 +158,6 @@ fn signed_advertisement(expiry_ms: u64) -> Fallible<Vec<u8>> {
         t1_profiles: vec![3],
         t2_profiles: vec![4],
         suites: vec![3],
-        cookie: None,
     };
     Ok(admission_b12::advertisement::encode(
         &advertisement,

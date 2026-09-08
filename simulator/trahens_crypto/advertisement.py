@@ -39,7 +39,6 @@ from trahens_spec.generated import (
     BYTES_B12_ADVERTISEMENT,
     BYTES_B12_ADVERTISEMENT_BODY,
     BYTES_B12_ADVERTISEMENT_SIGNATURE,
-    BYTES_B12_COOKIE,
     DOMAIN_B12_ADVERTISEMENT,
 )
 
@@ -67,7 +66,6 @@ class Advertisement:
     t1_profiles: tuple[int, ...]
     t2_profiles: tuple[int, ...]
     suites: tuple[int, ...]
-    cookie: bytes | None = None
 
 
 def _list_bytes(values: tuple[int, ...], width: int) -> bytes:
@@ -119,11 +117,7 @@ def encode_body(advertisement: Advertisement) -> bytes:
         + _list_bytes(advertisement.t2_profiles, 1)
         + _list_bytes(advertisement.suites, 2)
     )
-    if advertisement.cookie is None:
-        return body + bytes([0])
-    if len(advertisement.cookie) != BYTES_B12_COOKIE:
-        raise AdvertisementError("cookie must be the registry width")
-    return body + bytes([1]) + advertisement.cookie
+    return body
 
 
 def decode_body(body: bytes) -> Advertisement:
@@ -139,23 +133,10 @@ def decode_body(body: bytes) -> Advertisement:
     t1, cursor = _take_list(body, cursor, 1)
     t2, cursor = _take_list(body, cursor, 1)
     suites, cursor = _take_list(body, cursor, 2)
-    if cursor >= len(body):
-        raise AdvertisementError("truncated advertisement")
-    present = body[cursor]
-    cursor += 1
-    if present == 0:
-        cookie = None
-    elif present == 1:
-        cookie = body[cursor : cursor + BYTES_B12_COOKIE]
-        if len(cookie) != BYTES_B12_COOKIE:
-            raise AdvertisementError("truncated cookie")
-        cursor += BYTES_B12_COOKIE
-    else:
-        raise AdvertisementError("cookie flag is not canonical")
     if cursor != len(body):
         raise AdvertisementError("trailing bytes after the advertisement")
     return Advertisement(
-        version, key, expiry_ms, capacity_class, auth_modes, w2, t1, t2, suites, cookie
+        version, key, expiry_ms, capacity_class, auth_modes, w2, t1, t2, suites
     )
 
 

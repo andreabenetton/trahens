@@ -119,6 +119,14 @@ field from a signed datagram moves published vectors and belongs in its own
 commit with its own argument. Whoever takes it should either give it a purpose
 that survives not being bound to a source, or delete it.
 
+*Resolved 8 September 2026: deleted.* No purpose survived. The obvious candidate
+— a flag saying this node requires a cookie — would be true of every node,
+because D13 has a responder challenge any first message whose cookie does not
+verify, so there is nothing optional to advertise. The field is gone from
+`discovery-advertisement-b12.md` section 2 and from the published vectors, and
+the body now has no optional fields at all: for a given set of list lengths its
+shape is fixed, so a decoder has no branch a sender can steer.
+
 This does not settle D5's signed transition. An admitted joiner still has no
 binding from the short-lived advertisement key to the identity it admits under,
 and nothing here creates one.
