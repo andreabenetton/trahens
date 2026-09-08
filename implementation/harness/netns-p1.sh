@@ -236,11 +236,19 @@ case "$SCENARIO" in
   rekey)
     # Force a rekey inside the run by lowering the trigger far below the
     # registry ceiling, which no run would otherwise reach. Fixed T2 emits 16
-    # cells per 200 ms epoch on every link, so a few dozen cells is a second or
-    # two: the route is established, rekeys underneath, and must keep working.
-    # The gate is the ordinary success gate -- data both ways, clean teardown --
-    # because the whole point is that a rekey is invisible to the route above it.
-    P1_REKEY_AFTER_CELLS=48 ;;
+    # cells per 200 ms epoch on every link: the route is established, rekeys
+    # underneath, and must keep working. The gate is the ordinary success gate
+    # -- data both ways, clean teardown -- because the whole point is that a
+    # rekey is invisible to the route above it.
+    #
+    # The trigger is 24 rather than 48 because the run's length is not ours to
+    # choose. The data phase lasts as long as the route work takes, and that
+    # varies with the machine: a link emitted 366 cells on one CI runner, 59
+    # locally, and 45 on a fast runner where 48 then failed for no reason but
+    # the clock. Twenty-four is under half of the smallest of those, and is
+    # still several epochs of live traffic, so it tests the same thing with
+    # margin instead of testing the runner.
+    P1_REKEY_AFTER_CELLS=24 ;;
   unauthorized-pseudonym)
     # The gateway signs with the key the initiator expects but advertises a
     # pseudonym the descriptor does not list, which is what a stale descriptor
@@ -556,11 +564,27 @@ if [[ -n "${P1_REKEY_AFTER_CELLS:-}" ]]; then
   # gate while testing nothing, so the count is the assertion.
   REKEYS=$(cat "$OUTPUT"/*.metrics.json | grep -o '"rekeys":[0-9]*' | cut -d: -f2 |
     awk '{ total += $1 } END { print total + 0 }')
+  # How much each link actually emitted. A run can end before any link reaches
+  # the trigger -- the data phase is as long as the route work takes, and that
+  # varies with the machine -- and that is a different fact from a link that had
+  # the traffic and did not rekey. Reporting them as one thing sent a previous
+  # investigation looking for a defect in the rekey path when the run had simply
+  # been short.
+  SENT=$(cat "$OUTPUT"/*.metrics.json | grep -o '"sent_cells":[0-9]*' | cut -d: -f2 |
+    awk '{ if ($1 > most) most = $1 } END { print most + 0 }')
   if (( REKEYS == 0 )); then
-    echo "scenario ${SCENARIO}: no link rekeyed, so the run proved nothing" >&2
+    if (( SENT < P1_REKEY_AFTER_CELLS )); then
+      echo "scenario ${SCENARIO}: the busiest link sent ${SENT} cells against a" >&2
+      echo "trigger of ${P1_REKEY_AFTER_CELLS}, so the run ended before a rekey was" >&2
+      echo "due. This is the run being short, not the rekey path being broken." >&2
+    else
+      echo "scenario ${SCENARIO}: a link sent ${SENT} cells, past the trigger of" >&2
+      echo "${P1_REKEY_AFTER_CELLS}, and no link rekeyed" >&2
+    fi
     exit 1
   fi
-  echo "scenario ${SCENARIO}: ${REKEYS} rekey(s) completed under live traffic"
+  echo "scenario ${SCENARIO}: ${REKEYS} rekey(s) completed under live traffic," \
+    "busiest link ${SENT} cells against a trigger of ${P1_REKEY_AFTER_CELLS}"
 fi
 if [[ -n "${P1_EXPECT_ALL_LINKS:-}" ]]; then
   # Every link has two ends, each writing its own metrics entry. A link whose
