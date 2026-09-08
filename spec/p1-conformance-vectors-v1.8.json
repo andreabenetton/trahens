@@ -238,6 +238,8 @@
     "route_mapping": "local-only",
     "keys_and_capabilities": "never-logged",
     "handshake_ephemeral": "public",
+    "admission_invitation_id": "public",
+    "admission_cookie": "public",
     "negotiation_offer": "public",
     "handshake_static_responder": "ephemeral-encrypted",
     "handshake_static_initiator": "handshake-encrypted",

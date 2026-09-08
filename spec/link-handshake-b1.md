@@ -90,18 +90,26 @@ a receiver that adds a type MUST check the range before attempting W2, or the
 new type is eaten by the cell path.
 
 ```text
-initiate  0x00 type  e(32)                       enc(payload)(1018)
-respond   0x00 type  e(32)  enc(s)(48)           enc(payload)(970)
-finish    0x00 type         enc(s)(48)           enc(payload)(1002)
+initiate            0x00 type                          e(32)  enc(payload)(1018)
+respond             0x00 type  e(32)  enc(s)(48)              enc(payload)(970)
+finish              0x00 type         enc(s)(48)              enc(payload)(1002)
+admission_initiate  0x00 type  id(16) cookie(32)       e(32)  enc(payload)(970)
+cookie_challenge    0x00 type  id(16) cookie(32)       padding
 ```
+
+The last two are the admission exchange of ADR 0048 and are described in
+section 4.1. They keep the `0x00` first byte and differ in the second, like
+every other record type, so section 3's allocation is unchanged and a receiver
+needs no new discriminator.
 
 Each payload is a two-byte big-endian length, the body, and zero padding to a
 fixed width. The padding is inside the region Noise hashes and, where a key
 exists, encrypts, so it is authenticated. A receiver MUST reject non-zero
 padding. The finish payload is empty.
 
-The framed widths are `b1_initiate_payload_psk`, `b1_respond_payload` and
-`b1_finish_payload`. Under `psk0` a key exists from the start, so the first
+The framed widths are `b1_initiate_payload_psk`, `b1_respond_payload`,
+`b1_finish_payload` and, for an admission initiate, `b1_admission_payload` —
+narrower by the `b1_admission_header` (48) bytes its cleartext header spends. Under `psk0` a key exists from the start, so the first
 payload is encrypted and its ciphertext carries a 16-byte tag; that holds for
 both exchanges.
 
@@ -157,6 +165,54 @@ records, which is the trust-on-first-use behaviour B1.1 excludes. The reference
 exposes the recorded key only in admission mode and leaves it unset otherwise,
 and a responder MUST refuse to start with neither a manifest entry nor an
 admission key, since that combination authenticates the peer by nothing at all.
+
+### 4.1 How an admission exchange starts
+
+A responder cannot decrypt an admission initiate until it knows which invitation
+keys it, and MUST NOT allocate a handshake context until the sender has proved
+it receives datagrams at the address it claims. Both facts therefore travel in
+the clear, in the record's first 48 bytes, and both are read before anything is
+allocated:
+
+```text
+admission_initiate  0x00 type  id(16) cookie(32)  e(32)  enc(payload)(970)
+```
+
+The header is cleartext but not unprotected. It is mixed into the transcript
+before the ephemeral, so a modified identifier or cookie makes the payload fail
+to open. A man in the middle can neither strip the cookie nor move it onto
+another invitation.
+
+A joiner has no cookie the first time it writes, so it sends 48 bytes of which
+the last 32 are zero. **An absent cookie is not a distinct case.** It fails
+verification, and failing verification means one thing:
+
+1. The joiner sends `admission_initiate` with a cookie that does not verify.
+2. The responder allocates nothing, performs no Diffie-Hellman, and answers
+   `cookie_challenge` carrying a cookie bound to the observed source, echoing
+   the identifier so a joiner with several attempts outstanding can match it.
+3. The joiner resends `admission_initiate` with that cookie.
+4. The responder allocates, and the exchange proceeds as section 4 describes.
+
+A responder MUST NOT distinguish an absent cookie from a wrong one, so that
+there is no branch a sender can steer and no state held for a first attempt.
+The two attempts do not share a transcript, because the cookie is inside it, so
+a cookie cannot be carried from one attempt into another.
+
+A `cookie_challenge` is one cell wide like every other record, so a responder
+that answers a spoofed source amplifies by a factor of one and a reflector gains
+nothing it would not gain by sending to the victim directly. This is why no
+bound on challenge issuance is specified: there is nothing for one to prevent.
+
+A challenge carries no authentication of its own and claims none. A forged one
+makes a joiner echo a cookie that will not verify and be challenged again, which
+is a denial of service by an attacker that can already reach the joiner. A
+receiver MUST reject a challenge whose padding is non-zero, as for every other
+record.
+
+`admission-cookie-b12.md` defines the cookie's `offer` input as the parameters
+offered so far; on this path that is the cleartext admission header, so a cookie
+issued for one invitation cannot be spent on another from the same address.
 
 Nothing acknowledges the third message, so an initiator that sent it cannot
 know it arrived. A responder that has not received it MUST keep resending its

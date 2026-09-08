@@ -22,6 +22,7 @@ from trahens_crypto.b1 import (
     Offer,
     Responder,
     Selection,
+    encode_cookie_challenge,
     load_profile,
     static_psk,
 )
@@ -34,7 +35,12 @@ def digest(label: bytes) -> bytes:
     return hashlib.sha256(b"Trahens/B1/vector/v1/" + label).digest()
 
 
-def run_handshake(profile, label: bytes, previous_export: bytes | None) -> dict[str, object]:
+def run_handshake(
+    profile,
+    label: bytes,
+    previous_export: bytes | None,
+    admission: dict[str, bytes] | None = None,
+) -> dict[str, object]:
     initiator_static = Keypair.from_secret(digest(label + b"/initiator/static"))
     responder_static = Keypair.from_secret(digest(label + b"/responder/static"))
     initiator_ephemeral = Keypair.from_secret(digest(label + b"/initiator/ephemeral"))
@@ -49,11 +55,32 @@ def run_handshake(profile, label: bytes, previous_export: bytes | None) -> dict[
     )
     selection = Selection(profile.protocol_version, 2, 3, 4, 0x0101, 1)
 
+    # An admission exchange keys from the invitation rather than the manifest,
+    # and the inviter has nothing to pin: it passes None and learns the joiner's
+    # static key from the exchange.
+    admission_kwargs = {}
+    if admission is not None:
+        admission_kwargs = {
+            "admission_psk": admission["psk"],
+            "admission_identifier": admission["identifier"],
+            "admission_cookie": admission["cookie"],
+        }
     initiator = Initiator(
-        profile, initiator_static, initiator_ephemeral, responder_static.public, offer, previous_export
+        profile,
+        initiator_static,
+        initiator_ephemeral,
+        responder_static.public,
+        offer,
+        previous_export,
+        **admission_kwargs,
     )
     responder = Responder(
-        profile, responder_static, responder_ephemeral, initiator_static.public, previous_export
+        profile,
+        responder_static,
+        responder_ephemeral,
+        None if admission is not None else initiator_static.public,
+        previous_export,
+        **admission_kwargs,
     )
     message_1 = initiator.write_message_1()
     responder.read_message_1(message_1)
@@ -67,9 +94,20 @@ def run_handshake(profile, label: bytes, previous_export: bytes | None) -> dict[
     for field in ("handshake_hash", "initiator_to_responder", "responder_to_initiator", "epoch", "export_key"):
         if getattr(initiator_session, field) != getattr(responder_session, field):
             raise RuntimeError(f"reference disagrees with itself on {field}")
+    if admission is not None and responder.promoted_static != initiator_static.public:
+        raise RuntimeError("the inviter did not learn the joiner's key")
     return {
         "label": label.decode(),
         "rekey": previous_export is not None,
+        "admission": admission is not None,
+        # Empty on the manifest and rekey paths. On an admission exchange these
+        # are the cleartext header of message 1, published so an independent
+        # implementation can read them without state, which is what a responder
+        # must do before it has any.
+        "admission_identifier": (admission["identifier"] if admission else b"").hex(),
+        "admission_cookie": (admission["cookie"] if admission else b"").hex(),
+        # The key the inviter had no way to pin and learned from the exchange.
+        "promoted_static": (responder.promoted_static or b"").hex(),
         # The export key this exchange chains to, i.e. the psk0 pre-shared key.
         # Empty for an initial handshake. Published so an independent
         # implementation can replay the rekey without deriving it first.
@@ -81,7 +119,9 @@ def run_handshake(profile, label: bytes, previous_export: bytes | None) -> dict[
         # derivation first -- and pinned so that it must reproduce it in the
         # end. Both ends compute it from the manifest, so it is never sent.
         "psk": (
-            previous_export
+            admission["psk"]
+            if admission is not None
+            else previous_export
             if previous_export is not None
             else static_psk(profile, initiator_static, responder_static.public)
         ).hex(),
@@ -108,12 +148,39 @@ def build(registry: dict) -> dict[str, object]:
     profile = load_profile(registry)
     initial = run_handshake(profile, b"initial", None)
     rekey = run_handshake(profile, b"rekey", bytes.fromhex(str(initial["export_key"])))
+    # Two admission exchanges: one as a joiner sends it first, with no cookie it
+    # could yet hold, and one as it resends after being challenged. They differ
+    # in the header alone, and every derived value differs with it, which is what
+    # says the header is inside the transcript.
+    identifier = digest(b"admission/identifier")[: registry["widths_bytes"]["b12_invitation_id"]]
+    cookie = digest(b"admission/cookie")[: registry["widths_bytes"]["b12_cookie"]]
+    psk = digest(b"admission/psk")
+    challenged = run_handshake(
+        profile,
+        b"admission",
+        None,
+        {"psk": psk, "identifier": identifier, "cookie": cookie},
+    )
+    first_attempt = run_handshake(
+        profile,
+        b"admission",
+        None,
+        {"psk": psk, "identifier": identifier, "cookie": bytes(len(cookie))},
+    )
+    first_attempt["label"] = "admission-first-attempt"
+    if first_attempt["handshake_hash"] == challenged["handshake_hash"]:
+        raise RuntimeError("the cookie is not bound into the transcript")
+    vectors = [initial, rekey, first_attempt, challenged]
+    records = [v["message_1"] for v in vectors]
+    if len(set(records)) != len(records):
+        raise RuntimeError("two published exchanges share a first record")
     return {
         "schema": "trahens-b1-handshake-vectors-v1",
         "registry_version": registry["registry_version"],
         "noise_protocol": registry["domain_separators"]["b1_noise_protocol"],
         "record_bytes": registry["widths_bytes"]["b1_record"],
-        "vectors": [initial, rekey],
+        "cookie_challenge": encode_cookie_challenge(profile, identifier, cookie).hex(),
+        "vectors": vectors,
     }
 
 

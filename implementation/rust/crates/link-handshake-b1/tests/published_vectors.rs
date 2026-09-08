@@ -84,16 +84,32 @@ fn profile() -> Fallible<Profile> {
     })
 }
 
-fn vector(rekey: bool) -> Fallible<Value> {
+/// Select by label rather than by the `rekey` flag.
+///
+/// The flag stopped identifying a vector when the admission exchanges were
+/// published: three of the four are not rekeys, and a `find` on the flag would
+/// silently return whichever the generator happened to emit first. A selector
+/// that depends on array order is one reordering away from testing something
+/// other than what its caller asked for.
+fn labelled(label: &str) -> Fallible<Value> {
     let document = test_vectors::b1()?;
-    document
+    let matching: Vec<Value> = document
         .get("vectors")
         .and_then(Value::as_array)
         .ok_or("no vectors array")?
         .iter()
-        .find(|candidate| candidate.get("rekey").and_then(Value::as_bool) == Some(rekey))
+        .filter(|candidate| candidate.get("label").and_then(Value::as_str) == Some(label))
         .cloned()
-        .ok_or_else(|| format!("no vector with rekey={rekey}").into())
+        .collect();
+    match matching.as_slice() {
+        [only] => Ok(only.clone()),
+        [] => Err(format!("no vector labelled {label}").into()),
+        _ => Err(format!("{label} is not unique among the published vectors").into()),
+    }
+}
+
+fn vector(rekey: bool) -> Fallible<Value> {
+    labelled(if rekey { "rekey" } else { "initial" })
 }
 
 fn field(vector: &Value, name: &str) -> Fallible<String> {

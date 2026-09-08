@@ -41,6 +41,13 @@ truncated to `b12_cookie` (32) bytes, which for SHA-256 is no truncation.
 IPv4 and 16 for IPv6. `offer` is the parameter set the sender offered so far.
 `responder_secret` is 32 bytes and is never transmitted.
 
+On the admission path of `link-handshake-b1.md` section 4.1, `offer` is the
+cleartext admission header — the invitation identifier — because that is
+everything the sender has offered in the clear at the moment the cookie is
+issued, the rest being encrypted under a key the cookie precedes. Binding it
+means a cookie issued for one invitation cannot be spent on another from the
+same address.
+
 Every variable-length field is length-prefixed. Without that a source address
 and an offer could be split differently and produce the same message, so a
 cookie issued for one pair would verify for another.
@@ -79,9 +86,16 @@ weakens that argument and owes a new one.
 
 Nothing here resists an attacker that can receive at the address it claims.
 Such an attacker obtains cookies freely, and what bounds it is the registry's
-handshake-context and public-key-operation limits — which
-`link-handshake-b1.md` section 8 records as unenforced today, and which B1.2
-must implement, because a listening socket is what makes them reachable.
+handshake-context and public-key-operation limits, which
+`link-handshake-b1.md` section 8 specifies and `admission-b12`'s gate enforces.
+
+**A sender does not obtain a cookie from an advertisement.** The optional cookie
+field in `discovery-advertisement-b12.md` reads as though it were the delivery
+mechanism and cannot be one: an advertisement is produced before the advertiser
+has observed any source, so a cookie inside it binds to no source and any holder
+could echo it from any address. A cookie is obtained by being challenged —
+`link-handshake-b1.md` section 4.1, ADR 0048 D13 — and that field currently has
+no specified use.
 
 Underlays where a source address is not meaningful need an equivalent bounded
 return-routability mechanism; this construction assumes one exists.

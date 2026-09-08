@@ -14,10 +14,15 @@ from trahens_crypto.b1 import (
     Offer,
     Responder,
     Selection,
+    decode_cookie_challenge,
+    encode_cookie_challenge,
     load_profile,
+    peek_admission_header,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+
+INVITATION_ID = bytes.fromhex("a1" * 16)
 
 
 def seed(label: str) -> bytes:
@@ -107,7 +112,7 @@ class B1HandshakeTests(unittest.TestCase):
         with self.assertRaises(HandshakeError):
             responder.read_message_1(outsider.write_message_1())
 
-    def admission_parties(self, joiner_psk, inviter_psk):
+    def admission_parties(self, joiner_psk, inviter_psk, cookie=None):
         """A joiner with no manifest entry at the inviter.
 
         The joiner still pins the inviter, because an invitation carries the
@@ -124,6 +129,8 @@ class B1HandshakeTests(unittest.TestCase):
             inviter_static.public,
             offer,
             admission_psk=joiner_psk,
+            admission_identifier=INVITATION_ID,
+            admission_cookie=cookie,
         )
         inviter = Responder(
             self.profile,
@@ -131,6 +138,8 @@ class B1HandshakeTests(unittest.TestCase):
             Keypair.from_secret(seed("inviter/ephemeral")),
             None,
             admission_psk=inviter_psk,
+            admission_identifier=INVITATION_ID,
+            admission_cookie=cookie,
         )
         return joiner, inviter, joiner_static
 
@@ -158,6 +167,106 @@ class B1HandshakeTests(unittest.TestCase):
         joiner, inviter, _ = self.admission_parties(seed("admission"), seed("other"))
         with self.assertRaises(HandshakeError):
             inviter.read_message_1(joiner.write_message_1())
+
+    def test_an_admission_initiate_carries_a_readable_header(self) -> None:
+        # ADR 0046 D8 and ADR 0048 D14: both fields must be readable with no
+        # state at all, because a responder needs them before it has any.
+        cookie = bytes.fromhex("c0" * 32)
+        joiner, _, _ = self.admission_parties(seed("admission"), seed("admission"), cookie)
+        record = joiner.write_message_1()
+        identifier, found = peek_admission_header(self.profile, record)
+        self.assertEqual(identifier, INVITATION_ID)
+        self.assertEqual(found, cookie)
+
+    def test_an_admission_initiate_is_still_one_cell(self) -> None:
+        joiner, _, _ = self.admission_parties(seed("admission"), seed("admission"))
+        self.assertEqual(len(joiner.write_message_1()), self.record_bytes)
+
+    def test_the_admission_header_is_inside_the_transcript(self) -> None:
+        # Cleartext is not unprotected. Altering either field must make the
+        # payload fail to open, or a man in the middle could strip the cookie or
+        # move it onto another invitation.
+        for position in (2, 2 + 16):
+            joiner, inviter, _ = self.admission_parties(seed("admission"), seed("admission"))
+            record = bytearray(joiner.write_message_1())
+            record[position] ^= 0x01
+            with self.assertRaises(HandshakeError):
+                inviter.read_message_1(bytes(record))
+
+    def test_a_header_the_responder_did_not_act_on_is_refused(self) -> None:
+        # The responder found its key from one identifier and verified a cookie
+        # for it. A record carrying different ones is a different record.
+        joiner, _, _ = self.admission_parties(seed("admission"), seed("admission"))
+        record = joiner.write_message_1()
+        inviter = Responder(
+            self.profile,
+            Keypair.from_secret(seed("inviter/static")),
+            Keypair.from_secret(seed("inviter/ephemeral")),
+            None,
+            admission_psk=seed("admission"),
+            admission_identifier=bytes.fromhex("b2" * 16),
+        )
+        with self.assertRaises(HandshakeError):
+            inviter.read_message_1(record)
+
+    def test_a_first_attempt_carries_a_zero_cookie(self) -> None:
+        # ADR 0048 D13: a joiner has no cookie until it is challenged, and an
+        # absent cookie is not a special case — it is simply one that will not
+        # verify, which is the one thing that provokes a challenge.
+        joiner, _, _ = self.admission_parties(seed("admission"), seed("admission"))
+        _, cookie = peek_admission_header(self.profile, joiner.write_message_1())
+        self.assertEqual(cookie, bytes(self.profile.cookie_bytes))
+
+    def test_the_cookie_changes_the_transcript(self) -> None:
+        # A cookie issued for one attempt cannot be carried into another: the
+        # attempts do not share a transcript.
+        without, _, _ = self.admission_parties(seed("admission"), seed("admission"))
+        with_cookie, _, _ = self.admission_parties(
+            seed("admission"), seed("admission"), bytes.fromhex("c0" * 32)
+        )
+        self.assertNotEqual(without.write_message_1(), with_cookie.write_message_1())
+
+    def test_a_cookie_challenge_round_trips(self) -> None:
+        cookie = bytes.fromhex("c0" * 32)
+        record = encode_cookie_challenge(self.profile, INVITATION_ID, cookie)
+        self.assertEqual(len(record), self.record_bytes)
+        self.assertEqual(decode_cookie_challenge(self.profile, record), (INVITATION_ID, cookie))
+
+    def test_a_cookie_challenge_is_one_cell(self) -> None:
+        # ADR 0048 D13's amplification argument is exactly this: the answer is
+        # the same width as the message that provoked it, so a responder that
+        # answers a spoofed source amplifies by one.
+        joiner, _, _ = self.admission_parties(seed("admission"), seed("admission"))
+        challenge = encode_cookie_challenge(self.profile, INVITATION_ID, bytes(32))
+        self.assertEqual(len(challenge), len(joiner.write_message_1()))
+
+    def test_a_challenge_with_hidden_padding_is_refused(self) -> None:
+        record = bytearray(encode_cookie_challenge(self.profile, INVITATION_ID, bytes(32)))
+        record[-1] = 0x01
+        with self.assertRaises(HandshakeError):
+            decode_cookie_challenge(self.profile, bytes(record))
+
+    def test_a_challenge_is_not_read_as_an_initiate(self) -> None:
+        # The two share a first byte and differ in the second, which is what
+        # section 3's allocation relies on.
+        record = encode_cookie_challenge(self.profile, INVITATION_ID, bytes(32))
+        with self.assertRaises(HandshakeError):
+            peek_admission_header(self.profile, record)
+
+    def test_a_manifest_initiate_is_not_read_as_an_admission_one(self) -> None:
+        initiator, _ = self.parties()
+        with self.assertRaises(HandshakeError):
+            peek_admission_header(self.profile, initiator.write_message_1())
+
+    def test_an_admission_handshake_needs_its_identifier(self) -> None:
+        with self.assertRaises(HandshakeError):
+            Responder(
+                self.profile,
+                Keypair.from_secret(seed("r/static")),
+                Keypair.from_secret(seed("r/ephemeral")),
+                None,
+                admission_psk=seed("admission"),
+            )
 
     def test_a_responder_without_a_peer_static_needs_an_admission_key(self) -> None:
         # Omitting the pin is only permitted where an admission key replaces

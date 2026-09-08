@@ -57,9 +57,13 @@ class B1Profile:
     export_domain: bytes
     record_bytes: int
     initiate_payload_psk_bytes: int
+    admission_header_bytes: int
+    admission_payload_bytes: int
     respond_payload_bytes: int
     finish_payload_bytes: int
     record_types: dict[str, int]
+    invitation_id_bytes: int
+    cookie_bytes: int
     max_offered_per_class: int
     rejected_suites: frozenset[int]
 
@@ -85,9 +89,13 @@ def load_profile(registry: dict) -> B1Profile:
         export_domain=domains["b1_export"].encode(),
         record_bytes=int(widths["b1_record"]),
         initiate_payload_psk_bytes=int(widths["b1_initiate_payload_psk"]),
+        admission_header_bytes=int(widths["b1_admission_header"]),
+        admission_payload_bytes=int(widths["b1_admission_payload"]),
         respond_payload_bytes=int(widths["b1_respond_payload"]),
         finish_payload_bytes=int(widths["b1_finish_payload"]),
         record_types=dict(registry["b1_record_types"]),
+        invitation_id_bytes=int(widths["b12_invitation_id"]),
+        cookie_bytes=int(widths["b12_cookie"]),
         max_offered_per_class=int(registry["limits"]["max_offered_profiles_per_class"]),
         rejected_suites=rejected,
     )
@@ -344,6 +352,89 @@ def _unframe_payload(framed: bytes, width: int) -> bytes:
 
 
 # --------------------------------------------------------------------------
+# The admission header and the cookie challenge (ADR 0048).
+# --------------------------------------------------------------------------
+
+
+def admission_header(profile: B1Profile, identifier: bytes, cookie: bytes) -> bytes:
+    """The cleartext prefix of an admission initiate.
+
+    ADR 0046 D8 puts the invitation identifier in the clear so a responder can
+    find the key to decrypt under without trial-decrypting against every live
+    invitation. ADR 0048 D14 puts the cookie beside it, because both must be
+    readable before anything is allocated.
+
+    It is cleartext but not unprotected: it is mixed into the transcript before
+    the ephemeral, so altering either field makes the payload fail to open. A
+    man in the middle cannot strip the cookie or move it to another invitation.
+    """
+    if len(identifier) != profile.invitation_id_bytes:
+        raise HandshakeError("invitation identifier width mismatch")
+    if len(cookie) != profile.cookie_bytes:
+        raise HandshakeError("cookie width mismatch")
+    header = identifier + cookie
+    if len(header) != profile.admission_header_bytes:
+        raise HandshakeError("admission header width mismatch")
+    return header
+
+
+def peek_admission_header(profile: B1Profile, record: bytes) -> tuple[bytes, bytes]:
+    """Read the cleartext header of an admission initiate, holding no state.
+
+    This is what a responder calls first: it needs the identifier to find the
+    invitation the key comes from, and the cookie to decide whether to allocate
+    at all. Both happen before any Diffie-Hellman, which is the point of putting
+    them in the clear.
+    """
+    if len(record) != profile.record_bytes:
+        raise HandshakeError("record width mismatch")
+    if record[:2] != _record_prefix(profile, "admission_initiate"):
+        raise HandshakeError("unexpected record")
+    cursor = 2
+    identifier = record[cursor : cursor + profile.invitation_id_bytes]
+    cursor += profile.invitation_id_bytes
+    cookie = record[cursor : cursor + profile.cookie_bytes]
+    return identifier, cookie
+
+
+def encode_cookie_challenge(profile: B1Profile, identifier: bytes, cookie: bytes) -> bytes:
+    """The responder's answer to a first message whose cookie did not verify.
+
+    ADR 0048 D13. It allocates nothing and proves nothing: a joiner that acts on
+    a forged one echoes a cookie that will not verify and is challenged again.
+    It is one cell wide like every other record, so answering a spoofed source
+    amplifies by a factor of one.
+    """
+    record = _record_prefix(profile, "cookie_challenge")
+    record += admission_header(profile, identifier, cookie)
+    record += b"\x00" * (profile.record_bytes - len(record))
+    if len(record) != profile.record_bytes:
+        raise HandshakeError("record width mismatch")
+    return record
+
+
+def decode_cookie_challenge(profile: B1Profile, record: bytes) -> tuple[bytes, bytes]:
+    """Parse a challenge into (identifier, cookie).
+
+    The padding is checked because a receiver must not accept a record with
+    anything hidden behind its declared fields, even one that carries no
+    authentication of its own.
+    """
+    if len(record) != profile.record_bytes:
+        raise HandshakeError("record width mismatch")
+    if record[:2] != _record_prefix(profile, "cookie_challenge"):
+        raise HandshakeError("unexpected record")
+    cursor = 2
+    identifier = record[cursor : cursor + profile.invitation_id_bytes]
+    cursor += profile.invitation_id_bytes
+    cookie = record[cursor : cursor + profile.cookie_bytes]
+    cursor += profile.cookie_bytes
+    if any(record[cursor:]):
+        raise HandshakeError("malformed challenge padding")
+    return identifier, cookie
+
+
+# --------------------------------------------------------------------------
 # The handshake itself.
 # --------------------------------------------------------------------------
 
@@ -463,6 +554,8 @@ class Initiator:
         offer: Offer,
         previous_export: bytes | None = None,
         admission_psk: bytes | None = None,
+        admission_identifier: bytes | None = None,
+        admission_cookie: bytes | None = None,
     ) -> None:
         """See `Responder` for the three modes.
 
@@ -473,12 +566,20 @@ class Initiator:
         """
         if previous_export is not None and admission_psk is not None:
             raise HandshakeError("a rekey has no admission key")
+        if (admission_psk is None) != (admission_identifier is None):
+            raise HandshakeError("an admission handshake needs its invitation identifier")
         self.profile = profile
         self.static = static
         self.ephemeral = ephemeral
         self.expected_peer_static = expected_peer_static
         self.offer = offer
         self.rekey = previous_export is not None
+        self.admission = admission_psk is not None
+        # The first attempt carries no cookie, because a joiner has none until
+        # it is challenged. A zero cookie is not a special case: it simply fails
+        # to verify, which is the one thing that provokes a challenge.
+        self.admission_identifier = admission_identifier
+        self.admission_cookie = admission_cookie or bytes(profile.cookie_bytes)
         if previous_export is not None:
             psk = previous_export
         elif admission_psk is not None:
@@ -490,19 +591,33 @@ class Initiator:
         self.selection: Selection | None = None
 
     def _type(self, stage: str) -> str:
+        if self.admission and stage == "initiate":
+            return "admission_initiate"
         return ("rekey_" if self.rekey else "handshake_") + stage
 
     def _initiate_width(self) -> int:
         # Under psk0 there is a key from the start, so the first payload is
-        # encrypted and its ciphertext carries a tag. Both exchanges are psk0,
-        # so both use this width; the record is one cell either way.
+        # encrypted and its ciphertext carries a tag. The admission initiate
+        # spends 48 of those bytes on its cleartext header, so it frames a
+        # narrower payload; the record is one cell either way.
+        if self.admission:
+            return self.profile.admission_payload_bytes
         return self.profile.initiate_payload_psk_bytes
 
     def write_message_1(self) -> bytes:
-        # -> e
+        # -> [header] e
+        record = _record_prefix(self.profile, self._type("initiate"))
+        if self.admission:
+            header = admission_header(
+                self.profile, self.admission_identifier, self.admission_cookie
+            )
+            # Mixed before the ephemeral, so the cleartext header is inside the
+            # transcript: altering it makes the payload fail to open.
+            self.state.mix_hash(header)
+            record += header
         _mix_ephemeral(self.state, self.ephemeral.public)
         payload = _frame_payload(self.offer.encode(self.profile), self._initiate_width())
-        record = _record_prefix(self.profile, self._type("initiate")) + self.ephemeral.public
+        record += self.ephemeral.public
         record += self.state.encrypt_and_hash(payload)
         if len(record) != self.profile.record_bytes:
             raise HandshakeError("record width mismatch")
@@ -556,6 +671,8 @@ class Responder:
         expected_peer_static: bytes | None,
         previous_export: bytes | None = None,
         admission_psk: bytes | None = None,
+        admission_identifier: bytes | None = None,
+        admission_cookie: bytes | None = None,
     ) -> None:
         """A responder in one of three modes, distinguished by its key source.
 
@@ -573,6 +690,8 @@ class Responder:
             raise HandshakeError("a rekey has no admission key")
         if expected_peer_static is None and admission_psk is None:
             raise HandshakeError("only an admission handshake may omit the peer static")
+        if (admission_psk is None) != (admission_identifier is None):
+            raise HandshakeError("an admission handshake needs its invitation identifier")
         self.profile = profile
         self.static = static
         self.ephemeral = ephemeral
@@ -586,6 +705,12 @@ class Responder:
         else:
             psk = static_psk(profile, static, expected_peer_static)
         self.state = _begin(profile, self.rekey, psk)
+        # What the caller already read from the record's cleartext header and
+        # acted on: the identifier it found the key from, and the cookie it
+        # verified. read_message_1 confirms the record carries exactly these,
+        # so the key and the routability proof belong to the record being read.
+        self.admission_identifier = admission_identifier
+        self.admission_cookie = admission_cookie or bytes(profile.cookie_bytes)
         self.remote_ephemeral: bytes | None = None
         self.offer: Offer | None = None
         self.selection: Selection | None = None
@@ -595,18 +720,34 @@ class Responder:
         self.promoted_static: bytes | None = None
 
     def _type(self, stage: str) -> str:
+        if self.admission and stage == "initiate":
+            return "admission_initiate"
         return ("rekey_" if self.rekey else "handshake_") + stage
 
     def _initiate_width(self) -> int:
+        if self.admission:
+            return self.profile.admission_payload_bytes
         return self.profile.initiate_payload_psk_bytes
 
     def read_message_1(self, record: bytes) -> Offer:
         p = self.profile
         if len(record) != p.record_bytes or record[:2] != _record_prefix(p, self._type("initiate")):
             raise HandshakeError("unexpected record")
-        re = record[2 : 2 + DHLEN]
+        cursor = 2
+        if self.admission:
+            expected = admission_header(p, self.admission_identifier, self.admission_cookie)
+            found = record[cursor : cursor + p.admission_header_bytes]
+            # A record whose header is not the one the caller acted on is a
+            # different record: the key would be right and the routability proof
+            # would belong to something else.
+            if not hmac.compare_digest(found, expected):
+                raise HandshakeError("admission header does not match")
+            self.state.mix_hash(found)
+            cursor += p.admission_header_bytes
+        re = record[cursor : cursor + DHLEN]
+        cursor += DHLEN
         _mix_ephemeral(self.state, re)
-        framed = self.state.decrypt_and_hash(record[2 + DHLEN :])
+        framed = self.state.decrypt_and_hash(record[cursor:])
         offer = Offer.decode(p, _unframe_payload(framed, self._initiate_width()))
         self.remote_ephemeral = re
         self.offer = offer

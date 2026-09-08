@@ -55,6 +55,8 @@ B1_RECORD_HANDSHAKE_FINISH = 3
 B1_RECORD_REKEY_INITIATE = 4
 B1_RECORD_REKEY_RESPOND = 5
 B1_RECORD_REKEY_FINISH = 6
+B1_RECORD_ADMISSION_INITIATE = 7
+B1_RECORD_COOKIE_CHALLENGE = 8
 
 B12_DATAGRAM_ADVERTISEMENT = 1
 
@@ -118,6 +120,8 @@ BYTES_B12_ADVERTISEMENT_SIGNATURE = 64
 BYTES_B12_STORE_LENGTH = 4
 BYTES_B12_STORE_CHECKSUM = 8
 BYTES_B1_INITIATE_PAYLOAD_PSK = 1002
+BYTES_B1_ADMISSION_HEADER = 48
+BYTES_B1_ADMISSION_PAYLOAD = 954
 
 LIMIT_MAX_LOGICAL_MESSAGE_BYTES = 16384
 LIMIT_MAX_CONTROL_PROTECTED_BYTES = 8192
@@ -220,4 +224,4 @@ DOMAIN_B12_INVITATION_PSK = b'Trahens-B12-invitation-psk-v1'
 DOMAIN_B1_EPOCH = b'Trahens-B1-epoch-v1'
 DOMAIN_B1_EXPORT = b'Trahens-B1-export-v1'
 
-FIELD_PROTECTION = {'link_epoch': 'public', 'link_sequence': 'public', 't1_frame_type': 'link-encrypted', 'm2_message_type': 'link-encrypted', 'm2_suite_id': 'link-encrypted', 'fragment_metadata': 'link-encrypted', 'branch_token': 'link-encrypted-hop-local', 'candidate_token': 'link-encrypted-hop-local', 'local_label': 'link-encrypted-hop-local', 'r1_discovery_nonce': 'link-encrypted-replaced-each-hop', 'gateway_pseudonym': 'end-to-end-encrypted', 'r1_capability': 'end-to-end-encrypted', 'route_secret': 'end-to-end-encrypted', 'route_nonce': 'link-encrypted', 'application_data': 'end-to-end-encrypted', 'retransmission_counters': 'local-only', 'queue_depth': 'local-only', 'route_mapping': 'local-only', 'keys_and_capabilities': 'never-logged', 'handshake_ephemeral': 'public', 'negotiation_offer': 'public', 'handshake_static_responder': 'ephemeral-encrypted', 'handshake_static_initiator': 'handshake-encrypted', 'negotiation_selection': 'handshake-encrypted'}
+FIELD_PROTECTION = {'link_epoch': 'public', 'link_sequence': 'public', 't1_frame_type': 'link-encrypted', 'm2_message_type': 'link-encrypted', 'm2_suite_id': 'link-encrypted', 'fragment_metadata': 'link-encrypted', 'branch_token': 'link-encrypted-hop-local', 'candidate_token': 'link-encrypted-hop-local', 'local_label': 'link-encrypted-hop-local', 'r1_discovery_nonce': 'link-encrypted-replaced-each-hop', 'gateway_pseudonym': 'end-to-end-encrypted', 'r1_capability': 'end-to-end-encrypted', 'route_secret': 'end-to-end-encrypted', 'route_nonce': 'link-encrypted', 'application_data': 'end-to-end-encrypted', 'retransmission_counters': 'local-only', 'queue_depth': 'local-only', 'route_mapping': 'local-only', 'keys_and_capabilities': 'never-logged', 'handshake_ephemeral': 'public', 'admission_invitation_id': 'public', 'admission_cookie': 'public', 'negotiation_offer': 'public', 'handshake_static_responder': 'ephemeral-encrypted', 'handshake_static_initiator': 'handshake-encrypted', 'negotiation_selection': 'handshake-encrypted'}

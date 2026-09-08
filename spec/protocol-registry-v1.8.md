@@ -57,6 +57,8 @@ Byte order for fixed-width integers: **big-endian**.
 | `rekey_initiate` | 4 | `0x0004` |
 | `rekey_respond` | 5 | `0x0005` |
 | `rekey_finish` | 6 | `0x0006` |
+| `admission_initiate` | 7 | `0x0007` |
+| `cookie_challenge` | 8 | `0x0008` |
 
 ## B1.2 datagram first-byte discriminators
 
@@ -128,6 +130,8 @@ Byte order for fixed-width integers: **big-endian**.
 | `b12_store_length` | 4 |
 | `b12_store_checksum` | 8 |
 | `b1_initiate_payload_psk` | 1002 |
+| `b1_admission_header` | 48 |
+| `b1_admission_payload` | 954 |
 
 ## Limits
 
@@ -227,6 +231,8 @@ Byte order for fixed-width integers: **big-endian**.
 | `route_mapping` | `local-only` |
 | `keys_and_capabilities` | `never-logged` |
 | `handshake_ephemeral` | `public` |
+| `admission_invitation_id` | `public` |
+| `admission_cookie` | `public` |
 | `negotiation_offer` | `public` |
 | `handshake_static_responder` | `ephemeral-encrypted` |
 | `handshake_static_initiator` | `handshake-encrypted` |
