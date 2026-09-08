@@ -16,6 +16,7 @@
 //! filling the cache cost something.
 
 use crate::advertisement::Advertisement;
+use crate::seed::SeedManifest;
 use protocol_registry::{
     LIMIT_CANDIDATE_TTL_MS, LIMIT_MAX_CANDIDATE_PEERS, LIMIT_MAX_CANDIDATE_PEERS_PER_SOURCE,
 };
@@ -47,16 +48,50 @@ impl std::fmt::Display for CacheError {
 
 impl std::error::Error for CacheError {}
 
+/// Where a candidate came from, and what it therefore carries.
+///
+/// A seed entry is not an advertisement and is deliberately not converted into
+/// one: it names a key, an address and a port, and nothing signed a capacity
+/// class or a profile list for it. Fabricating those to make the two shapes
+/// match would put values in the cache that no one asserted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Learned {
+    /// A verified advertisement, from the source that sent it.
+    Advertised(Box<Advertisement>),
+    /// A signed seed manifest entry (ADR 0050).
+    Seeded {
+        advertisement_key: [u8; 32],
+        address: Vec<u8>,
+        port: u16,
+    },
+}
+
+impl Learned {
+    /// The advertisement key this candidate is keyed by, and the one a
+    /// completed exchange's transition is checked against (ADR 0049).
+    #[must_use]
+    pub fn advertisement_key(&self) -> [u8; 32] {
+        match self {
+            Self::Advertised(advertisement) => advertisement.key,
+            Self::Seeded {
+                advertisement_key, ..
+            } => *advertisement_key,
+        }
+    }
+}
+
 /// One retained hint about where admission might be attempted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {
-    /// The observed source the advertisement arrived from. Opaque here: an
-    /// address on an IP underlay, whatever identifies a sender elsewhere.
+    /// What this entry is accounted against. For an advertisement, the observed
+    /// source it arrived from; for a seed entry, the key that signed the
+    /// manifest. ADR 0050 D19 as amended: a manifest is not a network source
+    /// and the per-source cap does not answer a threat it presents.
     pub source: Vec<u8>,
-    pub advertisement: Advertisement,
-    /// When this entry stops being usable: the earlier of the advertisement's
-    /// own expiry and `candidate_ttl_ms` from when it was observed. A node does
-    /// not let an advertiser choose how long it is remembered.
+    pub learned: Learned,
+    /// When this entry stops being usable: the earlier of what its origin says
+    /// and `candidate_ttl_ms` from when it was learned. A node does not let an
+    /// advertiser or an issuer choose how long it is remembered.
     pub expires_ms: u64,
 }
 
@@ -107,7 +142,7 @@ impl CandidateCache {
             .min(now_ms.saturating_add(LIMIT_CANDIDATE_TTL_MS as u64));
 
         if let Some(existing) = self.entries.get_mut(&advertisement.key) {
-            existing.advertisement = advertisement.clone();
+            existing.learned = Learned::Advertised(Box::new(advertisement.clone()));
             existing.expires_ms = expires_ms;
             return Ok(());
         }
@@ -137,11 +172,70 @@ impl CandidateCache {
             advertisement.key,
             Candidate {
                 source: source.to_vec(),
-                advertisement: advertisement.clone(),
+                learned: Learned::Advertised(Box::new(advertisement.clone())),
                 expires_ms,
             },
         );
         Ok(())
+    }
+
+    /// Take every entry of a verified seed manifest.
+    ///
+    /// ADR 0050 D19 as amended. Entries are accounted against the key that
+    /// signed the manifest rather than a network source, and the per-source cap
+    /// does not apply: it exists because advertisement keys are free to generate
+    /// and an unauthenticated source can invent as many as it likes, while a
+    /// manifest is signed by a key the operator chose and is capped by its own
+    /// parser before anything is allocated. Applying it would also drop three
+    /// quarters of a full manifest.
+    ///
+    /// `max_candidate_peers` still applies and is the protection that matters:
+    /// a manifest contributes at most its own bound and displaces nothing.
+    ///
+    /// Returns how many entries were kept, which is fewer than the manifest
+    /// holds only when the global cache is full — the caller is told rather
+    /// than left to assume.
+    ///
+    /// The caller has already verified the manifest; this decides only whether
+    /// to keep what it names.
+    pub fn seed(&mut self, seed_key: &[u8; 32], manifest: &SeedManifest, now_ms: u64) -> usize {
+        self.expire(now_ms);
+        let expires_ms = manifest
+            .expiry_ms
+            .min(now_ms.saturating_add(LIMIT_CANDIDATE_TTL_MS as u64));
+        if manifest.expiry_ms <= now_ms {
+            return 0;
+        }
+
+        let mut kept = 0_usize;
+        for entry in &manifest.entries {
+            if let Some(existing) = self.entries.get_mut(&entry.advertisement_key) {
+                // An advertisement already held is better information than a
+                // seed entry: it was signed by the peer itself and carries what
+                // that peer offers. A manifest refreshes the lifetime and does
+                // not overwrite it with less.
+                existing.expires_ms = existing.expires_ms.max(expires_ms);
+                kept += 1;
+                continue;
+            }
+            if self.entries.len() >= LIMIT_MAX_CANDIDATE_PEERS {
+                break;
+            }
+            self.entries.insert(
+                entry.advertisement_key,
+                Candidate {
+                    source: seed_key.to_vec(),
+                    learned: Learned::Seeded {
+                        advertisement_key: entry.advertisement_key,
+                        address: entry.address.clone(),
+                        port: entry.port,
+                    },
+                    expires_ms,
+                },
+            );
+            kept += 1;
+        }
+        kept
     }
 
     /// Consume one unexpired candidate, removing it from the cache.

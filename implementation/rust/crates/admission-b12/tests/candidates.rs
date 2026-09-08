@@ -6,9 +6,11 @@
 //! bounded, and bounded per source rather than only globally, because
 //! advertisement keys are free to generate.
 
-use admission_b12::{Advertisement, CacheError, CandidateCache};
+use admission_b12::candidates::Learned;
+use admission_b12::{Advertisement, CacheError, CandidateCache, SeedEntry, SeedManifest};
 use protocol_registry::{
     LIMIT_CANDIDATE_TTL_MS, LIMIT_MAX_CANDIDATE_PEERS, LIMIT_MAX_CANDIDATE_PEERS_PER_SOURCE,
+    LIMIT_MAX_SEED_ENTRIES, VERSION,
 };
 use std::error::Error;
 
@@ -197,11 +199,138 @@ fn taking_a_candidate_removes_it() -> Fallible<()> {
     cache.observe(&source(0), &advertisement(0, 60_000), 1_000)?;
 
     let taken = cache.take(1_000).ok_or("expected a candidate")?;
-    assert_eq!(taken.advertisement.key, advertisement(0, 60_000).key);
+    assert_eq!(
+        taken.learned.advertisement_key(),
+        advertisement(0, 60_000).key
+    );
     assert_eq!(taken.source, source(0));
     assert!(cache.is_empty());
     assert!(cache.take(1_000).is_none());
     Ok(())
+}
+
+// --------------------------------------------------------------------------
+// Seeding from a signed manifest, ADR 0050.
+// --------------------------------------------------------------------------
+
+const SEED_KEY: [u8; 32] = [0x5e; 32];
+
+fn seed_manifest(count: usize, expiry_ms: u64) -> SeedManifest {
+    SeedManifest {
+        version: VERSION,
+        issued_ms: 0,
+        expiry_ms,
+        entries: (0..count)
+            .map(|index| SeedEntry {
+                advertisement_key: {
+                    // Offset out of the advertisement helper's key space, so a
+                    // test about the global bound is not quietly testing the
+                    // refresh path instead.
+                    let mut key = [0xee_u8; 32];
+                    key[..8].copy_from_slice(&index.to_be_bytes());
+                    key
+                },
+                family: 4,
+                address: vec![10, 0, 0, 1],
+                port: 45_301,
+            })
+            .collect(),
+    }
+}
+
+/// The amendment to D19, and the arithmetic that forced it: a full manifest is
+/// 32 entries and the per-source cap is 8, so applying that cap here would have
+/// dropped three quarters of it. A manifest is not a network source.
+#[test]
+fn a_full_manifest_is_kept_whole() {
+    let mut cache = CandidateCache::new();
+    let manifest = seed_manifest(LIMIT_MAX_SEED_ENTRIES, 60_000);
+    let kept = cache.seed(&SEED_KEY, &manifest, 1_000);
+    assert_eq!(kept, LIMIT_MAX_SEED_ENTRIES);
+    assert_eq!(cache.len(), LIMIT_MAX_SEED_ENTRIES);
+}
+
+/// The premise the test above rests on, checked at compile time: a manifest
+/// must hold more than a source may, or "kept whole" would be indistinguishable
+/// from "capped" and the test would pass without meaning anything.
+const _: () = assert!(LIMIT_MAX_SEED_ENTRIES > LIMIT_MAX_CANDIDATE_PEERS_PER_SOURCE);
+
+/// What still applies, and is the protection that matters.
+#[test]
+fn a_manifest_cannot_exceed_the_global_bound() -> Fallible<()> {
+    let mut cache = CandidateCache::new();
+    // Fill the cache from network sources first.
+    let sources = LIMIT_MAX_CANDIDATE_PEERS / LIMIT_MAX_CANDIDATE_PEERS_PER_SOURCE;
+    let mut index = 0_usize;
+    for which in 0..sources {
+        for _ in 0..LIMIT_MAX_CANDIDATE_PEERS_PER_SOURCE {
+            cache.observe(&source(which), &advertisement(index, 60_000), 1_000)?;
+            index += 1;
+        }
+    }
+    assert_eq!(cache.len(), LIMIT_MAX_CANDIDATE_PEERS);
+
+    let kept = cache.seed(&SEED_KEY, &seed_manifest(4, 60_000), 1_000);
+    assert_eq!(kept, 0, "a full cache takes nothing from a manifest");
+    assert_eq!(
+        cache.len(),
+        LIMIT_MAX_CANDIDATE_PEERS,
+        "and displaces nothing, because a full cache refuses rather than evicting"
+    );
+    Ok(())
+}
+
+/// A seeded entry says less than an advertisement, and says so rather than
+/// pretending to carry a capacity class nobody signed.
+#[test]
+fn a_seeded_entry_is_distinguishable_from_an_advertised_one() -> Fallible<()> {
+    let mut cache = CandidateCache::new();
+    cache.seed(&SEED_KEY, &seed_manifest(1, 60_000), 1_000);
+    let taken = cache.take(1_000).ok_or("expected a candidate")?;
+    assert!(matches!(taken.learned, Learned::Seeded { .. }));
+    assert_eq!(taken.source, SEED_KEY, "accounted against the seed key");
+    Ok(())
+}
+
+/// An advertisement is the peer's own word about itself; a manifest is someone
+/// else's. A manifest refreshes what is held and does not replace it with less.
+#[test]
+fn a_manifest_does_not_overwrite_an_advertisement() -> Fallible<()> {
+    let mut cache = CandidateCache::new();
+    let advertised = advertisement(0, 60_000);
+    cache.observe(&source(0), &advertised, 1_000)?;
+
+    let mut manifest = seed_manifest(1, 60_000);
+    // Deliberately the same key, which is the case this test is about.
+    manifest.entries[0].advertisement_key = advertised.key;
+    assert_eq!(cache.seed(&SEED_KEY, &manifest, 1_000), 1);
+
+    let taken = cache.take(1_000).ok_or("expected a candidate")?;
+    assert!(
+        matches!(taken.learned, Learned::Advertised(_)),
+        "the peer's own advertisement survived"
+    );
+    assert_eq!(taken.source, source(0), "and its accounting did not move");
+    Ok(())
+}
+
+/// An issuer does not choose how long its entries are remembered, for the same
+/// reason an advertiser does not.
+#[test]
+fn a_manifests_expiry_cannot_outrun_the_cache_ttl() -> Fallible<()> {
+    let mut cache = CandidateCache::new();
+    cache.seed(&SEED_KEY, &seed_manifest(1, u64::MAX), 1_000);
+    assert_eq!(cache.len(), 1);
+    cache.expire(1_000 + u64::try_from(LIMIT_CANDIDATE_TTL_MS)? + 1);
+    assert!(cache.is_empty());
+    Ok(())
+}
+
+#[test]
+fn an_expired_manifest_seeds_nothing() {
+    let mut cache = CandidateCache::new();
+    assert_eq!(cache.seed(&SEED_KEY, &seed_manifest(4, 1_000), 1_000), 0);
+    assert!(cache.is_empty());
 }
 
 /// An expired entry is never handed out, whether or not anything has swept.

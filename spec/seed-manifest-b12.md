@@ -85,10 +85,22 @@ manifest.
 That the seed key signed this list, and nothing else. Not that those peers
 exist, will answer, will admit the joiner, or are honest.
 
-Entries enter the same bounded candidate cache that advertisements enter, under
-the same per-source accounting, and are consumed by the same separate step that
-`discovery-advertisement-b12.md` section 4 describes. A seed entry is a hint
-with a signature on it.
+Entries enter the same bounded candidate cache that advertisements enter and are
+consumed by the same separate step that `discovery-advertisement-b12.md` section
+4 describes. A seed entry is a hint with a signature on it.
+
+A seeded entry is accounted against **the seed key that signed it**, not against
+a network source, and `max_seed_entries` is the bound on it. The per-source cap
+that applies to advertisements answers a threat a manifest does not present:
+advertisement keys are free to generate and an unauthenticated source can invent
+as many as it likes, while a manifest is signed by a key the operator chose and
+is capped by its own parser before anything is allocated. Applying that cap here
+would also drop three quarters of a full manifest, since it is 8 and
+`max_seed_entries` is 32.
+
+`max_candidate_peers` still applies and is the protection that matters: a
+manifest contributes at most `max_seed_entries` of it, and can displace nothing,
+because a full cache refuses rather than evicting.
 
 The seed key is a trust root. A deployment that accepts one has accepted that
 whoever holds it chooses which peers its joiners try first. What bounds the

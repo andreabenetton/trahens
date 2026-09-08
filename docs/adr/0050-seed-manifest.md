@@ -76,8 +76,25 @@ the peers it names.**
 A verified manifest says the seed key signed this list before its expiry. It
 does not say those peers exist, will answer, will admit the joiner, or are
 honest. Entries go into the same bounded candidate cache that advertisements go
-into, under the same per-source accounting, and are consumed by the same
-separate step (ADR 0045 D6). A seed entry is a hint with a signature on it.
+into, and are consumed by the same separate step (ADR 0045 D6). A seed entry is
+a hint with a signature on it.
+
+*Amended 8 September 2026, while implementing this.* This first read "under the
+same per-source accounting", and that is wrong in a way the arithmetic makes
+obvious: `max_seed_entries` is 32 and `max_candidate_peers_per_source` is 8, so
+a full manifest would have had three quarters of its entries silently dropped.
+The bound it would have been applying also answers a threat a manifest does not
+present. The per-source cap exists because advertisement keys are free to
+generate and an unauthenticated source can invent as many as it likes; a
+manifest is signed by a key the operator chose, is capped by its own parser
+before anything is allocated, and an attacker holding that key has better
+options than filling a cache.
+
+Seeded entries are therefore accounted against the seed key that signed them
+rather than against a network source, and the bound on them is the manifest's
+own. What still applies, and is the protection that matters, is the global
+`max_candidate_peers`: a manifest contributes at most 32 of 256 and can displace
+nothing, because a full cache refuses rather than evicting.
 
 *Consequence.* The seed key is a trust root, and a deployment that accepts one
 has accepted that whoever holds it chooses which peers its joiners try first.
