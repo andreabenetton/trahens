@@ -44,7 +44,7 @@ why most of the remediation is specification text rather than code.
 
 | ID | Finding | Disposition |
 |---|---|---|
-| **B1-A** | Message 1 is replayable: a captured `handshake_initiate` wins the race on a later link establishment, and the responder answers and waits for a finish nobody can produce | **Documented, not remedied.** Spec §4.2 |
+| **B1-A** | Message 1 is replayable: a captured `handshake_initiate` wins the race on a later link establishment, and the responder answers and waits for a finish nobody can produce | **Documented and asserted, not remedied.** Spec §4.2; `crates/link-handshake-b1/tests/adversarial.rs` |
 | **B1-B** | "No DH before auth" is false: every responder attempt computes the static-static PSK and both of its own public keys before reading message 1 | **Documented, not remedied.** Spec §8 |
 | **B1-C** | The PSK is a bearer pre-authentication credential: a holder without the pinned static private key can elicit and decrypt the responder's static key | **Documented, not remedied.** Spec §4.2, `73f2260` |
 | **B1-D** | Using the Noise static key outside Noise to derive a correlated PSK leaves Noise's proof assumptions | **Not taken.** See below |
@@ -155,7 +155,15 @@ a separate pre-authentication key — are the open ones above.
 > That is already evidence that the specification/test suite needs adversarial
 > property tests, not more byte-for-byte agreement tests.
 
-Worth keeping in view. The three fixes here each moved published vectors, and
-byte-for-byte agreement is what proved the two implementations still match; it
-is not what found any of these. The findings came from reading the construction
-against the RFCs.
+Taken. The three fixes here each moved published vectors, and byte-for-byte
+agreement is what proved the two implementations still match; it is not what
+found any of these. The findings came from reading the construction against the
+RFCs.
+
+`crates/link-handshake-b1/tests/adversarial.rs` is the beginning of the other
+kind. It asserts B1-A rather than describing it: a recorded first message is
+replayed to a responder rebuilt with the same static key and no memory of the
+first, and it answers. B1-B and B1-C are still described only. B1-C would need a
+way to hand a manifest-mode exchange a pre-shared key it did not derive, which
+means widening a security-critical enum for a test's benefit; B1-B needs a
+public-key operation counter. Neither is hard, and neither is done.
