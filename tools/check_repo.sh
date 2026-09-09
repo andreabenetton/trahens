@@ -515,6 +515,12 @@ python -m compileall -q tools
 
 if command -v cargo >/dev/null 2>&1; then
     cargo test --manifest-path implementation/rust/Cargo.toml --all-targets
+    # A doc comment naming a type that does not exist is a dangling reference to
+    # a design that was described and not built, and this tree carries its
+    # reasoning in doc comments. Nothing else catches it: a broken intra-doc link
+    # is a rustdoc warning, so tests, clippy and fmt all pass over it.
+    RUSTDOCFLAGS="-D warnings" cargo doc \
+        --manifest-path implementation/rust/Cargo.toml --no-deps --document-private-items
 else
     echo "cargo not available: Rust tests deferred to the mandatory CI Rust job" >&2
 fi

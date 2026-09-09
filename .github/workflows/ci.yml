@@ -48,6 +48,12 @@ jobs:
         run: cargo clippy --manifest-path implementation/rust/Cargo.toml --all-targets --locked
       - name: Build and test all Rust targets
         run: cargo test --manifest-path implementation/rust/Cargo.toml --all-targets --locked
+      - name: Refuse broken documentation links
+        # Private items included: most of this tree's reasoning sits on private
+        # functions, and a link that dangles there dangles just as badly.
+        run: cargo doc --manifest-path implementation/rust/Cargo.toml --no-deps --document-private-items --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
 
   fuzz:
     runs-on: ubuntu-latest
