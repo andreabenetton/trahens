@@ -57,7 +57,6 @@ class B1HandshakeTests(unittest.TestCase):
         responder = Responder(
             self.profile,
             r_static,
-            Keypair.from_secret(seed("r/ephemeral")),
             pin_initiator if pin_initiator is not None else i_static.public,
             previous_export,
         )
@@ -66,7 +65,7 @@ class B1HandshakeTests(unittest.TestCase):
     def complete(self, initiator, responder):
         m1 = initiator.write_message_1()
         responder.read_message_1(m1)
-        m2 = responder.write_message_2(Selection(self.profile.protocol_version, 2, 3, 4, 0x0101, 1))
+        m2 = responder.write_message_2(Keypair.from_secret(seed("r/ephemeral")), Selection(self.profile.protocol_version, 2, 3, 4, 0x0101, 1))
         initiator.read_message_2(m2)
         m3, i_session = initiator.write_message_3()
         r_session = responder.read_message_3(m3)
@@ -130,6 +129,28 @@ class B1HandshakeTests(unittest.TestCase):
         both_initiators = static_psk(self.profile, right, left.public, initiator=True)
         self.assertNotEqual(agreed_left, both_initiators)
 
+    def test_the_responders_ephemeral_enters_when_it_answers(self) -> None:
+        # B1-B. A responder takes no ephemeral at construction: write_message_2
+        # takes it, and that runs only after read_message_1 has authenticated a
+        # record, so nothing derives a public key for a sender that proved
+        # nothing. The mirror of the Rust crate's test of the same name.
+        #
+        # The point is not that the two records differ, but where the ephemeral
+        # comes from. Under the previous shape both responders would have been
+        # identical at construction and the argument would have to be ignored,
+        # so the records would match.
+        selection = Selection(self.profile.protocol_version, 2, 3, 4, 0x0101, 1)
+        initiator, left = self.parties()
+        m1 = initiator.write_message_1()
+        left.read_message_1(m1)
+        with_one = left.write_message_2(Keypair.from_secret(seed("ephemeral/one")), selection)
+
+        _, right = self.parties()
+        right.read_message_1(m1)
+        with_another = right.write_message_2(Keypair.from_secret(seed("ephemeral/two")), selection)
+
+        self.assertNotEqual(with_one, with_another)
+
     def admission_parties(self, joiner_psk, inviter_psk, cookie=None):
         """A joiner with no manifest entry at the inviter.
 
@@ -153,7 +174,6 @@ class B1HandshakeTests(unittest.TestCase):
         inviter = Responder(
             self.profile,
             inviter_static,
-            Keypair.from_secret(seed("inviter/ephemeral")),
             None,
             admission_psk=inviter_psk,
             admission_identifier=INVITATION_ID,
@@ -283,7 +303,6 @@ class B1HandshakeTests(unittest.TestCase):
             Responder(
                 self.profile,
                 Keypair.from_secret(seed("r/static")),
-                Keypair.from_secret(seed("r/ephemeral")),
                 None,
                 admission_psk=seed("admission"),
             )
@@ -310,7 +329,7 @@ class B1HandshakeTests(unittest.TestCase):
         joiner, inviter, _ = self.admission_parties(psk, psk)
         inviter.read_message_1(joiner.write_message_1())
         selection = Selection(self.profile.protocol_version, 2, 3, 4, 0x0101, 1)
-        record = bytearray(inviter.write_message_2(selection))
+        record = bytearray(inviter.write_message_2(Keypair.from_secret(seed("inviter/ephemeral")), selection))
         # Flip a byte inside the encrypted payload: the AEAD refuses first,
         # which is the outer guarantee. The inner one is checked below.
         record[-1] ^= 0x01
@@ -346,7 +365,7 @@ class B1HandshakeTests(unittest.TestCase):
         inviter.advertisement_public = victim
         inviter.read_message_1(joiner.write_message_1())
         selection = Selection(self.profile.protocol_version, 2, 3, 4, 0x0101, 1)
-        record = inviter.write_message_2(selection)
+        record = inviter.write_message_2(Keypair.from_secret(seed("inviter/ephemeral")), selection)
         with self.assertRaises(HandshakeError):
             joiner.read_message_2(record)
 
@@ -356,7 +375,6 @@ class B1HandshakeTests(unittest.TestCase):
             Responder(
                 self.profile,
                 Keypair.from_secret(seed("r/static")),
-                Keypair.from_secret(seed("r/ephemeral")),
                 None,
                 admission_psk=seed("admission"),
                 admission_identifier=INVITATION_ID,
@@ -369,7 +387,6 @@ class B1HandshakeTests(unittest.TestCase):
             Responder(
                 self.profile,
                 Keypair.from_secret(seed("r/static")),
-                Keypair.from_secret(seed("r/ephemeral")),
                 None,
             )
 
@@ -378,7 +395,6 @@ class B1HandshakeTests(unittest.TestCase):
             Responder(
                 self.profile,
                 Keypair.from_secret(seed("r/static")),
-                Keypair.from_secret(seed("r/ephemeral")),
                 None,
                 previous_export=seed("export"),
                 admission_psk=seed("admission"),
@@ -403,7 +419,7 @@ class B1HandshakeTests(unittest.TestCase):
         initiator, responder = self.parties()
         responder.read_message_1(initiator.write_message_1())
         with self.assertRaises(HandshakeError):
-            responder.write_message_2(Selection(self.profile.protocol_version, 2, 3, 4, 0x0003, 1))
+            responder.write_message_2(Keypair.from_secret(seed("r/ephemeral")), Selection(self.profile.protocol_version, 2, 3, 4, 0x0003, 1))
 
     def test_a_responder_whose_static_is_not_pinned_is_refused(self) -> None:
         # The pin now refuses at the first record rather than the second. The
@@ -442,11 +458,10 @@ class B1HandshakeTests(unittest.TestCase):
         responder = Responder(
             self.profile,
             r_static,
-            Keypair.from_secret(seed("r/ephemeral")),
             i_static.public,
         )
         responder.read_message_1(initiator.write_message_1())
-        m2 = responder.write_message_2(Selection(self.profile.protocol_version, 2, 3, 4, 0x0101, 1))
+        m2 = responder.write_message_2(Keypair.from_secret(seed("r/ephemeral")), Selection(self.profile.protocol_version, 2, 3, 4, 0x0101, 1))
         initiator.expected_peer_static = Keypair.from_secret(seed("someone-else")).public
         with self.assertRaises(HandshakeError):
             initiator.read_message_2(m2)

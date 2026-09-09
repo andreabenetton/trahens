@@ -794,7 +794,6 @@ class Responder:
         self,
         profile: B1Profile,
         static: Keypair,
-        ephemeral: Keypair,
         expected_peer_static: bytes | None,
         previous_export: bytes | None = None,
         admission_psk: bytes | None = None,
@@ -803,6 +802,13 @@ class Responder:
         advertisement_secret: bytes | None = None,
     ) -> None:
         """A responder in one of three modes, distinguished by its key source.
+
+        No ephemeral is taken here. `write_message_2` takes one, which runs
+        only after `read_message_1` has authenticated a record, so a responder
+        derives no public key for a sender that never proved anything. Spec
+        section 8 states the cost this leaves: one scalar multiplication for the
+        static-static value, which cannot be deferred past the record it is
+        needed to decrypt.
 
         `previous_export` is a rekey. `admission_psk` is an admission handshake
         with a peer this responder has no manifest entry for: the key comes
@@ -828,7 +834,9 @@ class Responder:
             raise HandshakeError("an admission handshake needs an advertisement key")
         self.profile = profile
         self.static = static
-        self.ephemeral = ephemeral
+        # Set by write_message_2, which is the first point this exchange has
+        # one. read_message_3 needs it for `se`, so it is kept from there on.
+        self.ephemeral: Keypair | None = None
         self.expected_peer_static = expected_peer_static
         self.admission = admission_psk is not None
         if advertisement_secret is not None:
@@ -894,12 +902,21 @@ class Responder:
         self.offer = offer
         return offer
 
-    def write_message_2(self, selection: Selection) -> bytes:
+    def write_message_2(self, ephemeral: Keypair, selection: Selection) -> bytes:
+        """The responder's ephemeral arrives here, not at construction.
+
+        Every public key this exchange needs is therefore derived after a
+        record has authenticated. The caller supplies the keypair: a responder
+        that cannot get random bytes must fail its attempt rather than derive
+        from anything else, and that is the caller's decision to make and
+        report.
+        """
         p = self.profile
         if self.remote_ephemeral is None or self.offer is None:
             raise HandshakeError("message 1 not processed")
         if not selection.within(self.offer):
             raise HandshakeError("selection is not within the offer")
+        self.ephemeral = ephemeral
         _mix_ephemeral(self.state, self.ephemeral.public)
         self.state.mix_key(dh(self.ephemeral, self.remote_ephemeral))
         record = _record_prefix(p, self._type("respond")) + self.ephemeral.public
@@ -921,7 +938,7 @@ class Responder:
 
     def read_message_3(self, record: bytes) -> Session:
         p = self.profile
-        if self.selection is None:
+        if self.selection is None or self.ephemeral is None:
             raise HandshakeError("message 2 not sent")
         if len(record) != p.record_bytes or record[:2] != _record_prefix(p, self._type("finish")):
             raise HandshakeError("unexpected record")

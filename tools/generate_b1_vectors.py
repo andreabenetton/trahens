@@ -81,7 +81,6 @@ def run_handshake(
     responder = Responder(
         profile,
         responder_static,
-        responder_ephemeral,
         None if admission is not None else initiator_static.public,
         previous_export,
         **admission_kwargs,
@@ -89,7 +88,7 @@ def run_handshake(
     )
     message_1 = initiator.write_message_1()
     responder.read_message_1(message_1)
-    message_2 = responder.write_message_2(selection)
+    message_2 = responder.write_message_2(responder_ephemeral, selection)
     initiator.read_message_2(message_2)
     message_3, initiator_session = initiator.write_message_3()
     responder_session = responder.read_message_3(message_3)
