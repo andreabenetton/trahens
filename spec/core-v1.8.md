@@ -272,6 +272,33 @@ replay: a duplicate carried in a fresh T1 transmission is legitimately new link
 traffic, so the adjacent-link replay window admits it correctly and cannot be
 what rejects it.
 
+**The window is bounded anti-replay and not ordering.** It says a sequence is
+accepted at most once and not before it has aged out; it says nothing about the
+order records arrive in, and an implementation MUST NOT read acceptance as
+delivery in order. The application state machine above it has to be correct
+under authenticated out-of-order messages: `message_type` and `generation` are
+authenticated, so they say what a record claims to be, but nothing imposes a
+legal temporal ordering on them.
+
+The reachable consequence, raised by an external review
+(`docs/external-review-2026-09-08.md`, P1-B), is that an attacker who can
+**delay and reorder but not delete** can still cause an authentic record to be
+refused. Hold record *n*, deliver `n+1` through `n+`
+`limits.route_replay_window`, and release *n*: it is now at the floor and is
+rejected although it authenticates and was never seen. No forgery is involved
+and no key is broken.
+
+This profile accepts that. It is an availability and ordering property rather
+than a confidentiality or authentication one, and an attacker positioned to
+delay a record for that long can usually drop it instead, which needs no window
+to succeed. The distinction matters only for a threat model that grants delay
+and reorder while withholding deletion; a deployment with that threat model
+needs a wider window, and `limits.route_replay_window` is where it sets one.
+
+What an outsider cannot do is evict legitimate traffic by injecting a large
+sequence. The window advances only on a record that has already authenticated,
+so an unauthenticated record carrying `2**64 - 1` moves nothing.
+
 The nonce travels in the clear inside the link encryption, so a relay on the
 path learns the direction and a per-route counter. That is a deliberate
 disclosure, recorded in `field_protection` as `link-encrypted` and in ADR 0041;

@@ -848,6 +848,47 @@ mod tests {
         Ok(())
     }
 
+    /// P1-B, as the external review set it out: delay and reorder, without
+    /// deleting anything, is enough to have an authentic record refused.
+    ///
+    /// The test next door reaches the floor by jumping the highest accepted
+    /// sequence a long way forward, which shows the boundary arithmetic. This
+    /// one shows the boundary is reachable by an attacker who never forges,
+    /// never drops, and only holds one record back while the rest go by --
+    /// which is a much weaker capability, and the reason section 7.1 states the
+    /// property rather than leaving a reader to assume the window bounds only
+    /// repeats.
+    ///
+    /// It passing is not a defect being tolerated in silence: it is the
+    /// specification's claim, checked. If it ever fails, section 7.1 is what
+    /// needs revisiting.
+    #[test]
+    fn holding_one_record_back_ages_it_out() -> Result<(), Box<dyn std::error::Error>> {
+        let width = LIMIT_ROUTE_REPLAY_WINDOW as u64;
+        let mut window = RouteReplayWindow::new();
+
+        // Everything here is authentic and would have been accepted in the
+        // order it was sent. The attacker's whole contribution is the order.
+        let held = 100_u64;
+        for sequence in (held + 1)..=(held + width) {
+            window.admit(sequence)?;
+        }
+        assert!(
+            window.admit(held).is_err(),
+            "the held record has aged out and is refused"
+        );
+
+        // One fewer record in front of it and the same record is accepted, so
+        // the refusal is the window's width and not something else about the
+        // sequence.
+        let mut window = RouteReplayWindow::new();
+        for sequence in (held + 1)..(held + width) {
+            window.admit(sequence)?;
+        }
+        window.admit(held)?;
+        Ok(())
+    }
+
     #[test]
     fn two_relay_candidate_chain_round_trip() -> Result<(), Box<dyn std::error::Error>> {
         let root_secret = random_scalar()?;

@@ -52,7 +52,7 @@ why most of the remediation is specification text rather than code.
 | **B1-F** | Ephemeral freshness is an assumption, not "fails closed" | **Fixed** — `4997002` |
 | **B1-G** | Specification drift: the first message described as both encrypted and unencrypted | **Fixed** — `cdc89ba` |
 | **P1-A** | The same route key with a reset sequencer repeats nonces | **Fixed** — `57a7593` |
-| **P1-B** | The replay window permits deliberate aging-out by reordering | **Not taken.** See below |
+| **P1-B** | The replay window permits deliberate aging-out by reordering | **Documented and asserted, not changed.** Core §7.1; `node-runtime/src/p1.rs` |
 | **P1-C** | The HKDF domain is in the IKM rather than the salt | **Fixed** — `ff455c0` |
 
 Two further points from the body of the review, outside its own table:
@@ -122,8 +122,25 @@ release `n`; it is refused although authentic and never seen. The review
 classifies this correctly as availability and ordering, not confidentiality or
 authentication, and notes an attacker with reorder and delay capability could
 usually just drop `n`. It matters only for a threat model granting reorder and
-delay but not deletion. Left open deliberately; a wider window trades memory for
-a property this profile does not claim.
+delay but not deletion.
+
+The window is unchanged: widening it trades memory for a property this profile
+does not claim, and `limits.route_replay_window` is where a deployment with that
+threat model sets its own. What was missing was the claim. Core v1.8 section 7.1
+now says the window is bounded anti-replay and not ordering, states the
+hold-and-release consequence as reachable without forging or dropping anything,
+says the application state machine must be correct under authenticated
+out-of-order messages, and records the one thing an outsider still cannot do:
+inject a large sequence to evict legitimate traffic, because the window advances
+only after a record authenticates.
+
+`holding_one_record_back_ages_it_out` asserts it, in the review's own shape --
+64 authentic records go by in order while one is held, and the held one is then
+refused. A neighbouring test already reached the floor by jumping the sequence
+far forward, which shows the arithmetic; this one shows the floor is reachable
+by an attacker who only delays. It passing is the specification's claim being
+checked, not a defect tolerated in silence: if it ever fails, section 7.1 is
+what needs revisiting.
 
 **The §3 falsification test** — force identical PSK and keypairs into an initial
 and a rekey exchange and assert their `Split()` keys differ, which would fail —
