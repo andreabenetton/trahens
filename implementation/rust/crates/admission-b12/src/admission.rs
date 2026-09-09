@@ -3,7 +3,7 @@
 //! spent, and which static keys have been promoted.
 //!
 //! ADR 0046 D8 and D9 over the store of ADR 0047. The cryptography was already
-//! here — [`invitation_psk`](crate::invitation_psk) derives the key — and what
+//! here — [`invitation_psk`] derives the key — and what
 //! was missing is the part that decides *whether* to derive it and what to write
 //! down afterwards.
 //!

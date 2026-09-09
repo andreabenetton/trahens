@@ -236,7 +236,15 @@ impl LinkHandle {
     /// good.
     ///
     /// A node MUST wait here before starting any protocol state that carries a
-    /// deadline; see [`Readiness`] for why the two cannot be reordered.
+    /// deadline. `spawn_link` returns as soon as the worker starts, which is
+    /// before the handshake has run, so a node that begins protocol work at
+    /// that point starts route timers against a link that is not up: the branch
+    /// state a DISCOVER belongs to can expire before the link ever carries it,
+    /// and the run ends in `NO_CANDIDATE` although every link recovered.
+    ///
+    /// Readiness is deliberately not a [`LinkEvent`]. It carries no ordering
+    /// against protocol events, and a node that had to drain the event channel
+    /// to find it would have to replay everything else it drained.
     pub fn wait_ready(&self, timeout: Duration) -> bool {
         self.readiness.wait(timeout)
     }
