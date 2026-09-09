@@ -144,8 +144,15 @@ ephemeral in the responder to derive a public key from — so a later change
 cannot reintroduce the work without changing the signature. An attempt now costs
 one scalar multiplication instead of three. The remaining one is the
 static-static value, which is the key the first record is encrypted under: it
-cannot be deferred past a record it is needed to read. An implementation that
-retries should derive it once per link rather than once per attempt.
+cannot be deferred past a record it is needed to read.
+
+The review's other half — cache that value with the link configuration rather
+than deriving it per attempt — was **considered and not taken.**
+`LINK_HANDSHAKE_ATTEMPTS` is 3 and the manifest path's socket is connected to
+the pinned peer, so a cache saves two scalar multiplications per link, against a
+pre-derived key threaded through `Responder::new` and every caller and test. A
+deployment that raised the attempt cap, or accepted manifest handshakes on a
+listening socket, would be making a different trade; this one does neither.
 
 ---
 

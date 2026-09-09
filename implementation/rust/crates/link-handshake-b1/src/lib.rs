@@ -1137,9 +1137,16 @@ impl Responder {
     ///
     /// What remains before authentication is the pre-shared key. On the manifest
     /// path that is one static-static Diffie-Hellman, and it is unavoidable
-    /// here: the first record cannot be decrypted without it. A caller that
-    /// retries should derive it once with [`ManifestKey::derive`] and pass the
-    /// same value to every attempt.
+    /// here: the first record cannot be decrypted without it.
+    ///
+    /// The review also asked for that value to be cached with the link
+    /// configuration rather than derived per attempt. It is not, and the reason
+    /// is the arithmetic: `LINK_HANDSHAKE_ATTEMPTS` is 3, the socket is
+    /// connected to the pinned peer, so caching saves two scalar
+    /// multiplications per link and costs a pre-derived key threaded through
+    /// this signature. A deployment that raised the attempt cap or accepted
+    /// manifest handshakes on a listening socket would be making a different
+    /// trade and should revisit it.
     pub fn new(profile: Profile, static_secret: [u8; 32], keying: Keying<'_>) -> Result<Self> {
         let psk = keying.psk(&profile, &static_secret, Role::Responder)?;
         // ADR 0049 D16: unconditional on the admission path. A responder that

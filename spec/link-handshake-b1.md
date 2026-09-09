@@ -510,8 +510,11 @@ worth stating exactly.
   Both are now derived in `write_respond`, which runs only after a record has
   authenticated, and a responder holds no ephemeral at all before that point.
   The remaining one is irreducible: it is the key the first record is encrypted
-  under. An implementation that retries SHOULD derive it once per link rather
-  than once per attempt.
+  under. An implementation whose attempt cap is large, or which accepts manifest
+  handshakes on a listening socket rather than a connected one, SHOULD derive it
+  once per link rather than once per attempt; with this profile's cap of three
+  and a connected socket, that saves two operations per link and this
+  implementation does not do it.
 
 A node that admits an unconfigured source has none of those structural
 arguments, and the counters are what replace them. `admission-b12`'s gate
