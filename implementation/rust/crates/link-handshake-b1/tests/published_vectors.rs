@@ -629,8 +629,11 @@ fn an_initiator_static_outside_the_manifest_is_refused() -> Fallible<()> {
 /// record that does not open is usually loss-induced garbage. That is only true
 /// if the failed read committed nothing: a transcript that has already absorbed
 /// the bad record can never agree with the peer's again, so every retry fails
-/// and one datagram ends the exchange. An initial handshake's first message is
-/// unencrypted, so producing one costs an attacker nothing.
+/// and one datagram ends the exchange. Under plain `XX` a first message was
+/// unencrypted and anyone could produce one; under `psk0` a sender needs the
+/// pre-shared key, but section 4.2 is clear that a recorded first message
+/// replays, so the records this test feeds in are still ones an attacker can
+/// obtain.
 #[test]
 fn a_record_that_fails_to_open_leaves_the_exchange_usable() -> Fallible<()> {
     let (mut initiator, mut responder, selection) = parties(None, None)?;

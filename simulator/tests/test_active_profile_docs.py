@@ -35,6 +35,20 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
     def read(self, relative: str) -> str:
         return (ROOT / relative).read_text(encoding="utf-8")
 
+    def normalised(self, relative: str) -> str:
+        """The file as one line, with comment markers gone.
+
+        A phrase search over raw text is a search for one particular line
+        wrapping. Prose that says the same thing reads the same to a person
+        whether it broke after "is" or before it, and whether the next line
+        starts with `///`, `//` or `#`, so a lint that means to refuse a claim
+        has to look at it that way too.
+        """
+        text = self.read(relative)
+        for marker in ("///", "//!", "//", "#"):
+            text = text.replace(marker, " ")
+        return " ".join(text.split())
+
     def test_active_core_points_only_at_active_normative_artifacts(self) -> None:
         core = self.read(f"spec/core-v{self.series}.md")
 
@@ -183,23 +197,27 @@ class ActiveProfileDocumentationTests(unittest.TestCase):
 
         Past-tense contrasts with plain `XX` are the point and are allowed; what
         is refused is the claim in the present tense.
+
+        Searched over normalised text rather than raw bytes. The first version
+        of this listed four hand-written wrappings of the sentence, which is a
+        guard that only catches the wrappings someone thought of: a copy of the
+        claim survived in a Rust doc comment where the line break fell after
+        "is" and the next line began with "/// ", matching none of them.
+        Stripping comment markers and collapsing whitespace catches the claim
+        however it is laid out, in any of these files.
         """
-        stale = (
-            "first message is\nunencrypted",
-            "first message is unencrypted",
-            "message is\nunencrypted",
-            "first message\nis unencrypted",
-        )
+        stale = "first message is unencrypted"
         for relative in (
             "spec/link-handshake-b1.md",
             "implementation/rust/crates/link-handshake-b1/src/lib.rs",
+            "implementation/rust/crates/link-handshake-b1/tests/published_vectors.rs",
+            "implementation/rust/crates/link-handshake-b1/tests/adversarial.rs",
+            "implementation/rust/crates/node-runtime/src/handshake.rs",
             "simulator/trahens_crypto/b1.py",
             "docs/adr/0044-authenticating-the-first-handshake-message.md",
         ):
-            text = self.read(relative)
-            for phrase in stale:
-                with self.subTest(path=relative, phrase=phrase):
-                    self.assertNotIn(phrase, text)
+            with self.subTest(path=relative):
+                self.assertNotIn(stale, self.normalised(relative))
 
     def test_the_first_message_defence_is_not_overstated(self) -> None:
         """The three claims an external review falsified, kept falsified.
