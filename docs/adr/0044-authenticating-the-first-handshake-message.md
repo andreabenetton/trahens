@@ -74,6 +74,14 @@ both were stronger than the construction supports:
   state, which happens before it reads a record. Entering an attempt therefore
   costs three scalar multiplications whatever arrives. The attempt cap is what
   bounds that, not this pre-filter.
+
+  *Partly remedied, 9 September 2026.* The two public keys were work nothing in
+  the first message needs, and `Responder` no longer does them there: it takes
+  no ephemeral at construction and derives both public keys in `write_respond`,
+  which runs only after a record has authenticated. An attempt now costs one
+  scalar multiplication — the static-static value itself, which is the key the
+  first record is encrypted under and so cannot be deferred. The claim above
+  stays falsified; the number is one rather than three.
 - **"Neither the work" does not survive replay.** The first message carries no
   responder freshness, so a recorded one replays indefinitely and buys a
   response — `spec/link-handshake-b1.md` section 4.2.

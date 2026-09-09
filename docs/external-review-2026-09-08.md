@@ -45,7 +45,7 @@ why most of the remediation is specification text rather than code.
 | ID | Finding | Disposition |
 |---|---|---|
 | **B1-A** | Message 1 is replayable: a captured `handshake_initiate` wins the race on a later link establishment, and the responder answers and waits for a finish nobody can produce | **Documented and asserted, not remedied.** Spec §4.2; `crates/link-handshake-b1/tests/adversarial.rs` |
-| **B1-B** | "No DH before auth" is false: every responder attempt computes the static-static PSK and both of its own public keys before reading message 1 | **Documented, not remedied.** Spec §8 |
+| **B1-B** | "No DH before auth" is false: every responder attempt computes the static-static PSK and both of its own public keys before reading message 1 | **Partly fixed.** The two public keys are deferred to `write_respond`; the PSK cannot be. Spec §8 |
 | **B1-C** | The PSK is a bearer pre-authentication credential: a holder without the pinned static private key can elicit and decrypt the responder's static key | **Documented, not remedied.** Spec §4.2, `73f2260` |
 | **B1-D** | Using the Noise static key outside Noise to derive a correlated PSK leaves Noise's proof assumptions | **Not taken.** See below |
 | **B1-E** | The PSK KDF is non-standard and binds no public keys | **Fixed** — `4d11f79` |
@@ -131,14 +131,21 @@ was not added. The derivation change makes the two PSK sources structurally
 distinct, and a test asserting a property the construction no longer relies on
 would encode the old worry rather than a current invariant.
 
-**The B1-A and B1-B remedies** — responder freshness on the manifest path, and
-deferring the responder's public-key work until message 1 authenticates — were
-not taken either. Both are real improvements. B1-A's remedy already exists on the
-admission path, where ADR 0048 D13's cookie challenge is precisely the responder
-freshness the manifest path lacks; extending it to the manifest path is a
-protocol change with its own round-trip cost. B1-B's is a straightforward
-refactor of `Responder::new`. Both are recorded here rather than silently
-carried, and the specification no longer claims either property.
+**The B1-A remedy** — responder freshness on the manifest path — was not taken.
+It already exists on the admission path, where ADR 0048 D13's cookie challenge
+is precisely the freshness the manifest path lacks; extending it to the manifest
+path is a protocol change with its own round-trip cost. Recorded here rather
+than silently carried, and the specification no longer claims the property.
+
+**B1-B was taken as far as it goes.** `Responder::new` takes no ephemeral and
+derives no public key; both happen in `write_respond`, after a record has
+authenticated. That is structural rather than a convention — there is no
+ephemeral in the responder to derive a public key from — so a later change
+cannot reintroduce the work without changing the signature. An attempt now costs
+one scalar multiplication instead of three. The remaining one is the
+static-static value, which is the key the first record is encrypted under: it
+cannot be deferred past a record it is needed to read. An implementation that
+retries should derive it once per link rather than once per attempt.
 
 ---
 

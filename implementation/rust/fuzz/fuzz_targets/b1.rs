@@ -68,10 +68,11 @@ fuzz_target!(|data: &[u8]| {
 
     // A responder reads an initiate, then a finish. Both are reached before the
     // peer has authenticated.
-    if let Ok(mut responder) =
-        Responder::new(profile.clone(), static_secret, [0x33_u8; 32], keying())
-    {
+    if let Ok(mut responder) = Responder::new(profile.clone(), static_secret, keying()) {
         let _ = responder.read_initiate(record);
+        // Reached without an ephemeral, which is a state a responder can now be
+        // in: `read_finish` before `write_respond` must refuse rather than
+        // unwrap nothing.
         let _ = responder.read_finish(record);
     }
 

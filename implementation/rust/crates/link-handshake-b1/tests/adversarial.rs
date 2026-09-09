@@ -104,15 +104,62 @@ fn secret(tag: u8) -> [u8; 32] {
     value
 }
 
-/// A responder as it exists after a restart: same static key, fresh ephemeral,
-/// no memory of anything it saw before.
-fn responder(static_secret: [u8; 32], peer_static: [u8; 32], ephemeral: u8) -> Fallible<Responder> {
+/// A responder as it exists after a restart: same static key, no memory of
+/// anything it saw before, and no ephemeral yet -- it takes one only when it
+/// answers.
+fn responder(static_secret: [u8; 32], peer_static: [u8; 32]) -> Fallible<Responder> {
     Ok(Responder::new(
         profile(),
         static_secret,
-        secret(ephemeral),
         Keying::Manifest { peer_static },
     )?)
+}
+
+/// B1-B. The responder's ephemeral enters at `write_respond` and not before, so
+/// two responders built identically and given different ephemerals produce
+/// different records.
+///
+/// The point is not that the records differ -- of course they do. It is where
+/// the ephemeral comes from. Under the previous shape `Responder::new` took it
+/// and derived its public key immediately, which is the public-key work the
+/// review found happening before any record was read. If a later change moved it
+/// back, these two responders would be identical at construction and the
+/// argument passed here would have to be ignored, so the records would match.
+///
+/// Read-only inspection cannot see this, and a byte-for-byte vector cannot
+/// either: the published exchange fixes one ephemeral and would agree under
+/// either shape.
+#[test]
+fn the_responders_ephemeral_enters_when_it_answers() -> Fallible<()> {
+    let initiator_static = secret(0x11);
+    let responder_static = secret(0x22);
+    let initiator_public = x25519_base(&initiator_static)?;
+    let responder_public = x25519_base(&responder_static)?;
+
+    let mut initiator = Initiator::new(
+        profile(),
+        initiator_static,
+        secret(0x33),
+        offer(),
+        Keying::Manifest {
+            peer_static: responder_public,
+        },
+    )?;
+    let initiate = initiator.write_initiate()?;
+
+    let mut left = responder(responder_static, initiator_public)?;
+    left.read_initiate(&initiate)?;
+    let with_one = left.write_respond(secret(0x44), selection())?;
+
+    let mut right = responder(responder_static, initiator_public)?;
+    right.read_initiate(&initiate)?;
+    let with_another = right.write_respond(secret(0x55), selection())?;
+
+    assert_ne!(
+        with_one, with_another,
+        "the ephemeral passed to write_respond must be the one the record carries"
+    );
+    Ok(())
 }
 
 /// B1-A. A recorded first message stays valid, and a responder that never saw
@@ -145,15 +192,15 @@ fn a_recorded_first_message_is_answered_by_a_restarted_responder() -> Fallible<(
     // The genuine exchange, so the record is known to be one a responder acts
     // on. Without this the replay below could be answered by a responder that
     // answers anything, and the test would prove nothing.
-    let mut first = responder(responder_static, initiator_public, 0x44)?;
+    let mut first = responder(responder_static, initiator_public)?;
     first.read_initiate(&recorded)?;
-    first.write_respond(selection())?;
+    first.write_respond(secret(0x44), selection())?;
 
     // Now the attacker. It holds the recorded bytes and nothing else: no static
     // secret, no ephemeral secret, no session state.
-    let mut restarted = responder(responder_static, initiator_public, 0x55)?;
+    let mut restarted = responder(responder_static, initiator_public)?;
     restarted.read_initiate(&recorded)?;
-    let answer = restarted.write_respond(selection())?;
+    let answer = restarted.write_respond(secret(0x55), selection())?;
 
     assert_eq!(
         answer.len(),
@@ -193,9 +240,9 @@ fn the_replayer_cannot_finish_what_it_started() -> Fallible<()> {
     )?;
     let recorded = initiator.write_initiate()?;
 
-    let mut restarted = responder(responder_static, initiator_public, 0x66)?;
+    let mut restarted = responder(responder_static, initiator_public)?;
     restarted.read_initiate(&recorded)?;
-    let answer = restarted.write_respond(selection())?;
+    let answer = restarted.write_respond(secret(0x66), selection())?;
 
     // A second, genuine initiator: the real peer reconnecting after the race
     // was lost. It holds every secret, and it still cannot complete the
@@ -220,9 +267,9 @@ fn the_replayer_cannot_finish_what_it_started() -> Fallible<()> {
     // did receive its first message, and offer that third message to the
     // stranded one. It is a valid record from the pinned peer, and it still
     // does not release the state the replay committed: the transcripts differ.
-    let mut healthy = responder(responder_static, initiator_public, 0x88)?;
+    let mut healthy = responder(responder_static, initiator_public)?;
     healthy.read_initiate(&fresh_initiate)?;
-    let healthy_answer = healthy.write_respond(selection())?;
+    let healthy_answer = healthy.write_respond(secret(0x88), selection())?;
     let mut genuine = Initiator::new(
         profile(),
         initiator_static,

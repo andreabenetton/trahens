@@ -499,11 +499,19 @@ worth stating exactly.
   It is **not** additionally bounded by the `psk0` prefilter. An earlier version
   of this section claimed that a sender without the manifest identity could not
   cause a responder to do any public-key work at all, and two things falsify
-  that. A responder computes the static-static value and both of its own public
-  keys when it constructs its state, which happens before it reads any record,
-  so entering an attempt costs three scalar multiplications whatever arrives.
-  And the first message carries no responder freshness, so a recorded one can be
-  replayed: see section 4.2.
+  that. A responder computes the static-static value before it reads any record,
+  because the record cannot be decrypted without it, so entering an attempt
+  costs one scalar multiplication whatever arrives. And the first message
+  carries no responder freshness, so a recorded one can be replayed: see section
+  4.2.
+
+  It was three. A responder also derived its own static and ephemeral public
+  keys when it constructed its state, which nothing in the first message needs.
+  Both are now derived in `write_respond`, which runs only after a record has
+  authenticated, and a responder holds no ephemeral at all before that point.
+  The remaining one is irreducible: it is the key the first record is encrypted
+  under. An implementation that retries SHOULD derive it once per link rather
+  than once per attempt.
 
 A node that admits an unconfigured source has none of those structural
 arguments, and the counters are what replace them. `admission-b12`'s gate
@@ -630,7 +638,7 @@ obtains neither a response nor the responder's static key.
 
 Three things it does not do, stated here because the obvious readings are all
 stronger than the truth. It does not stop a responder computing: section 8
-records that entering an attempt costs three scalar multiplications before any
+records that entering an attempt costs one scalar multiplication before any
 record is read. It does not make the first message unreplayable: section 4.2.
 And it does not make the responder's static key confidential against a holder of
 the pre-shared key rather than of the static private key — the responder's

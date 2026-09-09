@@ -21,6 +21,11 @@ const NO_COOKIE: [u8; 32] = [0; 32];
 /// An advertisement signing seed, for tests about admission mode rather than
 /// about the published vectors, which carry their own.
 const ADVERTISEMENT_SECRET: [u8; 32] = [0xc3; 32];
+/// A responder ephemeral for the tests that do not compare a respond record
+/// against a published one. A responder takes its ephemeral at `write_respond`,
+/// not at construction, so that nothing derives a public key before a record has
+/// authenticated; the tests that do compare bytes pass the vector's own value.
+const RESPONDER_EPHEMERAL: [u8; 32] = [0x5e; 32];
 
 fn registry() -> Fallible<Value> {
     Ok(test_vectors::protocol_registry_v18()?)
@@ -225,7 +230,6 @@ fn replay(label: &str) -> Fallible<()> {
     let mut responder = Responder::new(
         profile,
         key(&vector, "responder_static_secret")?,
-        key(&vector, "responder_ephemeral_secret")?,
         match (chained.as_ref(), admission) {
             (Some(previous_export), _) => Keying::Rekey {
                 previous_export,
@@ -253,7 +257,8 @@ fn replay(label: &str) -> Fallible<()> {
     );
     responder.read_initiate(&message_1)?;
 
-    let message_2 = responder.write_respond(selection)?;
+    let message_2 =
+        responder.write_respond(key(&vector, "responder_ephemeral_secret")?, selection)?;
     assert_eq!(
         hex::encode(&message_2),
         field(&vector, "message_2")?,
@@ -482,7 +487,6 @@ fn a_header_the_responder_did_not_act_on_is_refused() -> Fallible<()> {
     let mut inviter = Responder::new(
         profile,
         key(&vector, "responder_static_secret")?,
-        key(&vector, "responder_ephemeral_secret")?,
         Keying::Admission {
             psk: &psk,
             peer_static: None,
@@ -545,7 +549,6 @@ fn parties_chained(chained: Option<&[u8; 32]>) -> Fallible<(Initiator, Responder
         Responder::new(
             profile,
             key(&vector, "responder_static_secret")?,
-            key(&vector, "responder_ephemeral_secret")?,
             Keying::Rekey {
                 previous_export: chain,
                 peer_static: key(&vector, "initiator_static_public")?,
@@ -589,7 +592,6 @@ fn parties(
     let responder = Responder::new(
         profile,
         key(&vector, "responder_static_secret")?,
-        key(&vector, "responder_ephemeral_secret")?,
         Keying::Manifest {
             peer_static: pin_initiator.unwrap_or(key(&vector, "initiator_static_public")?),
         },
@@ -648,7 +650,7 @@ fn a_record_that_fails_to_open_leaves_the_exchange_usable() -> Fallible<()> {
 
     // The genuine record now has to work, and the whole exchange after it.
     responder.read_initiate(&initiate)?;
-    let respond = responder.write_respond(selection)?;
+    let respond = responder.write_respond(RESPONDER_EPHEMERAL, selection)?;
 
     let mut garbage = respond.clone();
     for byte in garbage.iter_mut().skip(2) {
@@ -757,7 +759,6 @@ fn an_admission_handshake_promotes_the_presented_key() -> Fallible<()> {
     let mut inviter = Responder::new(
         profile,
         key(&vector, "responder_static_secret")?,
-        key(&vector, "responder_ephemeral_secret")?,
         Keying::Admission {
             psk: &psk,
             peer_static: None,
@@ -769,7 +770,7 @@ fn an_admission_handshake_promotes_the_presented_key() -> Fallible<()> {
 
     assert_eq!(inviter.promoted_static(), None, "nothing before completion");
     inviter.read_initiate(&joiner.write_initiate()?)?;
-    joiner.read_respond(&inviter.write_respond(selection)?)?;
+    joiner.read_respond(&inviter.write_respond(RESPONDER_EPHEMERAL, selection)?)?;
     let (finish, _) = joiner.write_finish()?;
     inviter.read_finish(&finish)?;
 
@@ -787,7 +788,7 @@ fn an_admission_handshake_promotes_the_presented_key() -> Fallible<()> {
 fn the_manifest_path_promotes_nothing() -> Fallible<()> {
     let (mut initiator, mut responder, selection) = parties(None, None)?;
     responder.read_initiate(&initiator.write_initiate()?)?;
-    initiator.read_respond(&responder.write_respond(selection)?)?;
+    initiator.read_respond(&responder.write_respond(RESPONDER_EPHEMERAL, selection)?)?;
     let (finish, _) = initiator.write_finish()?;
     responder.read_finish(&finish)?;
     assert_eq!(responder.promoted_static(), None);
@@ -824,7 +825,6 @@ fn an_admission_handshake_needs_the_right_key() -> Fallible<()> {
     let mut inviter = Responder::new(
         profile,
         key(&vector, "responder_static_secret")?,
-        key(&vector, "responder_ephemeral_secret")?,
         Keying::Admission {
             psk: &[0x11_u8; 32],
             peer_static: None,
@@ -874,7 +874,9 @@ fn a_selection_outside_the_offer_is_refused() -> Fallible<()> {
         w2_profile: 7,
         ..selection
     };
-    assert!(responder.write_respond(outside).is_err());
+    assert!(responder
+        .write_respond(RESPONDER_EPHEMERAL, outside)
+        .is_err());
     Ok(())
 }
 
@@ -990,7 +992,6 @@ fn a_rekey_chained_to_another_session_is_refused_before_any_diffie_hellman() -> 
     let mut responder = Responder::new(
         profile,
         key(&vector, "responder_static_secret")?,
-        key(&vector, "responder_ephemeral_secret")?,
         Keying::Rekey {
             previous_export: &[7_u8; 32],
             peer_static: key(&vector, "initiator_static_public")?,

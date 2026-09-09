@@ -257,10 +257,6 @@ impl Listener {
     }
 
     fn begin_exchange(&mut self, grant: Grant, initiate: &[u8], from: SocketAddr, now_ms: u64) {
-        let Ok(ephemeral) = random_bytes::<32>() else {
-            self.front.gate_mut().failed(grant.lease, now_ms);
-            return;
-        };
         let keying = Keying::Admission {
             psk: &grant.psk,
             // The inviter has no manifest entry for a joiner, so it records the
@@ -270,8 +266,7 @@ impl Listener {
             cookie: &grant.cookie,
             advertisement_secret: Some(&self.advertisement_secret),
         };
-        let Ok(mut responder) =
-            Responder::new(self.profile.clone(), self.static_secret, ephemeral, keying)
+        let Ok(mut responder) = Responder::new(self.profile.clone(), self.static_secret, keying)
         else {
             self.front.gate_mut().failed(grant.lease, now_ms);
             return;
@@ -280,7 +275,16 @@ impl Listener {
             self.front.gate_mut().failed(grant.lease, now_ms);
             return;
         }
-        let Ok(respond) = responder.write_respond(selection(self.suite)) else {
+        // Only now, with a record that authenticated under the invitation key.
+        // A grant that gets this far has already spent the sender's cookie and
+        // its own budget, so the ordering matters less here than on the manifest
+        // path -- but the responder's cost still belongs after the proof, not
+        // before it.
+        let Ok(ephemeral) = random_bytes::<32>() else {
+            self.front.gate_mut().failed(grant.lease, now_ms);
+            return;
+        };
+        let Ok(respond) = responder.write_respond(ephemeral, selection(self.suite)) else {
             self.front.gate_mut().failed(grant.lease, now_ms);
             return;
         };

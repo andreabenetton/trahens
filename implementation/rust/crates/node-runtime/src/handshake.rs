@@ -188,11 +188,9 @@ pub fn answer_rekey(
     previous_export: &[u8; 32],
     initiate: &[u8],
 ) -> Option<(Responder, Vec<u8>)> {
-    let ephemeral = random_bytes::<32>().ok()?;
     let mut responder = Responder::new(
         profile(suite),
         static_secret,
-        ephemeral,
         Keying::Rekey {
             previous_export,
             peer_static,
@@ -200,7 +198,8 @@ pub fn answer_rekey(
     )
     .ok()?;
     responder.read_initiate(initiate).ok()?;
-    let record = responder.write_respond(selection(suite)).ok()?;
+    let ephemeral = random_bytes::<32>().ok()?;
+    let record = responder.write_respond(ephemeral, selection(suite)).ok()?;
     Some((responder, record))
 }
 
@@ -272,7 +271,6 @@ pub fn run(
     let profile = profile(suite);
     let deadline = Instant::now() + Duration::from_millis(LIMIT_HANDSHAKE_TIMEOUT_MS as u64);
     let attempts = LIMIT_MAX_HANDSHAKE_RETRANSMITS;
-    let ephemeral = random_bytes::<32>().ok()?;
     // P1 links are always manifest-pinned; B1.2 admission does not run here.
     let keying = match previous_export {
         Some(previous_export) => Keying::Rekey {
@@ -283,6 +281,7 @@ pub fn run(
     };
 
     if is_initiator(local_id, peer_id) {
+        let ephemeral = random_bytes::<32>().ok()?;
         let mut initiator =
             Initiator::new(profile, static_secret, ephemeral, offer(suite), keying).ok()?;
         let initiate = initiator.write_initiate().ok()?;
@@ -300,11 +299,14 @@ pub fn run(
         let _ = socket.send(&finish);
         Some((session, Some(finish)))
     } else {
-        let mut responder = Responder::new(profile, static_secret, ephemeral, keying).ok()?;
+        let mut responder = Responder::new(profile, static_secret, keying).ok()?;
         let respond = loop {
             let initiate = exchange(socket, None, deadline, attempts)?;
             if responder.read_initiate(&initiate).is_ok() {
-                break responder.write_respond(selection(suite)).ok()?;
+                // The ephemeral is generated here rather than above, so the
+                // records discarded by this loop cost no public-key work.
+                let ephemeral = random_bytes::<32>().ok()?;
+                break responder.write_respond(ephemeral, selection(suite)).ok()?;
             }
         };
         loop {

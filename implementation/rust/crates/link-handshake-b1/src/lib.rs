@@ -670,8 +670,8 @@ enum Role {
 /// A gate, not authentication of the sender, and `spec/link-handshake-b1.md`
 /// section 4.2 says how far it falls short: the message carries no responder
 /// freshness, so a recorded one replays onto a later attempt; and a responder
-/// computes this value and its own public keys when it builds its state, before
-/// it reads any record. The presented static key is still checked against the
+/// computes this value when it builds its state, before it reads any record,
+/// because the record cannot be decrypted without it. The presented static key is still checked against the
 /// manifest and the ephemeral Diffie-Hellman still supplies forward secrecy, so
 /// this value alone completes nothing.
 ///
@@ -1099,9 +1099,9 @@ impl Initiator {
 pub struct Responder {
     profile: Profile,
     static_secret: SecretBytes<32>,
-    static_public: [u8; 32],
-    ephemeral_secret: SecretBytes<32>,
-    ephemeral_public: [u8; 32],
+    /// Set by `write_respond`, which is the first point this exchange has one.
+    /// `read_finish` needs it for `se`, so it is retained from there on.
+    ephemeral_secret: Option<SecretBytes<32>>,
     /// What the caller already read from the record's cleartext header and
     /// acted on: the identifier it found the key from, and the cookie it
     /// verified. `read_initiate` confirms the record carries exactly these, so
@@ -1123,12 +1123,24 @@ pub struct Responder {
 }
 
 impl Responder {
-    pub fn new(
-        profile: Profile,
-        static_secret: [u8; 32],
-        ephemeral_secret: [u8; 32],
-        keying: Keying<'_>,
-    ) -> Result<Self> {
+    /// A responder takes no ephemeral. It generates nothing and derives no
+    /// public key until [`Self::write_respond`], which runs only after
+    /// [`Self::read_initiate`] has authenticated a record.
+    ///
+    /// This is structural rather than a convention to keep: there is no
+    /// ephemeral here to compute a public key from, so no later change can
+    /// reintroduce the work without changing this signature. An external review
+    /// (`docs/external-review-2026-09-08.md`, B1-B) found the previous shape
+    /// spending two scalar multiplications per attempt before reading anything,
+    /// which falsified a claim section 8 made about a responder's cost under an
+    /// unauthenticated flood.
+    ///
+    /// What remains before authentication is the pre-shared key. On the manifest
+    /// path that is one static-static Diffie-Hellman, and it is unavoidable
+    /// here: the first record cannot be decrypted without it. A caller that
+    /// retries should derive it once with [`ManifestKey::derive`] and pass the
+    /// same value to every attempt.
+    pub fn new(profile: Profile, static_secret: [u8; 32], keying: Keying<'_>) -> Result<Self> {
         let psk = keying.psk(&profile, &static_secret, Role::Responder)?;
         // ADR 0049 D16: unconditional on the admission path. A responder that
         // could decline to bind itself would present a joiner with exactly the
@@ -1143,10 +1155,8 @@ impl Responder {
         };
         let state = begin(&profile, keying.is_rekey(), &psk)?;
         Ok(Self {
-            static_public: x25519_base(&static_secret)?,
-            ephemeral_public: x25519_base(&ephemeral_secret)?,
             static_secret: SecretBytes(static_secret),
-            ephemeral_secret: SecretBytes(ephemeral_secret),
+            ephemeral_secret: None,
             expected_peer_static: keying.peer_static(),
             admission: keying.is_admission(),
             header: keying.header(&profile)?,
@@ -1212,16 +1222,30 @@ impl Responder {
         Ok(offer)
     }
 
-    pub fn write_respond(&mut self, selection: Selection) -> Result<Vec<u8>> {
+    /// The responder's ephemeral arrives here, not at construction, so every
+    /// public key this exchange needs is derived after a record authenticated.
+    ///
+    /// The caller generates the secret. Doing it here would put a call to the
+    /// randomness source inside the handshake, and a responder that cannot get
+    /// random bytes must fail its attempt rather than derive from anything else
+    /// — which is the caller's decision to make and report.
+    pub fn write_respond(
+        &mut self,
+        ephemeral_secret: [u8; 32],
+        selection: Selection,
+    ) -> Result<Vec<u8>> {
         let remote_ephemeral = self.remote_ephemeral.ok_or(HandshakeError)?;
         let offer = self.offer.as_ref().ok_or(HandshakeError)?;
         if !selection.within(offer) {
             return Err(HandshakeError);
         }
-        self.state.mix_ephemeral(&self.ephemeral_public)?;
+        let ephemeral_secret = SecretBytes(ephemeral_secret);
+        let ephemeral_public = x25519_base(&ephemeral_secret.0)?;
+        let static_public = x25519_base(&self.static_secret.0)?;
+        self.state.mix_ephemeral(&ephemeral_public)?;
         self.state
-            .mix_key(&x25519(&self.ephemeral_secret.0, &remote_ephemeral)?)?;
-        let sealed_static = self.state.encrypt_and_hash(&self.static_public)?;
+            .mix_key(&x25519(&ephemeral_secret.0, &remote_ephemeral)?)?;
+        let sealed_static = self.state.encrypt_and_hash(&static_public)?;
         self.state
             .mix_key(&x25519(&self.static_secret.0, &remote_ephemeral)?)?;
         let width = self.profile.payload_bytes(self.mode, Stage::Respond);
@@ -1239,12 +1263,15 @@ impl Responder {
         let sealed_payload = self.state.encrypt_and_hash(&frame(&body, width)?)?;
 
         let mut record = prefix(&self.profile, self.mode, Stage::Respond);
-        record.extend_from_slice(&self.ephemeral_public);
+        record.extend_from_slice(&ephemeral_public);
         record.extend_from_slice(&sealed_static);
         record.extend_from_slice(&sealed_payload);
         if record.len() != self.profile.record_bytes {
             return Err(HandshakeError);
         }
+        // Retained for `se` in `read_finish`, and only now: before this point
+        // the exchange has no ephemeral at all.
+        self.ephemeral_secret = Some(ephemeral_secret);
         self.selection = Some(selection);
         Ok(record)
     }
@@ -1262,7 +1289,8 @@ impl Responder {
 
         let sealed_static = take_static(body, &mut cursor)?;
         let remote_static = as_key(&state.decrypt_and_hash(&sealed_static)?)?;
-        state.mix_key(&x25519(&self.ephemeral_secret.0, &remote_static)?)?;
+        let ephemeral_secret = self.ephemeral_secret.as_ref().ok_or(HandshakeError)?;
+        state.mix_key(&x25519(&ephemeral_secret.0, &remote_static)?)?;
 
         let framed = state.decrypt_and_hash(body.get(cursor..).ok_or(HandshakeError)?)?;
         let width = self.profile.payload_bytes(self.mode, Stage::Finish);
